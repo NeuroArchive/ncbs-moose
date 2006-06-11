@@ -180,7 +180,7 @@ template< class T >class SynConn: public UniConnBase
 {
 	public:
 		SynConn( Element* parent )
-			: parent_( parent )
+			: value_( 1 ), parent_( parent )
 		{
 			;
 		}

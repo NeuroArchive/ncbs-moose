@@ -13,11 +13,12 @@
 #define UNIX
 //#define WINDOWS
 
-// #ifdef WINDOWS
-#ifdef NO_OFFSETOF
+#ifdef UNIX
 #define		FIELD_OFFSET( T, F ) \
 	( unsigned long )( &T::F )
-#else
+#endif
+
+#ifdef WINDOWS
 #define		FIELD_OFFSET( T, F ) \
 	static_cast< unsigned long >( offsetof( T, F ) )
 #endif

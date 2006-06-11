@@ -69,16 +69,14 @@ Finfo* MyClassWrapper::fieldArray_[] =
 ///////////////////////////////////////////////////////
 	new ArrayFinfo< int >(
 		"inhibValue", &MyClassWrapper::getInhibValue,
-		&MyClassWrapper::setInhibValue, "int" ),
+		&MyClassWrapper::setInhibValue, "single" ),
 	new Synapse1Finfo< double >(
 		"inhibIn", &MyClassWrapper::inhibFunc,
 		&MyClassWrapper::getInhibConn, &MyClassWrapper::newInhibConn, "" ),
 
-	/*
 	new ArrayFinfo< SynInfo >(
 		"exciteValue", &MyClassWrapper::getExciteValue,
-		&MyClassWrapper::setExciteValue, "" ),
-		*/
+		&MyClassWrapper::setExciteValue, "multi" ),
 	new Synapse1Finfo< double >(
 		"exciteIn", &MyClassWrapper::exciteFunc,
 		&MyClassWrapper::getExciteConn, &MyClassWrapper::newExciteConn, "" ),

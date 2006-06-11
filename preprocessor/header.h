@@ -11,6 +11,3 @@
 enum FieldMode { RW, RO, CONST };
 
 extern int next_token(string& ret, const string& s, int i);
-
-extern const string checkForVector( const string& temp, 
-	const string& line, unsigned int& j );

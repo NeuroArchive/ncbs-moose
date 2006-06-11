@@ -127,7 +127,7 @@ void EnzymeWrapper::makeComplex()
 	if ( relativeFind( cplxName ) )
 		return;
 
-	double vol = 0.0;
+	double vol;
 	if ( !Ftype1< double >::get( parent(), "volumeScale", vol ) ) {
 		cerr << "Error: EnzymeWrapper::makeComplex(): Cannot get volumeScale from parent()\n";
 		return;

@@ -64,7 +64,7 @@ Field::Field(const string& path)
 Field::Field( Element* e, const string& finfoName )
 {
 	if ( e )
-		f_ = e->field( finfoName ).f_->copy();
+		f_ = e->cinfo()->field( finfoName ).f_->copy();
 	else
 		f_ = dummy_;
 	e_ = e;

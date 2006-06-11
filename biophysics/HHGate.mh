@@ -25,7 +25,6 @@ class HHGate
 	field:
 		double power;
 		double state;
-		int instant;
 
 
 	shared:
@@ -36,18 +35,11 @@ class HHGate
 	
 	dest:
 		single gate( double v, double state, double dt ) {
-			if ( instant_ ) {
-				state = A_.doLookup( v ) / B_.doLookup( v );
-			} else {
-				double y = B_.doLookup( v );
-				double x = exp( -y * dt );
-				state = state * x + ( A_.doLookup( v ) / y ) * ( 1 - x);
-			}
-			// This is not actually the return. We have not yet
-			// sorted out how to do return operations in the 
-			// preprocessor.
+			double y = B_.doLookup( v );
+			double x = exp( -y * dt );
+			state = state * x + ( A_.doLookup( v ) / y ) * ( 1 - x );
 			gate( state, takePower_( state ) );
-		}	
+		}
 
 		single reinit( double Vm ) {
 			if ( power_ == 0.0 )

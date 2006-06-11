@@ -90,10 +90,11 @@ class MoleculeWrapper:
 		}
 		static void setSlaveEnable( Conn* c, int value ) {
 			static_cast< MoleculeWrapper* >( c->parent() )->mode_ =
-				value;
+				(value + 1) / 2;
 		}
 		static int getSlaveEnable( const Element* e ) {
-			return static_cast< const MoleculeWrapper* >( e )->mode_;
+			return static_cast< const MoleculeWrapper* >( e )->
+				mode_ * 2;
 		}
 ///////////////////////////////////////////////////////
 // Msgsrc header definitions .                       //
@@ -108,6 +109,10 @@ class MoleculeWrapper:
 ///////////////////////////////////////////////////////
 // dest header definitions .                         //
 ///////////////////////////////////////////////////////
+		void reacFuncLocal( double A, double B ) {
+			A_ += A;
+			B_ += B;
+		}
 		static void reacFunc( Conn* c, double A, double B ) {
 			static_cast< MoleculeWrapper* >( c->parent() )->
 				reacFuncLocal( A, B );
@@ -118,6 +123,9 @@ class MoleculeWrapper:
 				reacFuncLocal( A, B );
 		}
 
+		void sumTotalFuncLocal( double n ) {
+			total_ += n;
+		}
 		static void sumTotalFunc( Conn* c, double n ) {
 			static_cast< MoleculeWrapper* >( c->parent() )->
 				sumTotalFuncLocal( n );

@@ -12,26 +12,16 @@
 # $Log: $
 #
 
-# Use the options below for compiling on GCC3. Pick your favourite
-# optimization settings.
-CFLAGS  =	-g -Wall -pedantic -DDO_UNIT_TESTS -DNO_OFFSETOF
-#CFLAGS  =	-O3 -Wall -pedantic -DNO_OFFSETOF
-#CFLAGS  =	-O3 -pg -Wall -pedantic -DNO_OFFSETOFF
-
-# Use the options below for compiling on GCC4
-# ANSI C++ and hence gcc4 have some strange error messages that emanate
-# from offsetof, even when it does the right thing. The 
-# -Wno-invalid-offsetof flag suppresses these silly warnings.
-#CFLAGS  =	-g -Wall -pedantic -DDO_UNIT_TESTS -Wno-invalid-offsetof
-#CFLAGS  =	-O3 -Wall -pedantic -Wno-invalid-offsetof
-
-
-# Libraries are defined below. For now we do not use threads.
+#CFLAGS  =	-O
+#CFLAGS  =	-g -fhandle-exceptions 
+#CFLAGS  =	-g -D_EXCEPTIONS
+CFLAGS  =	-g -Wall -pedantic -DDO_UNIT_TESTS
+#CFLAGS  =	-O -pg -Wall
+#CFLAGS  =	-O3 -Wall -pedantic
+#LIBS = 		-lm -liostream
 SUBLIBS = 
 #LIBS = 		-lm -lpthread
 LIBS = 		-lm
-
-#
 CXX = g++
 LD = ld
 

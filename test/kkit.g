@@ -1,7 +1,6 @@
 //genesis
 
 echo Loading kkit.g
-setfield /sli_shell isInteractive 0
 
 create Neutral /kinetics
 create Neutral /graphs
@@ -33,13 +32,12 @@ function enddump
 	end
 	setclock 2 { CONTROLDT }
 	setclock 3 { PLOTDT }
-	useclock /kinetics/##[TYPE=Molecule],/kinetics/##[TYPE=Table] 0
-	useclock /kinetics/##[TYPE=Reaction],/kinetics/##[TYPE=Enzyme],/kinetics/##[TYPE=ConcChan] 1
+	useclock /kinetics/##[TYPE=Molecule] 0
+	useclock /kinetics/##[TYPE=Reaction],/kinetics/##[TYPE=Enzyme] 1
 	useclock /graphs/##[TYPE=Plot],/moregraphs/##[TYPE=Plot] 3
 end
 
 function complete_loading
-	setfield /sli_shell isInteractive 1
 	reset
 	if ( VARIABLE_DT_FLAG && ( MAXTIME > TRANSIENT_TIME ) )
 		step {TRANSIENT_TIME} -t

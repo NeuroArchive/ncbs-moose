@@ -18,7 +18,6 @@
 #ifdef DO_UNIT_TESTS
 	extern void testBasecode();
 	extern void testScheduling();
-	extern void testTable();
 #endif
 
 int main(int argc, const char** argv)
@@ -41,7 +40,6 @@ int main(int argc, const char** argv)
 #ifdef DO_UNIT_TESTS
 	testBasecode();
 	testScheduling();
-	testTable();
 #endif
 	shell->field( "isInteractive" ).set( "1" );
 	if ( argc > 1 ) {

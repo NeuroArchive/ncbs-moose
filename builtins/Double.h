@@ -15,7 +15,7 @@
 class Double: public Element {
 	public:
 		Double(const string& name)
-			: Element(name), value_(0.0)
+			: Element(name), value_(0)
 		{ ; }
 
 		~Double();

@@ -44,10 +44,10 @@ class InterpolWrapper:
 				localGetXdivs();
 		}
 		static void setMode( Conn* c, int value ) {
-			static_cast< InterpolWrapper* >( c->parent() )->localSetMode( value );
+			static_cast< InterpolWrapper* >( c->parent() )->mode_ = value;
 		}
 		static int getMode( const Element* e ) {
-			return static_cast< const InterpolWrapper* >( e )->localGetMode();
+			return static_cast< const InterpolWrapper* >( e )->mode_;
 		}
 		// Later do interpolation etc to preseve contents.
 		static void setDx( Conn* c, double value ) {
@@ -57,16 +57,6 @@ class InterpolWrapper:
 		static double getDx( const Element* e ) {
 			return static_cast< const InterpolWrapper* >( e )->
 				localGetDx();
-		}
-
-		// Scale the table up and down.
-		static void setSy( Conn* c, double value ) {
-			static_cast< InterpolWrapper* >( c->parent() )->
-				localSetSy( value );
-		}
-		static double getSy( const Element* e ) {
-			return static_cast< const InterpolWrapper* >( e )->
-				localGetSy();
 		}
 		static void setTable(
 			Element* e, unsigned long index, double value );
@@ -89,11 +79,7 @@ class InterpolWrapper:
 			static_cast< InterpolWrapper* >( c->parent() )->
 				lookupFuncLocal( x );
 		}
-		
-		static void tabFillFunc( Conn* c, int xdivs, int mode ) {
-			static_cast< InterpolWrapper* >( c->parent() )->
-				tabFill( xdivs, mode );
-		}
+
 
 ///////////////////////////////////////////////////////
 // Synapse creation and info access functions.       //
@@ -150,7 +136,4 @@ class InterpolWrapper:
 		static Finfo* fieldArray_[];
 		static const Cinfo cinfo_;
 };
-
-extern unsigned long InterpolOffset();
-
 #endif // _InterpolWrapper_h

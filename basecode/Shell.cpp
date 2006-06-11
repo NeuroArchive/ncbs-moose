@@ -1,8 +1,6 @@
 #include "header.h"
-#include "../builtins/Interpol.h"
 #include "Shell.h"
 #include "ShellWrapper.h"
-#include "ExtFieldFinfo.h"
 
 // bool splitFieldString( const string& field, string& e, string& f );
 //bool splitField( const string& fieldstr, Field& f );
@@ -90,7 +88,7 @@ bool SimDumpInfo::setFields( Element* e, int argc, const char** argv )
 
 
 Shell::Shell( Element* wrapper )
-	: workingElement_( "/" ), wrapper_( wrapper ), recentElement_( 0 )
+	: workingElement_( "/" ), wrapper_( wrapper )
 {
 	string className = "molecule";
 	vector< SimDumpInfo *> sid;
@@ -106,10 +104,6 @@ Shell::Shell( Element* wrapper )
 	sid.push_back( new SimDumpInfo( "kenz", "Enzyme",
 		"k1 k2 k3 usecomplex",
 		"k1 k2 k3 mode") );
-	sid.push_back( new SimDumpInfo( "xtab", "Table",
-	"input output step_mode stepsize",
-	"input output mode stepsize" ) );
-
 	sid.push_back( new SimDumpInfo( "group", "Neutral", "", "" ) );
 	sid.push_back( new SimDumpInfo( "xgraph", "Neutral", "", "" ) );
 	sid.push_back( new SimDumpInfo( "xplot", "Plot", "", "" ) );
@@ -118,10 +112,6 @@ Shell::Shell( Element* wrapper )
 	sid.push_back( new SimDumpInfo( "xcoredraw", "Neutral", "", "" ) );
 	sid.push_back( new SimDumpInfo( "xtree", "Neutral", "", "" ) );
 	sid.push_back( new SimDumpInfo( "xtext", "Neutral", "", "" ) );
-
-	sid.push_back( new SimDumpInfo( "kchan", "ConcChan",
-		"perm Vm",
-		"permeability Vm" ) );
 
 	for (unsigned int i = 0 ; i < sid.size(); i++ ) {
 		dumpConverter_[ sid[ i ]->oldObject() ] = sid[ i ];
@@ -158,8 +148,7 @@ void Shell::dropFuncLocal( const string& src, const string& dest )
 	}
 }
 
-void Shell::setFuncLocal( const string& field, const string& value )
-{
+void Shell::setFuncLocal( const string& field, const string& value ) {
 	vector < Field > f;
 	if ( wildcardField (field, f ) > 0 ) {
 		vector< Field >::iterator i;
@@ -211,12 +200,10 @@ void Shell::createFuncLocal( const string& type, const string& path )
 					return;
 				}
 				Element* ret = ci->create( name, parent );
-				if ( !ret ) {
+				if ( !ret )
 					error( "create: Failed to create object", path );
-				} else {
-					recentElement_ = ret;
+				else
 					ok();
-				}
 			} else {
 				error( "create: Failed to find parent object ", 
 					path.substr( 0, pos - 1 ) );
@@ -253,7 +240,7 @@ Element* Shell::findDest( const string& dest, string& destChildName )
 		string parentName;
 		splitFieldString( dest, parentName, destChildName);
 		if ( destChildName.length() == 0) {
-			error("FindDest::Failed to find dest element ", dest );
+			error("Failed to find dest element ", dest );
 			return 0;
 		}
 		if ( parentName == "" )
@@ -263,7 +250,7 @@ Element* Shell::findDest( const string& dest, string& destChildName )
 	}
 
 	if ( !d ) {
-		error("FindDest::Failed to find dest element ", dest );
+		error("Failed to find dest element ", dest );
 		return 0;
 	}
 
@@ -283,23 +270,8 @@ void Shell::moveFuncLocal( const string& src, const string& dest ) {
 		return;
 	}
 	string newName = "";
-	Element* d;
-	if ( dest.find( "/") == string::npos ) {
-		if ( dest == "." ) {
-			d = checkWorkingElement();
-		} else if ( dest == ".." ) {
-			d = checkWorkingElement()->parent();
-		} else {
-			d = checkWorkingElement();
-			newName = dest;
-		}
-	} else {
-		d = findDest( dest, newName );
-	}
-	if ( !d ) {
-		error( "Move: destination element", dest + "does not exist" );
-		return;
-	}
+	Element* d = findDest( dest, newName );
+	if ( !d ) return;
 	if ( d->descendsFrom( s ) ) {
 		error( "move: cannot move '", 
 			src + "' onto itself, '" + d->path() + "'" );
@@ -378,8 +350,7 @@ Element* Shell::shellRelativeFind( const string& path )
 }
 
 void Shell::ceFuncLocal( const string& newpath ) {
-	// Element* nwe = shellRelativeFind( newpath );
-	Element* nwe = findElement( newpath );
+	Element* nwe = shellRelativeFind( newpath );
 	if ( nwe )
 		workingElement_ = nwe->path();
 	else
@@ -391,8 +362,7 @@ void Shell::pweFuncLocal( ) {
 }
 
 void Shell::pusheFuncLocal( const string& newpath ) {
-	// Element* nwe = shellRelativeFind( newpath );
-	Element* nwe = findElement( newpath );
+	Element* nwe = shellRelativeFind( newpath );
 	if ( nwe ) {
 		workingElementStack_.push_back( workingElement_ );
 		workingElement_ = nwe->path();
@@ -418,7 +388,6 @@ void Shell::aliasFuncLocal(
 	Field f;
 	splitField( parser_ + "/alias", f );
 	f.set( origfunc + ", " + newfunc );
-	aliasMap_[ origfunc ] = newfunc;
 }
 
 void Shell::quitFuncLocal(  ) {
@@ -548,30 +517,21 @@ int Shell::isaFuncLocal( const string& type, const string& field ) {
 	return 0;
 }
 
-int Shell::existsFuncLocal( const string& fieldstr ) {
-	Field f;
-	return splitField( fieldstr, f );
-}
-
 // Here we refer to the composite elm.finfo as the field.
 void Shell::showFuncLocal( const string& field )
 {
 	string ename, fname;
 	splitFieldString( field, ename, fname );
-	Element* e = findElement( ename );
-	/*
 	Element* e = checkWorkingElement();
 	if ( ename != "" )
 		e = e->relativeFind( ename ); // later expand to elist.
-		*/
 	if ( e ) {
-		// const Cinfo* ci = e->cinfo();
+		const Cinfo* ci = e->cinfo();
 		cout << "\n[ " << e->path() << " ]\n";
 		if ( fname == "*" ) {
 			vector< Finfo* > flist;
 			vector< Finfo* >::iterator i;
-			// ci->listFields( flist );
-			e->listFields( flist );
+			ci->listFields( flist );
 			for ( i = flist.begin(); i != flist.end(); i++ ) {
 				string value;
 				if ( ( *i )->strGet( e, value ) ) 
@@ -579,8 +539,7 @@ void Shell::showFuncLocal( const string& field )
 					value << "\n";
 			}
 		} else {
-			// Field f = ci->field( fname );
-			Field f = e->field( fname );
+			Field f = ci->field( fname );
 			if ( f.good() ) {
 				string value;
 				if ( f->strGet( e, value ) ) 
@@ -597,11 +556,8 @@ void Shell::showobjectFuncLocal( const string& classname ) {
 }
 
 void Shell::leFuncLocal( const string& start ) {
-	Element* s = findElement( start );
-	/*
 	Element* s = checkWorkingElement();
 	s = s->relativeFind( start );
-	*/
 	if ( s ) {
 		vector< Field > f;
 		s->field( "child_out" ).dest( f );
@@ -646,32 +602,10 @@ void Shell::commandFuncLocal( int argc, const char** argv )
 {
 	if ( argc == 0 )
 		return;
-
-	string funcname;
-	map< string, string >:: iterator i = aliasMap_.find( argv[ 0 ] );
-	if ( i != aliasMap_.end() )
-		funcname = i->second;
-	else
-		funcname = argv[ 0 ];
-
-	if ( funcname == "simundump" )
+	if ( strcmp ( argv[ 0 ], "simundump" ) == 0 )
 		simundumpFunc( argc, argv );
-	if ( funcname == "simobjdump" )
+	if ( strcmp ( argv[ 0 ], "simobjdump" ) == 0 )
 		simobjdumpFunc( argc, argv );
-	if ( funcname == "loadtab" )
-		loadtabFunc( argc, argv );
-	if ( funcname == "readcell" )
-		readcellFunc( argc, argv );
-	if ( funcname == "setupalpha" )
-		setupAlphaFunc( argc, argv, 0 );
-	if ( funcname == "setuptau" )
-		setupAlphaFunc( argc, argv, 1 );
-	if ( funcname == "tweakalpha" )
-		tweakFunc( argc, argv, 0 );
-	if ( funcname == "tweaktau" )
-		tweakFunc( argc, argv, 1 );
-	if ( funcname == "addfield" )
-		addFieldFunc( argc, argv );
 }
 
 void Shell::simobjdumpFunc( int argc, const char** argv )
@@ -738,115 +672,10 @@ void Shell::simundumpFunc( int argc, const char** argv )
 	i->second->setFields( e, argc - 4, argv + 4 );
 }
 
-void Shell::loadtabFunc( int argc, const char** argv )
-{
-	static Interpol ip; 
-	static int lastIndex = 0;
-	static Element* e = 0;
-	// Static because the -continue flag in loadtab requires that
-	// the old interpol remain available.
-
-	int i = 0;
-	int j = 0;
-	int xdivs = 0;
-
-
-	if (argc < 2 ) {
-		error( string("usage: ") + argv[ 0 ] +
-		"loadtab element table calc_mode xdivs xmin xmax [values...]\nor, for continuation loadtabs: -cont [values...]");
-		return;
-	}
-
-	if ( strncmp( argv[1], "-c", 2 ) == 0 ) { // loadtab -continue
-		if ( e == 0 || e == Element::root() ) {
-			error( "loadtab -continue called without inital loadtab\n");
-			return;
-		}
-		xdivs = ip.localGetXdivs();
-		j = lastIndex;
-		for ( i = 1; i < argc && j <= xdivs; i++ )
-			ip.setTableValue( atof( argv[ i ] ), j++ );
-	} else { // Start of loadtab.
-		if ( argc < 8 ) {
-			error( string("usage: ") + argv[ 0 ] +
-			"loadtab element table calc_mode xdivs xmin xmax [values...]\nor, for continuation loadtabs: -cont [values...]");
-			return;
-		}
-		e = Element::root()->relativeFind( argv[1] );
-		if ( !e || e == Element::root() ) {
-			error( string( argv[ 0 ] ) +
-			": could not find element '" + argv[1] + "'");
-			return;
-		}
-		ip.localSetMode( atoi( argv[3] ) );
-		// e->field( "mode" ).set( argv[3] );
-		xdivs = atoi( argv[4] );
-		if ( xdivs < 1 ) {
-			error( e->path() + ": loadtab: Must specify xdivs > 0 \n" );
-			e = 0;
-			return;
-		}
-		ip.localSetXdivs( xdivs );
-		ip.localSetXmin( atoi( argv[5] ) );
-		ip.localSetXmax( atoi( argv[6] ) );
-		// e->field( "xdivs" ).set( argv[4] );
-		// e->field( "xmin" ).set( argv[5] );
-		// e->field( "xmax" ).set( argv[6] );
-		j = 0;
-		for ( i = 7; i < argc && j <= xdivs; i++ )
-			ip.setTableValue( atof( argv[ i ] ), j++ );
-	}
-	if ( j == xdivs + 1 ) { // Presumably it is done
-		Field tabip( e, "table" );
-		Ftype1< Interpol >::set( e, tabip.getFinfo(), ip );
-		lastIndex = 0;
-		e = 0;
-	} else {
-		lastIndex = j;
-	}
-}
-
-void Shell::addFieldFunc( int argc, const char** argv )
-{
-	if ( argc < 3 ) {
-		error( "usage: ", string( argv[0] ) + "element field_name [field_type]");
-		return;
-	}
-	Element* e = findElement( argv[ 1 ] );
-	if ( !e ) {
-		error( "Shell::addFieldFunc: Failed to find element", argv[1] );
-		return;
-	}
-	string fieldType = "String";
-	if ( argc == 4 )
-		fieldType = argv[3];
-
-	Finfo* f;
-	if ( 
-		fieldType == "Bool" || fieldType == "bool" ||
-		fieldType == "Int" || fieldType == "int" ||
-		fieldType == "Long" || fieldType == "long" ||
-		fieldType == "Short" || fieldType == "short"
-		) {
-			f = new ExtFieldFinfo< int >( argv[2], "Int" );
-	} else if (
-		fieldType == "Float" || fieldType == "float" ||
-		fieldType == "Double" || fieldType == "double"
-		) {
-			f = new ExtFieldFinfo< double >( argv[2], "Double" );
-	} else {
-			f = new ExtFieldFinfo< string >( argv[2], "String" );
-	}
-
-	e->appendRelay( f );
-}
-
-
 ///////////////////////////////////////////////////////
 // Utility functions.
 ///////////////////////////////////////////////////////
 
-// Returns 1 if it can find a / to split the string on.
 // Splits string field into e: element part and f: finfo part.
 // Does so by finding the last / and splitting the string there.
 bool Shell::splitFieldString( const string& field, string& e, string& f)
@@ -872,29 +701,18 @@ int Shell::wildcardField( const string& fieldstr, vector< Field >& f )
 	string ename, fname;
 
 	string path;
-	if ( fieldstr[0] == '.' && fieldstr[1] == '/' ) {
-		path = workingElement_ + fieldstr.substr( 1 );
-	} else if ( fieldstr[0] != '/' && fieldstr[0] != '^' ) {
-		if ( workingElement_ == "/" )
-			path = workingElement_ + fieldstr;
-		else
-			path = workingElement_ + "/" + fieldstr;
-	} else {
+	if ( fieldstr[0] != '/' )
+		path = workingElement_ + "/" + fieldstr;
+	else
 		path = fieldstr;
-	}
 	splitFieldString( path, ename, fname );
 
 	vector< Element* > elist;
 	f.resize( 0 );
 
-	if ( ename == "^" ) {
-		if ( recentElement_ != 0 )
-			elist.push_back( recentElement_ );
-	} else if ( ename == "." ) {
-		elist.push_back( checkWorkingElement() );
-	} else if ( ename != "" ) {
+	if ( ename != "" )
 		Element::wildcardFind( ename, elist );
-	} else
+	else
 		return 0;
 
 	if ( elist.size() > 0 ) {
@@ -915,8 +733,6 @@ bool Shell::splitField( const string& fieldstr, Field& f )
 	string ename, fname;
 	splitFieldString( fieldstr, ename, fname );
 	Element* e = checkWorkingElement();
-	if ( ename == "^" )
-		e = recentElement_;
 	if ( ename != "" )
 		e = e->relativeFind( ename ); // later expand to elist.
 	if ( e ) {
@@ -944,8 +760,6 @@ Element* Shell::findElement( const string& path )
 		return Element::root();
 	if ( path == "root" && workingElement_ == "/" )
 		return Element::root();
-	if ( path == "^" )
-		return recentElement_;
 	if ( path.find( '/' ) == 0 )
 		 return Element::root()->relativeFind( path.substr(1) );
 	else if ( path.find( "../" ) == 0 )
@@ -990,3 +804,221 @@ void testParseArgs()
 }
 #endif
 
+///////////////////////////////////////////////////////
+// Private function definitions
+///////////////////////////////////////////////////////
+
+/*
+// Checks match for the name of an element.
+// The name does not contain any following slashes.
+// The name is nonzero.
+element* element::WildcardName(const string& n) {
+	unsigned int pos;
+
+	if (n == "") {
+		cerr << "Error in WildcardName: zero length name\n";
+			return 0;
+	}
+
+	if (n == "#" || n == Name() || n == "##") {
+		return this;
+	}
+
+	string mid;
+	if (n.substr(0, 2) == "##")
+		mid = n.substr(2);
+	else if (n.substr(0, 1) == "#")
+		mid = n.substr(1);
+	else 
+		return 0;
+
+	string head;
+
+	// Look for type checks
+	if (mid.substr(0, 6) == "[TYPE=") {
+		pos = mid.find(']');
+		head = mid.substr(6, pos - 6);
+		mid = mid.substr(pos + 1);
+		if (head != GetCinfo()->Name())
+			return 0;
+	}
+	if (mid.substr(0,5) == "[ISA=") {
+		pos = mid.find(']');
+		head = mid.substr(5, pos - 5);
+		mid = mid.substr(pos + 1);
+		if (head != GetCinfo()->Name())
+			return 0;
+	}
+	if (mid.substr(0, 7) == "[TYPE!=") {
+		pos = mid.find(']');
+		head = mid.substr(7, pos - 7);
+		mid = mid.substr(pos + 1);
+		if (head == GetCinfo()->Name())
+			return 0;
+	}
+	if (mid.substr(0,6) == "[ISA!=") {
+		pos = mid.find(']');
+		head = mid.substr(6, pos - 6);
+		mid = mid.substr(pos + 1);
+		if (head == GetCinfo()->Name())
+			return 0;
+	}
+	return WildcardFieldComparison(mid);
+}
+
+element* element::WildcardFieldComparison(const string& mid) {
+	// Look for specific fields, in format FIELD(name)=val
+	// where = could be the usual comparison operators and val
+	// could be a number. No strings yet
+
+	if (mid.substr(0,7) == "[FIELD(") {
+		unsigned int pos = mid.find(']');
+		string head = mid.substr(7, pos - 7);
+		// mid = mid.substr(pos);
+		pos = head.find(')');
+		string field = head.substr(0,pos);
+		double x;
+
+		const field1<double>* dfi = dynamic_cast< const field1<double> *>
+		(
+			GetCinfo()->GetField(field)
+		);
+
+		if (dfi) {
+			GetField(&x, this, field);
+		} else {
+			const field1<int>* ifi = dynamic_cast< const field1<int> *>
+			(
+				GetCinfo()->GetField(field)
+			);
+			if (ifi) {
+				int i;
+				GetField(&i, this, field);
+				x = i;
+			} else {
+				return 0;
+			}
+		}
+
+		string op = head.substr(pos + 1);
+		if (op.substr(0, 2) == "==") {
+			if ( x == atof(op.substr(2).c_str()) ) return this;
+		} else if (op.substr(0, 2) == "<=") {
+			if ( x <= atof(op.substr(2).c_str()) ) return this;
+		} else if (op.substr(0, 2) == "!=") {
+			if ( x !=  atof(op.substr(2).c_str()) ) return this;
+		} else if (op.substr(0, 2) == ">=") {
+			if ( x >= atof(op.substr(2).c_str()) ) return this;
+		} else if (op.substr(0, 1) == "=") {
+			if ( x == atof(op.substr(1).c_str()) ) return this;
+		} else if (op.substr(0, 1) == ">") {
+			if ( x > atof(op.substr(1).c_str()) ) return this;
+		} else if (op.substr(0, 1) == "<") {
+			if ( x < atof(op.substr(1).c_str()) ) return this;
+		}
+		return 0 ;
+	}
+	return this;
+}
+
+// Builds a wildcard list based on path. Returns number found.
+// We are in an element that matches. n is nonzero.
+int element::WildcardRelativeFind(
+	const string& n, vector<element *>& ret, int doublehash)
+{
+	if (WildcardName(n)) {
+		ret.push_back(this);
+		return 1;
+	}
+	return 0;
+}
+
+int element::StartFind(const string& n_arg, vector<element *>& ret) {
+	string n = n_arg;
+	if (n == "/") {
+		ret.push_back(element::Root());
+		return 1;
+	}
+	if (n.rfind('/') == n.length() - 1)
+		n = n.substr(0,n.length() - 1);
+	
+	if (n == "/root") {
+		ret.push_back(element::Root());
+		return 1;
+	}
+	if (n.find('/') == 0)
+		return element::Root()->WildcardRelativeFind(n.substr(1), ret, 0);
+	else
+		return element::Root()->WildcardRelativeFind(n, ret, 0);
+}
+
+
+int element::WildcardFind(const string& n, vector<element *>& ret) 
+{
+	if (n == "")
+		return 0;
+	
+	int nret = 0;
+	string s = n;
+	unsigned long i = 0;
+	string mid;
+	do {
+		i = s.find(',');
+		mid = s.substr(0, i);
+		s = s.substr(i + 1);
+		nret += StartFind(mid, ret);
+	} while (i < string::npos);
+	my_unique(ret);
+	// sort(ret.begin(), ret.end());
+	// upi_unique
+	// unique(ret.begin(), ret.end());
+	// ret.erase(unique(ret.begin(), ret.end()));
+	return ret.size();
+}
+
+element* element::Copy() const {
+	return mycinfo.Create(root, name, this);
+}
+
+// Objects may need to do operations relative to the entire copied
+// tree. Solvers are an example. This is done after the entire tree
+// is built, using this routine.
+void HandlePostCopyOnTree(map<const element*, element*> &tree)
+{
+	map<const element*, element*>::iterator i;
+	for (i = tree.begin(); i != tree.end(); i++)
+		i->second->HandlePostCopy();
+}
+
+element* element::DeepCopy(element* pa, 
+	map<const element*, element*> &tree) const {
+	if (dynamic_cast<p_element *>(pa)) {
+		element *e = InternalDeepCopy(pa, tree);
+		DuplicateMessagesOnTree(tree);
+		HandlePostCopyOnTree(tree);
+		return e;
+	}
+	return 0;
+}
+
+element* element::DeepCopy(element* pa) const {
+	map<const element*, element*> tree;
+	return DeepCopy(pa, tree);
+}
+
+element* element::InternalDeepCopy(element* pa,
+	map<const element*, element*>& tree) const
+{
+	element* e = mycinfo.Create(pa, name, this);
+	if (e)
+		tree[this] = e;
+	return e;
+}
+
+
+void element::BuildMatchingTree(element* pa, filter *fil,
+	map<const element*, element*> &tree) const {
+	if (fil->do_filter(this) && fil->do_filter(pa))
+		tree[this] = pa;
+}
+*/

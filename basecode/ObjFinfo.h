@@ -145,9 +145,9 @@ template < class T > class ObjFinfo: public ValueFinfo< T >
 		}
 
 		Field match(const string& s ) {
-			if ( s == this->name() )
+			if ( s == name() )
 				return this;
-			return matchObjFinfo( s, this->name(), this->cinfo(), lookup_ );
+			return matchObjFinfo( s, name(), cinfo(), lookup_ );
 		}
 
 	private:

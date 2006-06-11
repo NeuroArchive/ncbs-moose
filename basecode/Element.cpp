@@ -148,7 +148,7 @@ void Element::listFields( vector< Finfo* >& ret )
 	for ( long i = relays_.size() - 1; i >= 0; i-- )
 		ret.push_back( relays_[ i ] );
 
-//	cout << "Num relays for " << name() << " = " << ret.size() << "\n";
+	cout << "Num relays for " << name() << " = " << ret.size() << "\n";
 	const_cast< Cinfo* >( this->cinfo() )->listFields( ret );
 }
 

@@ -139,7 +139,7 @@ template <class T> class ValueFinfo: public ValueFinfoBase<T>
 			Element* (*lookup)( Element *, unsigned long ),
 			unsigned long objIndex ) {
 			ValueFinfo< T >* ret = new ValueFinfo< T >( 
-				this->name(), get_, setWrapper, this->className() );
+				name(), get_, setWrapper, className() );
 			ret->localSet_ = localSet_;
 			ret->lookup_ = lookup;
 			ret->objIndex_ = objIndex;
@@ -187,20 +187,13 @@ template <class T> class ReadOnlyValueFinfo: public ValueFinfo<T>
 		// All other cases, especially the request to assign a field,
 		// are blocked.
 		Finfo* respondToAdd( Element* e, const Finfo* sender ) {
-			if ( sender->isSameType( this ) ) { // illegal
-				cerr << "ReadOnlyValueFinfo::respondToAdd Warning: attempt to make assignment message.\nDenied\n";
-				return 0;
-			}
-			return ValueFinfo< T >::respondToAdd( e, sender );
-			/*
 			static Ftype0 f0;
-			// Field temp( this, e );
+			Field temp( this, e );
 			if ( sender->isSameType( &f0 ) ) {
 				return obtainValueRelay(
 					&newValueRelayFinfo< T >, this, e, 1 );
 			}
 			return 0;
-			*/
 		}
 };
 
@@ -364,7 +357,7 @@ template <class T> class ArrayFinfo: public ValueFinfoBase<T>
 			Element* (*lookup)( Element *, unsigned long ),
 			unsigned long objIndex ) {
 			ArrayFinfo< T >* ret = new ArrayFinfo< T >( 
-				this->name(), get_, innerSet_, this->className(), index_ );
+				name(), get_, innerSet_, className(), index_ );
 			ret->lookup_ = lookup;
 			ret->objIndex_ = objIndex;
 			return ret;

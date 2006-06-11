@@ -1,5 +1,4 @@
 #include "header.h"
-#include <math.h>
 #include "../randnum/randnum.h"
 #include "Compartment.h"
 #include "CompartmentWrapper.h"
@@ -106,7 +105,7 @@ Finfo* CompartmentWrapper::fieldArray_[] =
 		"axialOut, raxialIn" ),
 	new SharedFinfo(
 		"raxial", &CompartmentWrapper::getRaxialConn,
-		"axialIn, raxialOut" ),
+		"raxialOut, axialIn" ),
 };
 
 const Cinfo CompartmentWrapper::cinfo_(
@@ -164,21 +163,19 @@ void CompartmentWrapper::reinitFuncLocal( )
 }
 void CompartmentWrapper::processFuncLocal( ProcInfo info )
 {
-	dt_ = info->dt_;
-	A_ += Inject_ + sumInject_ + Em_ * invRm_;
-	if ( B_ > EPSILON ) {
-		double x = exp( -B_ * info->dt_ / Cm_ );
-		Vm_ = Vm_ * x + ( A_ / B_ )  * ( 1.0 - x );
-	} else {
-		Vm_ += ( A_ - Vm_ * B_ ) * info->dt_ / Cm_;
-	}
-	A_ = 0.0;
-	B_ = invRm_;
-	Im_ = 0.0;
-	sumInject_ = 0.0;
-	channelSrc_.send( Vm_, info );
-	axialSrc_.send( Vm_ );
-	raxialSrc_.send( Ra_, Vm_ );
+			dt_ = info->dt_;
+			A_ += Inject_ + sumInject_ + Em_ * invRm_;
+			if ( B_ > EPSILON ) {
+				double x = exp( -B_ * info->dt_ / Cm_ );
+				Vm_ = Vm_ * x + ( A_ / B_ )  * ( 1.0 - x );
+			} else {
+				Vm_ += ( A_ - Vm_ * B_ ) * info->dt_ / Cm_;
+			}
+			A_ = 0.0;
+			B_ = invRm_;
+			Im_ = 0.0;
+			sumInject_ = 0.0;
+			channelSrc_.send( Vm_, info );
 }
 ///////////////////////////////////////////////////
 // Connection function definitions
@@ -204,17 +201,3 @@ Element* randinjectInConnCompartmentLookup( const Conn* c )
 	return reinterpret_cast< CompartmentWrapper* >( ( unsigned long )c - OFFSET );
 }
 
-///////////////////////////////////////////////////
-// Compartment creation
-///////////////////////////////////////////////////
-Element* CompartmentWrapper::create(
-	const string& name, Element* pa, const Element* proto )
-{
-	CompartmentWrapper* ret = new CompartmentWrapper(name);
-	const CompartmentWrapper* p = 
-		dynamic_cast< const CompartmentWrapper* >( proto );
-	if ( p ) {
-		*( static_cast< Compartment* >( ret ) ) = *p;
-	}
-	return ret;
-}

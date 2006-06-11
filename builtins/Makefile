@@ -20,7 +20,6 @@ OBJ = \
 	Double.o	\
 	Interpol.o	\
 	InterpolWrapper.o	\
-	TableWrapper.o	\
 
 
 HEADERS = \
@@ -51,7 +50,6 @@ Int.o: Int.h
 Double.o: Double.h
 Interpol.o: Interpol.h
 InterpolWrapper.o: Interpol.h InterpolWrapper.h
-TableWrapper.o: Interpol.h Table.h TableWrapper.h
 
 .cpp.o:
 	$(CXX) $(CFLAGS) -I../basecode $< -c

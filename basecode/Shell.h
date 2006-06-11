@@ -78,7 +78,6 @@ class Shell
 		string getmsgFuncLocal( 
 			const string& field, const string& options );
 		int isaFuncLocal( const string& type, const string& field );
-		int existsFuncLocal( const string& fieldstr );
 		void showFuncLocal( const string& field );
 		void showmsgFuncLocal( const string& field );
 		void showobjectFuncLocal( const string& classname );
@@ -104,13 +103,6 @@ class Shell
 
 		void simobjdumpFunc( int argc, const char** argv );
 		void simundumpFunc( int argc, const char** argv );
-		void loadtabFunc( int argc, const char** argv );
-		void readcellFunc( int argc, const char** argv );
-		void setupAlphaFunc( int argc, const char** argv, bool isTau );
-		void tweakFunc( int argc, const char** argv, bool isTau );
-		void tabCreateFunc( int argc, const char** argv );
-		void tabFillFunc( int argc, const char** argv );
-		void addFieldFunc( int argc, const char** argv );
 
 		void ok() {
 			if ( isInteractive_ )
@@ -136,9 +128,7 @@ class Shell
 		string response_;
 		string parser_;
 		Element* wrapper_;
-		Element* recentElement_; // Used in the ^ shorthand
 		map< string, SimDumpInfo* > dumpConverter_;
-		map< string, string > aliasMap_;
 };
 
 #endif // _Shell_h

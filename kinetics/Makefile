@@ -18,7 +18,6 @@ OBJ = \
 	MoleculeWrapper.o	\
 	ReactionWrapper.o	\
 	EnzymeWrapper.o	\
-	ConcChanWrapper.o	\
 
 HEADERS = \
 	../basecode/header.h \
@@ -46,7 +45,6 @@ $(OBJ)	: $(HEADERS)
 MoleculeWrapper.o: Molecule.h MoleculeWrapper.h
 ReactionWrapper.o: Reaction.h ReactionWrapper.h
 EnzymeWrapper.o: Enzyme.h EnzymeWrapper.h
-ConcChanWrapper.o: ConcChan.h ConcChanWrapper.h
 
 .cpp.o:
 	$(CXX) $(CFLAGS) -I../basecode $< -c
