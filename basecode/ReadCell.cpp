@@ -49,20 +49,15 @@ class ReadCell
 		double calculateCoords( Element* compt, Element* parent,
 			double x, double y, double z );
 		bool readComptLine( const string& line );
-		bool assignCompartmentParameter( 
-			Element* compt, const string& name,
-			double value, double area) ;
 		static void chopLine( 
 			const string& line, vector< string >& args );
 		void makeChannel( 
 			Element* compt, const string& name, double density,
-			double area, double volume, 
-			vector< pair< Element*, string > >& addList );
+			double area, vector< pair< Element*, string > >& addList );
 		void addReadCellMsg( Element* chan, const string& command );
 		bool isComment( string& line );
 		void setGlobal( const string& line );
-		void setupAlphaFunc( int argc, const char** argv, bool setupTau );
-		void tweakFunc( int argc, const char** argv, bool setupTau );
+		void setupAlphaFunc( int argc, const char** argv );
 		void printStats();
 
 	private:
@@ -264,7 +259,6 @@ bool ReadCell::readComptLine( const string& line )
 
 	Ftype1< double >::set( compt, "diameter", diameter );
 	Ftype1< double >::set( compt, "Em", EREST_ACT_ );
-	Ftype1< double >::set( compt, "initVm", EREST_ACT_ );
 	Ftype1< double >::set( compt, "Rm", RM_ / surfaceArea );
 	Ftype1< double >::set( compt, "Cm", CM_ * surfaceArea );
 	Ftype1< double >::set( 
@@ -273,7 +267,7 @@ bool ReadCell::readComptLine( const string& line )
 	vector< pair< Element*, string > > addList;
 	for ( unsigned long i = 6 ; i < args.size(); i += 2 )
 		makeChannel( compt, args[ i ], atof( args[ i + 1 ].c_str() ), 
-			surfaceArea, crossSectionArea * length * 1.0e-6, addList );
+			surfaceArea, addList );
 	
 	vector< pair< Element*, string > >::iterator j;
 	for ( j = addList.begin(); j != addList.end(); j++ )
@@ -312,32 +306,8 @@ double ReadCell::calculateCoords( Element* compt, Element* parent,
 			}
 			break;
 		case POLAR :
-			if ( isRelative_ ) {
-				length = x;
-				myX = paX + x * cos( y * PI / 180.0 ) * 
-					cos( z * PI / 180.0 ) ;
-				myY = paY + x * sin( y * PI / 180.0 ) * 
-					cos( z * PI / 180.0 ) ;
-				myZ = paZ + x * sin( z * PI / 180.0 );
-			} else {
-				length = x;
-				myX = x * cos( y * PI / 180.0 ) * cos( z * PI / 180.0 );
-				myY = x * sin( y * PI / 180.0 ) * cos( z * PI / 180.0 );
-				myZ = x * sin( z * PI / 180.0 );
-			}
 			break;
 		case CYLINDRICAL :
-			if ( isRelative_ ) {
-				length = sqrt ( x * x + z * z );
-				myX = paX + x * cos( y * PI / 180.0 );
-				myY = paY + x * sin( y * PI / 180.0 );
-				myZ = paZ + z;
-			} else {
-				length = x;
-				myX = x * cos( y * PI / 180.0 );
-				myY = x * sin( y * PI / 180.0 );
-				myZ = z;
-			}
 			break;
 		default:
 			break;
@@ -418,23 +388,14 @@ void ReadCell::addReadCellMsg( Element* chan, const string& command )
 	}
 }
 
-bool ReadCell::assignCompartmentParameter( 
-	Element* compt, const string& name, double value, double area ) 
-{
-	return Ftype1< double >::set( compt, name, value );
-}
-
 void ReadCell::makeChannel( 
 	Element* compt, const string& name, double density, double area, 
-	double volume, vector< pair< Element*, string > >& addList )
+	vector< pair< Element*, string > >& addList )
 {
 	Element* chanProto = library_->relativeFind( name );
 	if ( !chanProto ) {
-		// See if it is a direct assignment of Rm, Cm, or Ra
-		if ( !assignCompartmentParameter( compt, name, density, area ) )
-			cerr << "Error: ReadCell::makeChannel: line " << lineNum_ <<
-				": channel not found: '" << name << "'\n";
-		return;
+		cerr << "Error: ReadCell::makeChannel: line " << lineNum_ <<
+			": channel not found: '" << name << "'\n";
 	}
 	Element* chan = chanProto->shallowCopy( compt );
 	//Element* chan = chanProto->cinfo()->create( chanProto->name(), compt, chanProto );
@@ -450,7 +411,7 @@ void ReadCell::makeChannel(
 		// Field temp( chan, "channel" );
 		// compt->field( "channel" ).add( temp );
 		if ( density > 0 ) {
-			Ftype1< double >::set( chan, "B", density / volume ) ;
+			Ftype1< double >::set( chan, "B", density * area );
 		} else {
 			Ftype1< double >::set( chan, "B", -density );
 		}
@@ -545,22 +506,6 @@ void sumInterpol( Interpol& A, Interpol& B )
 	}
 }
 
-void tauTweakInterpol( Interpol& A, Interpol& B )
-{
-	static const double SINGULAR = 1.0e-8;
-	int xdivs = A.localGetXdivs();
-	for ( int i = 0; i <= xdivs; i++ ) {
-		double temp = A.getTableValue( i ); 
-		if ( fabs( temp ) < SINGULAR ) {
-			A.setTableValue( 0.0, i );
-			B.setTableValue( 0.0, i );
-		} else {
-			A.setTableValue( B.getTableValue( i ) / temp, i );
-			B.setTableValue( 1.0 / temp, i );
-		}
-	}
-}
-
 // call Element TABFILL gate xdivs calc_mode
 void Shell::tabFillFunc( int argc, const char** argv )
 {
@@ -628,7 +573,7 @@ void Shell::tabCreateFunc( int argc, const char** argv )
 	Ftype1< double >::set( gate, "B.xmax", atof( argv[ 6 ] ) );
 }
 
-void Shell::setupAlphaFunc( int argc, const char** argv, bool setupTau )
+void Shell::setupAlphaFunc( int argc, const char** argv )
 {
 	static const int DEFAULT_XDIVS = 3000;
 	static const double DEFAULT_XMIN = -0.1;
@@ -680,51 +625,8 @@ void Shell::setupAlphaFunc( int argc, const char** argv, bool setupTau )
 	Interpol B( xdivs, xmin, xmax );
 	setupInterpol( B,  atof( argv[8] ), atof( argv[9] ), 
 		atof( argv[10] ), atof( argv[11] ), atof( argv[12] ) ); 
-	if ( setupTau )
-		tauTweakInterpol( A, B );
-	else
-		sumInterpol( A, B );
+	sumInterpol( A, B );
 	
-	Ftype1< Interpol >::set( gate, "A", A );
-	Ftype1< Interpol >::set( gate, "B", B );
-}
-
-// Entries in tables may be loaded in a different manner than the
-// ones used for calculations. This function switches them around.
-// For reference: A is the alpha term, B = alpha + beta
-// and: tau = 1/(alpha + beta), minfinity = alpha/( alpha + beta )
-// if setupTau == 0: A and B are just the alpha and beta terms. This
-// 	function sets B += A for all entries.
-// if setupTau == 1: A and B are the tau and minfinity terms. This
-// 	function sets A = minf/tau; B = 1 / tau
-void Shell::tweakFunc( int argc, const char** argv, bool setupTau )
-{
-	if (argc < 3 ) {
-		error( string("usage: ") + argv[ 0 ] +
-		" channel-element gate");
-		return;
-	}
-	Element *chan = findElement( argv[ 1 ] );
-	if ( !chan ) {
-		error( "tweakFunc: Failed to find channel-element: ", argv[1] );
-		return;
-	}
-	Element *gate = chan->relativeFind( argv[ 2 ] );
-	if ( !gate ) {
-		error( "tweakFunc: Failed to find gate: ", 
-			string( argv[ 1 ] ) + "/" + argv[ 2 ] );
-		return;
-	}
-	Interpol A;
-	Interpol B;
-	Ftype1< Interpol >::get( gate, "A", A );
-	Ftype1< Interpol >::get( gate, "B", B );
-
-	if ( setupTau )
-		tauTweakInterpol( A, B );
-	else
-		sumInterpol( A, B );
-
 	Ftype1< Interpol >::set( gate, "A", A );
 	Ftype1< Interpol >::set( gate, "B", B );
 }

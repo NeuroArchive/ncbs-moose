@@ -253,7 +253,7 @@ Element* Shell::findDest( const string& dest, string& destChildName )
 		string parentName;
 		splitFieldString( dest, parentName, destChildName);
 		if ( destChildName.length() == 0) {
-			error("FindDest::Failed to find dest element ", dest );
+			error("Failed to find dest element ", dest );
 			return 0;
 		}
 		if ( parentName == "" )
@@ -263,7 +263,7 @@ Element* Shell::findDest( const string& dest, string& destChildName )
 	}
 
 	if ( !d ) {
-		error("FindDest::Failed to find dest element ", dest );
+		error("Failed to find dest element ", dest );
 		return 0;
 	}
 
@@ -283,23 +283,8 @@ void Shell::moveFuncLocal( const string& src, const string& dest ) {
 		return;
 	}
 	string newName = "";
-	Element* d;
-	if ( dest.find( "/") == string::npos ) {
-		if ( dest == "." ) {
-			d = checkWorkingElement();
-		} else if ( dest == ".." ) {
-			d = checkWorkingElement()->parent();
-		} else {
-			d = checkWorkingElement();
-			newName = dest;
-		}
-	} else {
-		d = findDest( dest, newName );
-	}
-	if ( !d ) {
-		error( "Move: destination element", dest + "does not exist" );
-		return;
-	}
+	Element* d = findDest( dest, newName );
+	if ( !d ) return;
 	if ( d->descendsFrom( s ) ) {
 		error( "move: cannot move '", 
 			src + "' onto itself, '" + d->path() + "'" );
@@ -418,7 +403,6 @@ void Shell::aliasFuncLocal(
 	Field f;
 	splitField( parser_ + "/alias", f );
 	f.set( origfunc + ", " + newfunc );
-	aliasMap_[ origfunc ] = newfunc;
 }
 
 void Shell::quitFuncLocal(  ) {
@@ -646,31 +630,17 @@ void Shell::commandFuncLocal( int argc, const char** argv )
 {
 	if ( argc == 0 )
 		return;
-
-	string funcname;
-	map< string, string >:: iterator i = aliasMap_.find( argv[ 0 ] );
-	if ( i != aliasMap_.end() )
-		funcname = i->second;
-	else
-		funcname = argv[ 0 ];
-
-	if ( funcname == "simundump" )
+	if ( strcmp ( argv[ 0 ], "simundump" ) == 0 )
 		simundumpFunc( argc, argv );
-	if ( funcname == "simobjdump" )
+	if ( strcmp ( argv[ 0 ], "simobjdump" ) == 0 )
 		simobjdumpFunc( argc, argv );
-	if ( funcname == "loadtab" )
+	if ( strcmp ( argv[ 0 ], "loadtab" ) == 0 )
 		loadtabFunc( argc, argv );
-	if ( funcname == "readcell" )
+	if ( strcmp ( argv[ 0 ], "readcell" ) == 0 )
 		readcellFunc( argc, argv );
-	if ( funcname == "setupalpha" )
-		setupAlphaFunc( argc, argv, 0 );
-	if ( funcname == "setuptau" )
-		setupAlphaFunc( argc, argv, 1 );
-	if ( funcname == "tweakalpha" )
-		tweakFunc( argc, argv, 0 );
-	if ( funcname == "tweaktau" )
-		tweakFunc( argc, argv, 1 );
-	if ( funcname == "addfield" )
+	if ( strcmp ( argv[ 0 ], "setupalpha" ) == 0 )
+		setupAlphaFunc( argc, argv );
+	if ( strcmp ( argv[ 0 ], "addfield" ) == 0 )
 		addFieldFunc( argc, argv );
 }
 
@@ -872,9 +842,7 @@ int Shell::wildcardField( const string& fieldstr, vector< Field >& f )
 	string ename, fname;
 
 	string path;
-	if ( fieldstr[0] == '.' && fieldstr[1] == '/' ) {
-		path = workingElement_ + fieldstr.substr( 1 );
-	} else if ( fieldstr[0] != '/' && fieldstr[0] != '^' ) {
+	if ( fieldstr[0] != '/' && fieldstr[0] != '^' ) {
 		if ( workingElement_ == "/" )
 			path = workingElement_ + fieldstr;
 		else

@@ -794,9 +794,6 @@ void GenesisParserWrapper::loadBuiltinCommands()
 	AddFunc( "loadtab", doShellCommand, "void" );
 	AddFunc( "readcell", doShellCommand, "void" );
 	AddFunc( "setupalpha", doShellCommand, "void" );
-	AddFunc( "setuptau", doShellCommand, "void" );
-	AddFunc( "tweakalpha", doShellCommand, "void" );
-	AddFunc( "tweaktau", doShellCommand, "void" );
 	AddFunc( "addfield", do_addfield, "void" );
 	AddFunc( "complete_loading", do_complete_loading, "void" );
 	AddFunc( "exp", reinterpret_cast< slifunc>( do_exp ), "float" );

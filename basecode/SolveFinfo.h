@@ -16,37 +16,6 @@
 // to and from solvers.
 ///////////////////////////////////////////////////////////////////////
 
-// Break up the solver requirements.
-// First, 
-
-class SolverFinfo: public Finfo
-{
-	public:
-		SolverFinfo( const string& fieldList,  )
-		// ValueLookup is a map of Set/Get functions for each field
-		// name, that use the conn as an argument. Much like the args
-		// for ValueFinfo.
-		// We also need a way to set up messages. These could be spun
-		// off as functor objects that encapsulate ptr info.
-		// We need a way to decide which existing messages need to
-		// be re-handled. Presumably anything ocurring outside the 
-		// ambit of the solved classes.
-	private:
-};
-
-// This is attached to the solved object.
-// Need a part that is statically defined and shared
-// Need a part that handles the specifics.
-// This is the shared part. The local part has Conn info and not
-// much else, see the piggyFinfo below.
-class SolvedFinfo: public Finfo
-{
-	public:
-		SolvedFinfo( const string& fieldList )
-	private:
-		
-};
-
 // Message source that piggybacks onto an existing conn and
 // does dynamic lookup of target functions. Used for very
 // rarely used messages where we would rather not have any

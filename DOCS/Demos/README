@@ -5,8 +5,6 @@ This directory has a set of demos for MOOSE:
 4. Test for Calcium channels and Nernst objects:
 5. Traub 91 demo, CA3.
 6. Traub 91 demo, CA1.
-7. Mitral cell demo
-8. Synaptic channel demo
 
 All outputs are in xplot format, which is a 2-column time, value textfile 
 with separators between sections. If you don't have xplot, just look at the
@@ -75,43 +73,4 @@ output file: ca1.plot
 This uses CA1.p and traub91proto.g, in the original form from the traub91 demo.
 (You may have to hit return again to get it to complete. Parser issue).
 Similar to the CA3 demo. Output is a series of action potentials.
-.............................................................................
 
-7. Mitral cell demo
-moose mit.g
-outputfile: mit.plot
-This uses the file mit.p to set up the model, and moosebulbchan.g to set up
-the channels. moosebulbchan is slightly modified from bulbchan.g, and 
-mit.p is unchanged.
-As a comparison, you can run 
-genesis genmit.g
-to obtain the equivalent run using the GENESIS method. Output is genmit.plot.
-Both the outputs from MOOSE and GENESIS are numerically inaccurate due to
-the use of an explicit solution method with a longish timestep. MOOSE
-is slightly better. The correct answer can
-be seen if you set the hflag in genmit.g to 1. This will run it using the
-hsolver, which gives a more accurate answer and also runs faster.
-You can play with the simulation clock (line 66 in mit.g) to get a more 
-accurate answer from MOOSE.
-.............................................................................
-
-8. Synaptic channel demo
-moose squidSyn.g
-outputfile: squidSyn.plot
-Tests: SynChan, SpikeGen
-This is derived from the squid.g file to set up the basic model. This
-version then adds a passive compartment called 'target' with a synapse
-(a SynChan) on it. The squid axon is then connected to the synapse through
-a SpikeGen. Delays and aboluteRefractoryPeriod are set so that of the
-three action potentions, only the first and last cause a response in
-the target.
-
-Reference simulation:
-cd squidSyn
-genesis Squid
-outputfile: squidSynGenesis.plot
-This is the original squid demo plus the same passive compartment 'target'
-connected with a synapse. The units are different but the outputs are
-nearly identical to the MOOSE version.
-
-.............................................................................

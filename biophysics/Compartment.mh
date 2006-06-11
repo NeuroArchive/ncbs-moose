@@ -111,13 +111,6 @@ class Compartment
 		// Note that here we explicitly indicate messages going out.
 		// If the user has a more complicated structure for their
 		// function, they can rearrange the outgoing calls.
-		// Note that we do not use previousVm_ for axial and raxial
-		// messages. This would have been nice for perfect
-		// backward compatibility, but only makes a modest numerical
-		// difference. It is actually more accurate to use Vm_,
-		// but it is asymmetric and the
-		// results depend on the order of messaging, so we'll leave
-		// the accuracy issues to the solver.
 		single process( ProcInfo info ) {
 			A_ += Inject_ + sumInject_ + Em_ * invRm_;
 			if ( B_ > EPSILON ) {

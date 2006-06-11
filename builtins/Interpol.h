@@ -19,7 +19,6 @@ class Interpol
 			xmax_ = 1.0;
 			mode_ = 1; // Mode 1 is linear interpolation. 0 is indexing.
 			invDx_ = 1.0;
-			sy_ = 1.0;
 			table_.resize( 2, 0.0 );
 		}
 		Interpol( unsigned long xdivs, double xmin, double xmax );
@@ -46,10 +45,6 @@ class Interpol
 		// Later do interpolation etc to preseve contents.
 		void localSetDx( double value );
 		double localGetDx() const;
-		void localSetSy( double value );
-		double localGetSy() const {
-			return sy_;
-		}
 		void setTableValue( double value, int index );
 		double getTableValue( int index ) const;
 		void push_back( double value ) {
@@ -71,9 +66,8 @@ class Interpol
 		double xmin_;
 		double xmax_;
 		int mode_;
-		double invDx_;
-		double sy_;
 		vector < double > table_;
+		double invDx_;
 		static const double EPSILON;
 		static const int MAX_DIVS;
 };

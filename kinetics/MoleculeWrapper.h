@@ -108,6 +108,10 @@ class MoleculeWrapper:
 ///////////////////////////////////////////////////////
 // dest header definitions .                         //
 ///////////////////////////////////////////////////////
+		void reacFuncLocal( double A, double B ) {
+			A_ += A;
+			B_ += B;
+		}
 		static void reacFunc( Conn* c, double A, double B ) {
 			static_cast< MoleculeWrapper* >( c->parent() )->
 				reacFuncLocal( A, B );
@@ -118,6 +122,9 @@ class MoleculeWrapper:
 				reacFuncLocal( A, B );
 		}
 
+		void sumTotalFuncLocal( double n ) {
+			total_ += n;
+		}
 		static void sumTotalFunc( Conn* c, double n ) {
 			static_cast< MoleculeWrapper* >( c->parent() )->
 				sumTotalFuncLocal( n );

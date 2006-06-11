@@ -16,7 +16,7 @@ using namespace std;
 #include "Interpol.h"
 
 Interpol::Interpol( unsigned long xdivs, double xmin, double xmax )
-	: xmin_( xmin ), xmax_( xmax ), sy_( 1.0 )
+	: xmin_( xmin ), xmax_( xmax )
 {
 	table_.resize( xdivs + 1, 0.0 );
 	mode_ = 1; // Mode 1 is linear interpolation. 0 is indexing.
@@ -30,11 +30,9 @@ Interpol::Interpol( unsigned long xdivs, double xmin, double xmax )
 double Interpol::interpolateWithoutCheck( double x ) const
 {
 	double xv = ( x - xmin_ ) * invDx_;
-	// unsigned long i = static_cast< unsigned long >( xv );
-	// return table_[ i ] + ( table_[ i + 1 ] - table_ [ i ] ) * ( xv - i );
-	vector< double >::const_iterator i = table_.begin() + 
-		static_cast< unsigned long >( xv );
-	return *i + ( *( i + 1 ) - *i ) * ( xv - floor( xv ) ); 
+	unsigned long i = static_cast< unsigned long >( xv );
+	return table_[ i ] + ( table_[ i + 1 ] - table_ [ i ] ) *
+		( xv - i );
 }
 
 double Interpol::doLookup( double x ) const
@@ -102,7 +100,7 @@ void Interpol::localSetXdivs( int value ) {
 // Later do interpolation etc to preseve contents.
 // Later also check that it is OK for xmax_ < xmin_
 void Interpol::localSetDx( double value ) {
-	if ( fabs( value ) - EPSILON > 0 ) {
+	if ( fabs( value - EPSILON ) > 0 ) {
 		int xdivs = static_cast< int >( 
 			0.5 + fabs( xmax_ - xmin_ ) / value );
 		if ( xdivs < 1 || xdivs > MAX_DIVS ) {
@@ -117,19 +115,6 @@ void Interpol::localSetDx( double value ) {
 }
 double Interpol::localGetDx() const {
 	return ( xmax_ - xmin_ ) / static_cast< double >( table_.size() - 1 );
-}
-
-void Interpol::localSetSy( double value ) {
-	if ( fabs( value ) - EPSILON > 0 ) {
-		double ratio = value / sy_;
-		vector< double >::iterator i;
-		for ( i = table_.begin(); i != table_.end(); i++) 
-			*i *= ratio;
-		sy_ = value;
-	} else {
-		cerr << "Warning: InterpolWrapper: localSetSy: sy too small:" <<
-			value << "\n";
-	}
 }
 
 void Interpol::setTableValue( double value, int index ) {

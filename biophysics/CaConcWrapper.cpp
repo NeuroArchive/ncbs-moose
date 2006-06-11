@@ -15,9 +15,6 @@ Finfo* CaConcWrapper::fieldArray_[] =
 	new ValueFinfo< double >(
 		"CaBasal", &CaConcWrapper::getCaBasal, 
 		&CaConcWrapper::setCaBasal, "double" ),
-	new ValueFinfo< double >(	// for backward compat
-		"Ca_base", &CaConcWrapper::getCaBasal, 
-		&CaConcWrapper::setCaBasal, "double" ),
 	new ValueFinfo< double >(
 		"tau", &CaConcWrapper::getTau, 
 		&CaConcWrapper::setTau, "double" ),

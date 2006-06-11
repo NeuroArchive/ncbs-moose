@@ -16,7 +16,7 @@
 # optimization settings.
 CFLAGS  =	-g -Wall -pedantic -DDO_UNIT_TESTS -DNO_OFFSETOF
 #CFLAGS  =	-O3 -Wall -pedantic -DNO_OFFSETOF
-#CFLAGS  =	-O3 -pg -Wall -pedantic -DNO_OFFSETOFF
+#CFLAGS  =	-O -pg -Wall -pedantic -DNO_OFFSETOFF
 
 # Use the options below for compiling on GCC4
 # ANSI C++ and hence gcc4 have some strange error messages that emanate

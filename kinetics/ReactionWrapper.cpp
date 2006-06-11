@@ -76,6 +76,13 @@ const Cinfo ReactionWrapper::cinfo_(
 
 void ReactionWrapper::processFuncLocal( ProcInfo info )
 {
+/*
+	if ( info->currTime_ > 1.99 && info->currTime_ < 3.0 ) {
+		cout << name() << "	A=" << A_ << ",	B=" <<
+			B_ << ",	dt=" << info->dt_ << ",	t=" <<
+			info->currTime_ << "\n";
+	}
+*/
 	subSrc_.send( B_, A_ );
 	prdSrc_.send( A_, B_ );
 	A_ = kf_;

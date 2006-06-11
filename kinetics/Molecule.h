@@ -12,15 +12,6 @@ class Molecule
 			mode_ = 0;
 		}
 
-		void reacFuncLocal( double A, double B ) {
-			A_ += A;
-			B_ += B;
-		}
-
-		void sumTotalFuncLocal( double n ) {
-			total_ += n;
-		}
-
 	private:
 		double nInit_;
 		double volumeScale_;
