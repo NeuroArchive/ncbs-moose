@@ -50,7 +50,6 @@ class Mpp
 		void parseOrdinaryCpp();
 		*/
 		void parseInternalMsgs();
-		void parseHeader();
 		void printHeader(const string& s);
 		void printWrapperH(const string& s);
 		void printWrapperCpp(const string& s);
@@ -73,9 +72,6 @@ class Mpp
 		vector<string> sharedString_;
 		vector<string> author_;
 		vector<string> description_;
-
-		vector<string> headerText_;
-		vector<string> includes_;
 
 		vector< Field* > fieldVec_;
 		vector< Src* > srcVec_;

@@ -54,7 +54,6 @@ void Src::parse( vector< Src* >& srcVec,
 				if (i == srcString.end())
 					continue;
 			}
-			temp = checkForVector( temp, *i, j );
 			argtypes.push_back( temp );
 			j = next_token( temp, *i, j );
 			while ( temp != "," && temp != ")" )

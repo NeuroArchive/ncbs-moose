@@ -92,13 +92,13 @@ class HHChannel
 			// Go to each gate, request a steady-state lookup,
 			// restore to original lookup mode.
 			g_ = Gbar_;
-			xGateReinit( Vm, Xpower_, instant & 1 );
-			yGateReinit( Vm, Ypower_, instant & 2 );
+			xGateReinit( Vm );
+			yGateReinit( Vm );
 			useConcentration_ = concenInConn_.nTargets();
 			if ( useConcentration_ )
-				zGateReinit( conc_, Zpower_, instant_ & 4 );
+				zGateReinit( conc_ );
 			else
-				zGateReinit( Vm, Zpower_, instant & 4 );
+				zGateReinit( Vm );
 			Gk_ = g_;
 			channel( Gk_, Ek_ );
 			Ik_ = ( Ek_ - Vm ) * g_;
@@ -118,14 +118,6 @@ class HHChannel
 		single zGate( double Z, double gScale ) {
 			Z_ = Z;
 			g_ *= gScale;
-		}
-
-		single tabFill( int xdivs, int mode ) {
-			// Here we need to provide a dummy conn because we do
-			// not expect a message to call this function.
-			// Later we'll use the solve message src kind of
-			// arrangement to do this economically along with the 
-			// shared messages to the gates.
 		}
 
 	private:

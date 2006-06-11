@@ -198,7 +198,6 @@ map< string, string >& sliClassNameConvert()
 	if ( classnames.size() > 0 )
 		return classnames;
 	
-	classnames[ "neutral" ] = "Neutral";
 	classnames[ "pool" ] = "Molecule";
 	classnames[ "kpool" ] = "Molecule";
 	classnames[ "reac" ] = "Reaction";
@@ -207,27 +206,13 @@ map< string, string >& sliClassNameConvert()
 	classnames[ "kenz" ] = "Enzyme";
 	classnames[ "kchan" ] = "ConcChan";
 	classnames[ "conc_chan" ] = "ConcChan";
-	classnames[ "Ca_concen" ] = "CaConc";
 	classnames[ "compartment" ] = "Compartment";
 	classnames[ "hh_channel" ] = "HHChannel";
-	classnames[ "tabchannel" ] = "HHChannel";
 	classnames[ "vdep_channel" ] = "HHChannel";
 	classnames[ "vdep_gate" ] = "HHGate";
 
 	return classnames;
 }
-
-/*
-map< string, string >& sliFieldNameConvert()
-{
-	static map< string, string > fieldnames;
-
-	if ( fieldnames.size() > 0 )
-		return fieldnames;
-
-	return fieldnames;
-}
-*/
 
 
 string sliMessage( const char* elmName, 
@@ -295,61 +280,30 @@ void do_drop( int argc, const char** argv, Shell* s )
 
 void do_set( int argc, const char** argv, Shell* s )
 {
-	string path;
-	int start = 2;
-	if ( argc < 3 ) {
-		cout << argv[0] << ": Too few command arguments\n";
-		cout << "usage:: " << argv[0] << " [path] field value ...\n";
+	string field;
+	string value;
+	if ( argc == 4 ) {
+		field = string( argv[ 1 ] ) + "/" + argv[ 2 ];
+		value = argv[ 3 ];
+	} else if ( argc == 3 ) {
+		field = argv[ 1 ];
+		value = argv[ 2 ];
+	} else {
+		cout << "usage:: " << argv[0] << " [element] field value\n";
 		return;
 	}
-	if ( argc % 2 == 1 ) { // 'path' is left out, use current object.
-		path = ".";
-		start = 1;
-	} else  {
-		path = argv[ 1 ];
-		start = 2;
-	}
-
-	// Hack here to deal with the special case of filling tables
-	// in tabchannels. Example command looks like:
-	// 		setfield Ca Y_A->table[{i}] {y}
-	// so here we need to do setfield Ca/Y/A->table[{i}] {y}
-	for ( int i = start; i < argc; i += 2 ) {
-		if ( strncmp (argv[ i ] + 1, "_A->", 4) == 0  ||
-			strncmp (argv[ i ] + 1, "_B->", 4) == 0 ) {
-			string fieldname = argv[ i ];
-			fieldname[1] = '/';
-			s->setFuncLocal( path + "/" + fieldname, argv[ i + 1 ] );
-		} else {
-			s->setFuncLocal( path + "/" + argv[ i ], argv[ i + 1 ] );
-		}
-	}
+	s->setFuncLocal( field, value );
 }
 
 void do_call( int argc, const char** argv, Shell* s )
 {
 	if ( argc < 3 ) {
-		cout << "usage:: " << argv[0] << " path field/Action [args...]\n";
+		cout << "usage:: " << argv[0] << " path field [args...]\n";
 		return;
 	}
 	// Ugly hack to avoid LOAD call for notes on kkit dumpfiles
 	if ( strcmp ( argv[2], "LOAD" ) == 0 )
 		return;
-	
-	// Ugly hack to handle the TABCREATE calls, which do not go through
-	// the normal message destination route.
-	if ( strcmp ( argv[2], "TABCREATE" ) == 0 ) {
-		s->tabCreateFunc( argc, argv );
-		return;
-	}
-
-	// Ugly hack to handle the TABFILL call, which need to be redirected
-	// to the two interpols of the HHGates.
-	// Deprecated.
-	if ( strcmp ( argv[2], "TABFILL" ) == 0 ) {
-		s->tabFillFunc( argc, argv );
-		return;
-	}
 	string field;
 	string value = "";
 	field = string( argv[ 1 ] ) + "/" + argv[ 2 ];
@@ -367,22 +321,6 @@ int do_isa( int argc, const char** argv, Shell* s )
 		return s->isaFuncLocal( argv[1], argv[2] );
 	} else {
 		cout << "usage:: " << argv[0] << " type field\n";
-	}
-	return 0;
-}
-
-int do_exists( int argc, const char** argv, Shell* s )
-{
-	if ( argc == 2 ) {
-		string temp = argv[1];
-		temp = temp + "/name";
-		return s->existsFuncLocal( temp );
-	} else if ( argc == 3 ) {
-		string temp = argv[1];
-		temp = temp + "/" + argv[2];
-		return s->existsFuncLocal( temp );
-	} else {
-		cout << "usage:: " << argv[0] << " element [field]\n";
 	}
 	return 0;
 }
@@ -581,12 +519,10 @@ void do_useclock( int argc, const char** argv, Shell* s )
 
 void do_show( int argc, const char** argv, Shell* s )
 {
-	string temp;
 	if ( argc == 2 ) {
-		temp = string( "./" ) + argv[1];
-		s->showFuncLocal( temp );
+		s->showFuncLocal( argv[1] );
 	} else if ( argc == 3 ) {
-		temp = string( argv[ 1 ] ) + "/" + argv[ 2 ];
+		string temp = string( argv[ 1 ] ) + "/" + argv[ 2 ];
 		s->showFuncLocal( temp );
 	} else {
 		cout << "usage:: " << argv[0] << " [element] field\n";
@@ -596,7 +532,7 @@ void do_show( int argc, const char** argv, Shell* s )
 void do_le( int argc, const char** argv, Shell* s )
 {
 	if ( argc == 1 )
-		s->leFuncLocal( "." );
+		s->leFuncLocal( "" );
 	else if ( argc >= 2 )
 		s->leFuncLocal( argv[1] );
 }
@@ -631,28 +567,22 @@ void do_echo( int argc, const char** argv, Shell* s )
 	s->echoFuncLocal( vec, options );
 }
 
-// Old GENESIS Usage: addfield [element] field-name -indirect element field -description text
-// Here we'll have a subset of it:
-// addfield [element] field-name -type field_type
-void do_addfield( int argc, const char** argv, Shell* s )
+void do_simdump( int argc, const char** argv, Shell* s )
 {
-	if ( argc == 2 ) {
-		const char *nargv[] = { argv[0], ".", argv[1] };
-		s->commandFuncLocal( 3, nargv );
-	} else if ( argc == 3 ) {
-		s->commandFuncLocal( argc, argv );
-	} else if ( argc == 4 && strncmp( argv[2], "-f", 2 ) == 0 ) {
-		const char *nargv[] = { argv[0], ".", argv[1], argv[3] };
-		s->commandFuncLocal( 4, nargv );
-	} else if ( argc == 5 && strncmp( argv[3], "-f", 2 ) == 0 ) {
-		const char *nargv[] = { argv[0], argv[1], argv[3], argv[4] };
-		s->commandFuncLocal( 4, nargv );
-	} else {
-		s->error( "usage: addfield [element] field-name -type field_type" );
-	}
+	s->commandFuncLocal( argc, argv );
 }
 
-void doShellCommand ( int argc, const char** argv, Shell* s )
+void do_simundump( int argc, const char** argv, Shell* s )
+{
+	s->commandFuncLocal( argc, argv );
+}
+
+void do_simobjdump( int argc, const char** argv, Shell* s )
+{
+	s->commandFuncLocal( argc, argv );
+}
+
+void do_loadtab( int argc, const char** argv, Shell* s )
 {
 	s->commandFuncLocal( argc, argv );
 }
@@ -764,7 +694,6 @@ void GenesisParserWrapper::loadBuiltinCommands()
 	AddFunc( "getmsg", reinterpret_cast< slifunc >( do_getmsg ), "char*" );
 	AddFunc( "call", do_call, "void" );
 	AddFunc( "isa", reinterpret_cast< slifunc >( do_isa ), "int" );
-	AddFunc( "exists", reinterpret_cast< slifunc >( do_exists ), "int");
 	AddFunc( "showfield", do_show, "void" );
 	AddFunc( "create", do_create, "void" );
 	AddFunc( "delete", do_delete, "void" );
@@ -788,16 +717,10 @@ void GenesisParserWrapper::loadBuiltinCommands()
 	AddFunc( "listcommands", do_listcommands, "void" );
 	AddFunc( "listobjects", do_listobjects, "void" );
 	AddFunc( "echo", do_echo, "void" );
-	AddFunc( "simdump", doShellCommand, "void" );
-	AddFunc( "simundump", doShellCommand, "void" );
-	AddFunc( "simobjdump", doShellCommand, "void" );
-	AddFunc( "loadtab", doShellCommand, "void" );
-	AddFunc( "readcell", doShellCommand, "void" );
-	AddFunc( "setupalpha", doShellCommand, "void" );
-	AddFunc( "setuptau", doShellCommand, "void" );
-	AddFunc( "tweakalpha", doShellCommand, "void" );
-	AddFunc( "tweaktau", doShellCommand, "void" );
-	AddFunc( "addfield", do_addfield, "void" );
+	AddFunc( "simdump", do_simdump, "void" );
+	AddFunc( "simundump", do_simundump, "void" );
+	AddFunc( "simobjdump", do_simobjdump, "void" );
+	AddFunc( "loadtab", do_loadtab, "void" );
 	AddFunc( "complete_loading", do_complete_loading, "void" );
 	AddFunc( "exp", reinterpret_cast< slifunc>( do_exp ), "float" );
 	AddFunc( "log", reinterpret_cast< slifunc>( do_log ), "float" );

@@ -56,8 +56,6 @@ E   ((e|E){S}[0-9]+)
 "//".*			;
 
 <LIT,FUNCLIT>\n		|
-<LIT,FUNCLIT>\r		|
-<LIT,FUNCLIT>"//"\r	|
 <LIT,FUNCLIT>"//"\n	{
 			  if (!continuation)
 			      lexchar('\n');
@@ -68,9 +66,7 @@ E   ((e|E){S}[0-9]+)
 			    }
 			}
 
-\r			|
 \n			|
-"//"\r		|
 "//"\n			{
 			  if (!continuation)
 			      lexchar('\n');
@@ -80,12 +76,11 @@ E   ((e|E){S}[0-9]+)
 
 \\.*			continuation = 1;
 
-\"[^\n"]*	|
-\"[^\r"]*	{
+\"[^\n"]*		{
 			  char	ch;
 
 			  ch = (char)yyinput();
-			  if (ch == '\n' || ch == '\r')
+			  if (ch == '\n')
 			    {
 			      yyerror
 			      ("Missing closing quote in string constant");
@@ -110,12 +105,12 @@ E   ((e|E){S}[0-9]+)
 			  lextoken(DOLLARARG);
 			}
 
-<FUNCLIT>[^ \t\r\n{}(),"$\\]+ { 
+<FUNCLIT>[^ \t\n{}(),"$\\]+ { 
 			  yylval.str = (char *) strdup(yytext);
 			  lextoken(LITERAL);
 			};
 
-<LIT>[^ \t\r\n{}"$;\\]+      { 
+<LIT>[^ \t\n{}"$;\\]+      { 
 			  yylval.str = (char *) strdup(yytext);
 			  lextoken(LITERAL);
 			};

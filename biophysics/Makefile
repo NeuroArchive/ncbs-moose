@@ -18,10 +18,9 @@ OBJ = \
 	CompartmentWrapper.o	\
 	HHChannelWrapper.o	\
 	HHGateWrapper.o	\
+	HHGate2Wrapper.o	\
 	CaConcWrapper.o	\
 	NernstWrapper.o	\
-	SynChanWrapper.o	\
-	SpikeGenWrapper.o	\
 
 HEADERS = \
 	../basecode/header.h \
@@ -49,10 +48,9 @@ $(OBJ)	: $(HEADERS)
 CompartmentWrapper.o: Compartment.h CompartmentWrapper.h
 HHChannelWrapper.o: HHChannel.h HHChannelWrapper.h
 HHGateWrapper.o: HHGate.h HHGateWrapper.h ../builtins/Interpol.h
+HHGate2Wrapper.o: HHGate2.h HHGate2Wrapper.h ../builtins/Interpol.h
 CaConcWrapper.o: CaConc.h CaConcWrapper.h
 NernstWrapper.o: Nernst.h NernstWrapper.h
-SynChanWrapper.o: SynInfo.h SynChan.h SynChanWrapper.h
-SpikeGenWrapper.o: SpikeGen.h SpikeGenWrapper.h
 
 .cpp.o:
 	$(CXX) $(CFLAGS) -I../basecode $< -c

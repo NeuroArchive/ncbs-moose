@@ -15,9 +15,6 @@ Finfo* CaConcWrapper::fieldArray_[] =
 	new ValueFinfo< double >(
 		"CaBasal", &CaConcWrapper::getCaBasal, 
 		&CaConcWrapper::setCaBasal, "double" ),
-	new ValueFinfo< double >(	// for backward compat
-		"Ca_base", &CaConcWrapper::getCaBasal, 
-		&CaConcWrapper::setCaBasal, "double" ),
 	new ValueFinfo< double >(
 		"tau", &CaConcWrapper::getTau, 
 		&CaConcWrapper::setTau, "double" ),
@@ -116,19 +113,3 @@ Element* currentFractionInConnCaConcLookup( const Conn* c )
 	return reinterpret_cast< CaConcWrapper* >( ( unsigned long )c - OFFSET );
 }
 
-///////////////////////////////////////////////////
-// Creation function
-///////////////////////////////////////////////////
-Element* CaConcWrapper::create(
-	const string& name, Element* pa, const Element* proto ) {
-	const CaConcWrapper* p = dynamic_cast<const CaConcWrapper *>(proto);
-	CaConcWrapper* ret = new CaConcWrapper(name);
-	if ( p ) {
-		ret->Ca_ = p->Ca_;
-		ret->CaBasal_ = p->CaBasal_;
-		ret->tau_ = p->tau_;
-		ret->B_ = p->B_;
-	}
-	// if (p)... and so on. 
-	return ret;
-}

@@ -22,15 +22,9 @@ Finfo* InterpolWrapper::fieldArray_[] =
 	new ValueFinfo< int >(
 		"mode", &InterpolWrapper::getMode, 
 		&InterpolWrapper::setMode, "int" ),
-	new ValueFinfo< int >(
-		"calc_mode", &InterpolWrapper::getMode, 
-		&InterpolWrapper::setMode, "int" ),
 	new ValueFinfo< double >(
 		"dx", &InterpolWrapper::getDx, 
 		&InterpolWrapper::setDx, "double" ),
-	new ValueFinfo< double >(
-		"sy", &InterpolWrapper::getSy, 
-		&InterpolWrapper::setSy, "double" ),
 	new ArrayFinfo< double >(
 		"table", &InterpolWrapper::getTable, 
 		&InterpolWrapper::setTable, "double" ),
@@ -46,9 +40,6 @@ Finfo* InterpolWrapper::fieldArray_[] =
 	new Dest1Finfo< double >(
 		"lookupIn", &InterpolWrapper::lookupFunc,
 		&InterpolWrapper::getLookupInConn, "lookupOut" ),
-	new Dest2Finfo< int, int >(
-		"tabFillIn", &InterpolWrapper::tabFillFunc,
-		0, "" ),
 ///////////////////////////////////////////////////////
 // Synapse definitions
 ///////////////////////////////////////////////////////
@@ -116,6 +107,7 @@ Element* lookupInConnInterpolLookup( const Conn* c )
 	return reinterpret_cast< InterpolWrapper* >( ( unsigned long )c - OFFSET );
 }
 
+
 ///////////////////////////////////////////////////
 // Utility function for handling offsets
 ///////////////////////////////////////////////////
@@ -128,51 +120,3 @@ unsigned long InterpolOffset()
 		( unsigned long )( ip ) - ( unsigned long )(&iw);
 	return offset;
 }
-
-/////////////////////////////////////////////////////////////////////
-// Here we set up string conversions
-/////////////////////////////////////////////////////////////////////
-
-template<> string val2str< Interpol >( Interpol val )
-{
-	char line[200];
-	int i;
-	string ret = "Interpol:\nallocated	calc_mode	xdivs	xmin	xmax	dx\n";
-	sprintf( line, "%d		%d		%d	%g	%g	%g\n",
-		1, val.localGetMode(), val.localGetXdivs(), 
-		val.localGetXmin(), val.localGetXmax(), val.localGetDx() );
-	ret += line;
-	for ( i = 0; i < 100 && i < val.localGetXdivs(); i ++ ) {
-		if ( (i % 7) == 0 )
-			sprintf ( line, "[%d]	%.5g", i, val.getTableValue( i ) );
-		else if ( (i % 7) == 6 )
-			sprintf ( line, "	%.5g\n", val.getTableValue( i ) );
-		else 
-			sprintf ( line, "	%.5g", val.getTableValue( i ) );
-		ret += line;
-	}
-	if ( i < val.localGetXdivs() ) {
-		sprintf( line, " ... %d entries not displayed\n", val.localGetXdivs() - i );
-		ret += line;
-	}
-	return ret;
-}
-
-// Does some nifty parsing to assign values in the table.
-// For now only the first of these is implemented
-// - Double: Sets the entire table to a single value
-// - { v1, v2 ... }: Sets the table up using initializer type strings
-// - path: Assigns to the specified table.
-template<> Interpol str2val< Interpol >( const string& s )
-{
-	if ( isdigit( s[0] ) ) {
-		double value = atof( s.c_str() );
-		Interpol A( 0, 0.0, 1.0 );
-		A.setTableValue( value, 0 );
-		return A;
-	}
-	cerr << "Interpol::str2val: Not yet implemented\n";
-	return Interpol();
-}
-
-/////////////////////////////////////////////////////////////////////

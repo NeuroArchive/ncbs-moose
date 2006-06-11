@@ -234,7 +234,13 @@ class HHChannelWrapper:
 // Class creation and info access functions.         //
 ///////////////////////////////////////////////////////
 		static Element* create(
-			const string& name, Element* pa, const Element* proto );
+			const string& name, Element* pa, const Element* proto ) {
+			// Put tests for parent class here
+			// Put proto initialization stuff here
+			// const HHChannel* p = dynamic_cast<const HHChannel *>(proto);
+			// if (p)... and so on. 
+			return new HHChannelWrapper(name);
+		}
 
 		const Cinfo* cinfo() const {
 			return &cinfo_;
@@ -250,9 +256,9 @@ class HHChannelWrapper:
 		SingleMsgSrc3< double, double, double > xGateSrc_;
 		SingleMsgSrc3< double, double, double > yGateSrc_;
 		SingleMsgSrc3< double, double, double > zGateSrc_;
-		SingleMsgSrc3< double, double, int > xGateReinitSrc_;
-		SingleMsgSrc3< double, double, int > yGateReinitSrc_;
-		SingleMsgSrc3< double, double, int > zGateReinitSrc_;
+		SingleMsgSrc1< double > xGateReinitSrc_;
+		SingleMsgSrc1< double > yGateReinitSrc_;
+		SingleMsgSrc1< double > zGateReinitSrc_;
 		UniConn< channelConnHHChannelLookup > channelConn_;
 		UniConn< xGateConnHHChannelLookup > xGateConn_;
 		UniConn< yGateConnHHChannelLookup > yGateConn_;

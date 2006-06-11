@@ -1,28 +1,16 @@
 #ifndef _HHGate_h
 #define _HHGate_h
-/**********************************************************************
-** This program is part of 'MOOSE', the
-** Messaging Object Oriented Simulation Environment,
-** also known as GENESIS 3 base code.
-**           copyright (C) 2003-2005 Upinder S. Bhalla. and NCBS
-** It is made available under the terms of the
-** GNU Lesser General Public License version 2.1
-** See the file COPYING.LIB for the full notice.
-**********************************************************************/
-class HHGate
+/************************************************************************ This program is part of 'MOOSE', the** Messaging Object Oriented Simulation Environment,** also known as GENESIS 3 base code.**           copyright (C) 2003-2005 Upinder S. Bhalla. and NCBS** It is made available under the terms of the** GNU Lesser General Public License version 2.1** See the file COPYING.LIB for the full notice.**********************************************************************/class HHGate
 {
 	friend class HHGateWrapper;
 	public:
 		HHGate()
 		{
-			takePower_ = power0;
-			instant_ = 0;
 		}
 
 	private:
 		double power_;
 		double state_;
-		int instant_;
 		Interpol A_;
 		Interpol B_;
 		double g_;	

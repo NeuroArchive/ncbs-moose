@@ -161,4 +161,4 @@ setfield /squid Inject 0
 step 0.005 -t
 call /##[TYPE=Plot] printIn squid.plot
 setfield /sli_shell isInteractive 1
-//quit
+quit

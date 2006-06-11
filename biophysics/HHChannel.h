@@ -15,15 +15,7 @@ class HHChannel
 	friend class HHChannelWrapper;
 	public:
 		HHChannel()
-			: Gbar_( 0.0 ), Ek_( 0.0 ),
-			Xpower_( 0.0 ), Ypower_( 0.0 ), Zpower_( 0.0 ),
-			surface_( 0.0 ), instant_( 0 ),
-			Gk_( 0.0 ), Ik_( 0.0 ),
-			X_( 0.0 ), Y_( 0.0 ), Z_( 0.0 ),
-			g_( 0.0 ), conc_( 0.0 ),
-			useConcentration_( 0 )
 		{
-			;
 		}
 
 	private:

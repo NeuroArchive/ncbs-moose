@@ -58,16 +58,6 @@ class InterpolWrapper:
 			return static_cast< const InterpolWrapper* >( e )->
 				localGetDx();
 		}
-
-		// Scale the table up and down.
-		static void setSy( Conn* c, double value ) {
-			static_cast< InterpolWrapper* >( c->parent() )->
-				localSetSy( value );
-		}
-		static double getSy( const Element* e ) {
-			return static_cast< const InterpolWrapper* >( e )->
-				localGetSy();
-		}
 		static void setTable(
 			Element* e, unsigned long index, double value );
 		static double getTable(
@@ -89,11 +79,7 @@ class InterpolWrapper:
 			static_cast< InterpolWrapper* >( c->parent() )->
 				lookupFuncLocal( x );
 		}
-		
-		static void tabFillFunc( Conn* c, int xdivs, int mode ) {
-			static_cast< InterpolWrapper* >( c->parent() )->
-				tabFill( xdivs, mode );
-		}
+
 
 ///////////////////////////////////////////////////////
 // Synapse creation and info access functions.       //

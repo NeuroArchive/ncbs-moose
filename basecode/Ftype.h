@@ -120,8 +120,9 @@ template <class T> class Ftype1: public Ftype
 		}
 
 		static bool set( Element* e, const string& fname, T val ) {
+			// Field f = e->field( fname );
+			// return set( e, f.getFinfo(), val );
 			return set( e, Field( e, fname ).getFinfo(), val );
-			// return set( e, e->field( fname ).getFinfo(), val );
 		}
 
 		static bool get( Element* e, Finfo* f, T& ret ) {
@@ -146,7 +147,6 @@ template <class T> class Ftype1: public Ftype
 		static bool get( Element* e, const string& fname, T& ret ) {
 			// Field f = e->field( fname );
 			// return get( e, f.operator->(), ret );
-			// return get( e, e->field( fname ).getFinfo(), ret );
 			return get( e, Field( e, fname ).getFinfo(), ret );
 		}
 
@@ -222,19 +222,12 @@ template <class T1, class T2> class Ftype2: public Ftype
 					reinterpret_cast< void ( * )( Conn*, T1, T2 ) >(
 					f->recvFunc() );
 				if ( func ) {
-					RelayConn c( e, f );
-					// SynConn< int > c( e );
+					SynConn< int > c( e );
 					func( &c, val1, val2 );
 					return 1;
 				}
 			}
 			return 0;
-		}
-
-		static bool set( Element* e, const string& fname, 
-			T1 val1, T2 val2 ) {
-			// return set( e, e->field( fname ).getFinfo(), val1, val2 );
-			return set( e, Field( e, fname ).getFinfo(), val1, val2 );
 		}
 
 		bool strGet( Element* e, Finfo* f, string& val ) const {
@@ -283,20 +276,12 @@ template <class T1, class T2, class T3 > class Ftype3: public Ftype
 					reinterpret_cast< void ( * )( Conn*, T1, T2, T3 ) >(
 					f->recvFunc() );
 				if ( func ) {
-					RelayConn c( e, f );
-					// SynConn< int > c( e );
+					SynConn< int > c( e );
 					func( &c, val1, val2, val3 );
 					return 1;
 				}
 			}
 			return 0;
-		}
-		static bool set( Element* e, const string& fname, 
-			T1 val1, T2 val2, T3 val3 ) {
-			// return set( e, e->field( fname ).getFinfo(), 
-				// val1, val2, val3 );
-			return set( e, Field( e, fname ).getFinfo(), 
-				val1, val2, val3 );
 		}
 
 		bool strGet( Element* e, Finfo* f, string& val ) const {

@@ -33,8 +33,8 @@ function enddump
 	end
 	setclock 2 { CONTROLDT }
 	setclock 3 { PLOTDT }
-	useclock /kinetics/##[TYPE=Molecule],/kinetics/##[TYPE=Table] 0
-	useclock /kinetics/##[TYPE=Reaction],/kinetics/##[TYPE=Enzyme],/kinetics/##[TYPE=ConcChan] 1
+	useclock /kinetics/##[TYPE=Molecule] 0
+	useclock /kinetics/##[TYPE=Reaction],/kinetics/##[TYPE=Enzyme] 1
 	useclock /graphs/##[TYPE=Plot],/moregraphs/##[TYPE=Plot] 3
 end
 
