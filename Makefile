@@ -14,8 +14,8 @@
 
 # Use the options below for compiling on GCC3. Pick your favourite
 # optimization settings.
-CFLAGS  =	-g -Wall -pedantic -DDO_UNIT_TESTS -DNO_OFFSETOF
-#CFLAGS  =	-O3 -Wall -pedantic -DNO_OFFSETOF
+#CFLAGS  =	-g -Wall -pedantic -DDO_UNIT_TESTS -DNO_OFFSETOF
+CFLAGS  =	-O3 -Wall -pedantic -DNO_OFFSETOF
 #CFLAGS  =	-O3 -pg -Wall -pedantic -DNO_OFFSETOFF
 
 # Use the options below for compiling on GCC4

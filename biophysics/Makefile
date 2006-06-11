@@ -20,8 +20,6 @@ OBJ = \
 	HHGateWrapper.o	\
 	CaConcWrapper.o	\
 	NernstWrapper.o	\
-	SynChanWrapper.o	\
-	SpikeGenWrapper.o	\
 
 HEADERS = \
 	../basecode/header.h \
@@ -51,8 +49,6 @@ HHChannelWrapper.o: HHChannel.h HHChannelWrapper.h
 HHGateWrapper.o: HHGate.h HHGateWrapper.h ../builtins/Interpol.h
 CaConcWrapper.o: CaConc.h CaConcWrapper.h
 NernstWrapper.o: Nernst.h NernstWrapper.h
-SynChanWrapper.o: SynInfo.h SynChan.h SynChanWrapper.h
-SpikeGenWrapper.o: SpikeGen.h SpikeGenWrapper.h
 
 .cpp.o:
 	$(CXX) $(CFLAGS) -I../basecode $< -c

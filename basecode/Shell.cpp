@@ -872,9 +872,7 @@ int Shell::wildcardField( const string& fieldstr, vector< Field >& f )
 	string ename, fname;
 
 	string path;
-	if ( fieldstr[0] == '.' && fieldstr[1] == '/' ) {
-		path = workingElement_ + fieldstr.substr( 1 );
-	} else if ( fieldstr[0] != '/' && fieldstr[0] != '^' ) {
+	if ( fieldstr[0] != '/' && fieldstr[0] != '^' ) {
 		if ( workingElement_ == "/" )
 			path = workingElement_ + fieldstr;
 		else

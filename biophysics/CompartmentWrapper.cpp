@@ -204,17 +204,3 @@ Element* randinjectInConnCompartmentLookup( const Conn* c )
 	return reinterpret_cast< CompartmentWrapper* >( ( unsigned long )c - OFFSET );
 }
 
-///////////////////////////////////////////////////
-// Compartment creation
-///////////////////////////////////////////////////
-Element* CompartmentWrapper::create(
-	const string& name, Element* pa, const Element* proto )
-{
-	CompartmentWrapper* ret = new CompartmentWrapper(name);
-	const CompartmentWrapper* p = 
-		dynamic_cast< const CompartmentWrapper* >( proto );
-	if ( p ) {
-		*( static_cast< Compartment* >( ret ) ) = *p;
-	}
-	return ret;
-}
