@@ -208,7 +208,13 @@ class CompartmentWrapper:
 // Class creation and info access functions.         //
 ///////////////////////////////////////////////////////
 		static Element* create(
-			const string& name, Element* pa, const Element* proto );
+			const string& name, Element* pa, const Element* proto ) {
+			// Put tests for parent class here
+			// Put proto initialization stuff here
+			// const Compartment* p = dynamic_cast<const Compartment *>(proto);
+			// if (p)... and so on. 
+			return new CompartmentWrapper(name);
+		}
 
 		const Cinfo* cinfo() const {
 			return &cinfo_;

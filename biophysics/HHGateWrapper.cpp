@@ -6,10 +6,6 @@
 #include "HHGateWrapper.h"
 
 
-static Conn* getDummyConn( Element* e ) {
-	return Finfo::dummyConn();
-}
-
 Finfo* HHGateWrapper::fieldArray_[] =
 {
 ///////////////////////////////////////////////////////
@@ -21,9 +17,6 @@ Finfo* HHGateWrapper::fieldArray_[] =
 	new ValueFinfo< double >(
 		"state", &HHGateWrapper::getState, 
 		&HHGateWrapper::setState, "double" ),
-	new ValueFinfo< int >(
-		"instant", &HHGateWrapper::getInstant, 
-		&HHGateWrapper::setInstant, "int" ),
 	new ObjFinfo< Interpol >(
 		"A", &HHGateWrapper::getA,
 		&HHGateWrapper::setA, &HHGateWrapper::lookupA, "Interpol"),
@@ -33,23 +26,18 @@ Finfo* HHGateWrapper::fieldArray_[] =
 ///////////////////////////////////////////////////////
 // MsgSrc definitions
 ///////////////////////////////////////////////////////
-	new Return2Finfo< double, double >(
-		"gateOut", &HHGateWrapper::getGateMultiReturnConn, 
-		"gateIn, reinitIn", 1 ),
+	new SingleSrc2Finfo< double, double >(
+		"gateOut", &HHGateWrapper::getGateSrc, 
+		"gateIn", 1 ),
 ///////////////////////////////////////////////////////
 // MsgDest definitions
 ///////////////////////////////////////////////////////
 	new Dest3Finfo< double, double, double >(
 		"gateIn", &HHGateWrapper::gateFunc,
 		&HHGateWrapper::getGateConn, "gateOut", 1 ),
-	new Dest3Finfo< double, double, int >(
+	new Dest1Finfo< double >(
 		"reinitIn", &HHGateWrapper::reinitFunc,
-		&HHGateWrapper::getGateConn, "gateOut", 1 ),
-	// This is needed because the redirection for ObjFinfo does not
-	// work for msgdests. Yet.
-	new Dest2Finfo< int, int >(
-		"tabFillIn", &HHGateWrapper::tabFillFunc,
-		&getDummyConn, "" ),
+		&HHGateWrapper::getGateConn, "", 1 ),
 ///////////////////////////////////////////////////////
 // Synapse definitions
 ///////////////////////////////////////////////////////
@@ -80,49 +68,69 @@ const Cinfo HHGateWrapper::cinfo_(
 // Dest function definitions
 ///////////////////////////////////////////////////
 
-void HHGateWrapper::gateFuncLocal( Conn* c, 
-	double v, double state, double dt )
+void HHGateWrapper::gateFuncLocal( double v, double state, double dt )
 {
-	ReturnConn* rc = static_cast< ReturnConn* >( c );
-	if ( instant_ ) {
-		state = A_.doLookup( v ) / B_.doLookup( v );
-	} else {
-		double y = B_.doLookup( v );
-		double x = exp( -y * dt );
-		state = state * x + ( A_.doLookup( v ) / y ) * ( 1 - x );
-	// This ugly construction returns the info back to sender.
-	}
-	reinterpret_cast< void ( * )( Conn*, double, double ) >(
-		rc->recvFunc() )
-		( rc->rawTarget(), state, takePower_( state ) );
+			double y = B_.doLookup( v );
+			double x = exp( -y * dt );
+			state = state * x + ( A_.doLookup( v ) / y ) * ( 1 - x );
+			gateSrc_.send( state, takePower_( state ) );
 }
-
-void HHGateWrapper::reinitFuncLocal( Conn* c, double Vm, double power,
-	int instant )
+void HHGateWrapper::reinitFuncLocal( double Vm )
 {
-	power_ = power;
-	instant_ = ( instant != 0 );
-	ReturnConn* rc = static_cast< ReturnConn* >( c );
-	if ( power_ == 0.0 )
-		takePower_ = power0;
-	else if ( power_ == 1.0 )
-		takePower_ = power1;
-	else if ( power_ == 2.0 )
-		takePower_ = power2;
-	else if ( power_ == 3.0 )
-		takePower_ = power3;
-	else if ( power_ == 4.0 )
-		takePower_ = power4;
-	else
-		takePower_ = power0;
+			if ( power_ == 0.0 )
+				takePower_ = power0;
+			else if ( power_ == 1.0 )
+				takePower_ = power1;
+			else if ( power_ == 2.0 )
+				takePower_ = power2;
+			else if ( power_ == 3.0 )
+				takePower_ = power3;
+			else if ( power_ == 4.0 )
+				takePower_ = power4;
 	double x = A_.doLookup( Vm );
 	double y = B_.doLookup( Vm );
 	double z = x / y;
-	//gateSrc_.send( z, takePower_( z ) );
-	reinterpret_cast< void ( * )( Conn*, double, double ) >(
-		rc->recvFunc() )
-		( rc->rawTarget(), z, takePower_( z ) );
+	gateSrc_.send( z, takePower_( z ) );
+//	test();
 }
 ///////////////////////////////////////////////////
 // Connection function definitions
 ///////////////////////////////////////////////////
+Element* gateConnHHGateLookup( const Conn* c )
+{
+	static const unsigned long OFFSET =
+		FIELD_OFFSET ( HHGateWrapper, gateConn_ );
+	return reinterpret_cast< HHGateWrapper* >( ( unsigned long )c - OFFSET );
+}
+
+//////////////////////////////////////////////////////////////////
+// Testing
+//////////////////////////////////////////////////////////////////
+
+/*
+void HHGateWrapper::test()
+{
+	double dx = A_.localGetDx();
+	double xmin = A_.localGetXmin();
+	double xmax = A_.localGetXmax();
+	double x = xmin - ( xmax - xmin ) / 3.0;
+	int i;
+
+	//double finalX = xmax + (xmax - xmin ) / 3.0;
+	dx *= 1.6;
+	cout << "/newplot\n";
+	cout << "/plotname " << name() << ".A\n";
+	for (i = 0; i <= A_.localGetXdivs(); i++) {
+		cout << x << "	" << A_.doLookup( x ) << "\n";
+		x += dx;
+	}
+
+	cout << "/newplot\n";
+	cout << "/plotname " << name() << ".B\n";
+	x = xmin - ( xmax - xmin ) / 3.0;
+	for (i = 0; i <= B_.localGetXdivs(); i++) {
+		cout << x << "	" << B_.doLookup( x ) << "\n";
+		x += dx;
+	}
+}
+*/

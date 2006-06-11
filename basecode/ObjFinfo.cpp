@@ -56,29 +56,20 @@ T value( const Element* e ) const {
 }
 */
 
-Field matchObjFinfo(const string& objName, const string& name, 
+Field matchObjFinfo(const string& s, const string& name, 
 	const Cinfo* cinfo,
 	Element* (*lookup)(Element *, unsigned long)
 	)
 {
-	// The separators should really be language specific. I don't
-	// have a good way to do this as yet, so I replace -> with . below.
-	static const string OLDSEPARATOR = "->";
-	static const string DOTSEPARATOR = ".";
+	static const char SEPARATOR = '.';
 
 	// must accommodate separator + subfield name
-	if ( objName.substr( 0, name.length() ) == name ) {
-		string s = objName;
-		size_t pos = s.find( OLDSEPARATOR );
-		if ( pos != string::npos )
-			s.replace( pos, OLDSEPARATOR.length(), DOTSEPARATOR );
-		
-		if ( s.length() <= name.length() + DOTSEPARATOR.length() ) {
-		// too short to work
+	if ( s.substr( 0, name.length() ) == name ) {
+		if ( s.length() <= name.length() + 1 ) { // too short to work
 			return Field();
 		}
 		long index = 0;
-		pos = name.length();
+		size_t pos = name.length();
 		if ( s[ pos ] == '[' ) {
 			index = atol( s.substr( name.length() + 1 ).c_str() );
 			if ( index < 0 ) {
@@ -86,8 +77,7 @@ Field matchObjFinfo(const string& objName, const string& name,
 					s << "\n";
 					return Field();
 			}
-			size_t max = s.length() - ( DOTSEPARATOR.length() + 2 );
-			// max should be long enough to hold ']DOTSEPARATORfield'
+			size_t max = s.length() - 3; // ],SEPARATOR, field
 			while ( s[ pos ] != ']' ) {
 				if ( ++pos >= max ) {
 					cerr << "Error:ObjFinfo::match: no closing ] in " <<
@@ -97,8 +87,7 @@ Field matchObjFinfo(const string& objName, const string& name,
 			}
 			pos++;
 		}
-		// if ( s[ pos ] == SEPARATOR )
-		if ( s.substr(pos).find( DOTSEPARATOR ) == 0 ) {
+		if ( s[ pos ] == SEPARATOR ) {
 			string fieldName = s.substr( name.length() + 1 );
 			Field field = cinfo->field( fieldName );
 			if ( field.good() ) {

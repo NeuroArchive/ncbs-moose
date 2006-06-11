@@ -117,24 +117,19 @@ void ConcChanWrapper::reinitFuncLocal(  )
 			if ( influxConn_.nTargets() > 0 )
 				Ftype1< double >::get( 
 					influxConn_.target( 0 )->parent(), "volumeScale",
-					outVolumeScale_ );
+					inVolumeScale_ );
 			if ( effluxConn_.nTargets() > 0 )
 				Ftype1< double >::get( 
 					effluxConn_.target( 0 )->parent(), "volumeScale",
-					inVolumeScale_ );
-			if ( outVolumeScale_ <= 0.0 )
-				outVolumeScale_ = 1.0;
-			if ( inVolumeScale_ <= 0.0 )
-				inVolumeScale_ = 1.0;
+					outVolumeScale_ );
 			A_ = B_ = 0.0;
 			nernstScale_ = R * temperature_ / ( F * valence_ );
 }
-// A is for influx, B is for efflux.
 void ConcChanWrapper::processFuncLocal( ProcInfo info )
 {
 			if ( valence_ == 0 ) {
-				A_ *= n_ * permeability_ / outVolumeScale_;
-				B_ *= n_ * permeability_ / inVolumeScale_;
+				A_ *= n_ * permeability_ * inVolumeScale_;
+				B_ *= n_ * permeability_ * outVolumeScale_;
 			influxSrc_.send( B_, A_ );
 			effluxSrc_.send( A_, B_ );
 				A_ = B_ = 0.0;
@@ -143,8 +138,8 @@ void ConcChanWrapper::processFuncLocal( ProcInfo info )
 					( A_ * inVolumeScale_ ) );
 				A_ = ( ENernst_ - Vm_ ) * n_ * permeability_ * valence_;
 				B_ = 0.0;
-			influxSrc_.send( A_, B_ );
-			effluxSrc_.send( B_, A_ );
+			influxSrc_.send( B_, A_ );
+			effluxSrc_.send( A_, B_ );
 				A_ = 1.0; 
 			}
 }

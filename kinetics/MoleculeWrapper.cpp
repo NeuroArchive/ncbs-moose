@@ -32,9 +32,8 @@ Finfo* MoleculeWrapper::fieldArray_[] =
 		"slaveEnable", &MoleculeWrapper::getSlaveEnable, 
 		&MoleculeWrapper::setSlaveEnable, "int" ),
 		// mode 0 is normal
-		// mode 1 is sumtotalled. It is checked at reinit.
-		// mode 2 is sumtotalled to conc. It is checked at reinit.
-		// mode 3 or more is buffered.
+		// mode 1 is sumtotalled. It is set automatically at reinit.
+		// mode 2 or more is buffered.
 ///////////////////////////////////////////////////////
 // MsgSrc definitions
 ///////////////////////////////////////////////////////
@@ -104,8 +103,7 @@ void MoleculeWrapper::reinitFuncLocal(  )
 	n_ = nInit_;
 	if ( mode_ == 0 && sumTotalInConn_.nTargets() > 0 )
 		mode_ = 1;
-	else if ( (mode_ == 1 || mode_ == 1) && 	
-		sumTotalInConn_.nTargets() == 0 )
+	else if ( mode_ == 1 && sumTotalInConn_.nTargets() == 0 )
 		mode_ = 0;
 	reacSrc_.send( n_ );
 	nSrc_.send( n_ );
@@ -128,13 +126,7 @@ void MoleculeWrapper::processFuncLocal( ProcInfo info )
 		// old GENESIS version.
 		n_ = total_;
 		total_ = 0.0;
-	} else if ( mode_ == 2 ) {
-		// Hack to do sumtotals while we do not have a separate
-		// process set up to do so. Roughly equivalent to 
-		// old GENESIS version.
-		n_ = total_ * volumeScale_;
-		total_ = 0.0;
-	} else { // buffering
+	} else if ( mode_ >= 2 ) {
 		n_ = nInit_;
 	}
 	reacSrc_.send( n_ );

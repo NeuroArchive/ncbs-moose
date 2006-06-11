@@ -12,10 +12,8 @@ class Molecule
 		double volumeScale = 1.0;
 		double n = 0.0;
 		double conc;
-		int mode = 0;		// 0=normal, 1 = n sumtot, 2 = conc sumtot,
-							// > 2 is buffered
-		int slave_enable = 0; // 0=normal, 1 = n sumtot, 
-							// 2 = conc sumtot, > 2 is buffered
+		int mode = 0;		// 0=normal, 1 = sumtot, >=2 is buffered
+		int slave_enable = 0; // 0=normal, 1,2=sumtot, >2 is buffered
 		/*
 		double molWeight;
 		double D;

@@ -187,20 +187,13 @@ template <class T> class ReadOnlyValueFinfo: public ValueFinfo<T>
 		// All other cases, especially the request to assign a field,
 		// are blocked.
 		Finfo* respondToAdd( Element* e, const Finfo* sender ) {
-			if ( sender->isSameType( this ) ) { // illegal
-				cerr << "ReadOnlyValueFinfo::respondToAdd Warning: attempt to make assignment message.\nDenied\n";
-				return 0;
-			}
-			return ValueFinfo< T >::respondToAdd( e, sender );
-			/*
 			static Ftype0 f0;
-			// Field temp( this, e );
+			Field temp( this, e );
 			if ( sender->isSameType( &f0 ) ) {
 				return obtainValueRelay(
 					&newValueRelayFinfo< T >, this, e, 1 );
 			}
 			return 0;
-			*/
 		}
 };
 

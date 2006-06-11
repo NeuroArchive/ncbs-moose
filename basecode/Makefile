@@ -35,7 +35,6 @@ OBJ = \
 	Neutral.o	\
 	Shell.o	\
 	ShellWrapper.o	\
-	ReadCell.o	\
 	Wildcard.o	\
 	TestBasecode.o \
 
@@ -71,7 +70,6 @@ Cinfo.o: CinfoWrapper.h
 CinfoWrapper.o: CinfoWrapper.h
 Shell.o:  Shell.h
 ShellWrapper.o:	Shell.h ShellWrapper.h
-ReadCell.o:	Shell.h ShellWrapper.h ../builtins/Interpol.h
 TestBasecode.o:	Shell.h ShellWrapper.h
 
 .cpp.o:

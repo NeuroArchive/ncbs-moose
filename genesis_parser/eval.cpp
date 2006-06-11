@@ -842,7 +842,6 @@ static Result intop(int arg1, int op, int arg2)
 
 	Result	r;
 	char    buf[1000];
-	r.r_type = INT;
 
 	switch (op)
 	  {
@@ -900,7 +899,6 @@ static Result floatop(double arg1, int op, double arg2)
 
 	Result	r;
 	char    buf[1000];
-	r.r_type = FLOAT;
 
 	switch (op)
 	  {

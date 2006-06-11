@@ -184,54 +184,6 @@ int next_token(string& ret, const string& s, int i)
 	return i + j + k;
 }
 
-// Looks for arguments of the form:
-// single solve( vector< double >* y, vector< double >* yPrime );
-// This function returns the string 
-// vector< double >*
-// as the type information. Other template classes are allowed too.
-// The temp string should be:
-// 	vector
-// j should be the position of the angle bracket <
-// When it returns j should point to the comma after the first y.
-// Should handle nested braces and the like.
-
-const string checkForVector( const string& temp, 
-	const string& line, unsigned int& j )
-{
-	if (temp.length() == 0) {
-		cerr << "Error: failed to parse line '" << line << "'\n";
-		return "";
-	}
-	if ( temp[ temp.length() - 1 ] == '<' || line[j] == '<' ) {
-		int nBraces = 0;
-		if ( temp[ temp.length() - 1 ] == '<' )
-			nBraces = 1;
-		for (unsigned int i = j ; i < line.length(); i++) {
-			if ( line[i] == '<' )
-				nBraces++;
-			if ( line[i] == '>' )
-				nBraces--;
-			if ( nBraces == 0 ) {
-				// Now clear up any dangling pointers or references
-				i++;
-				while( i < line.length() && 
-					(line[i] == ' ' || line[i] == '&' || line[i] == '*')
-				)
-					i++;
-				string ret = temp + line.substr( j, i - j );
-				j = i;
-				return ret;
-			}	
-		}
-		// If it gets here, something is wrong.
-		cerr << "Error: failed to parse line '" << line << "'\n";
-		cerr << "Possibly a problem with handling template braces\n";
-	}
-	// If it is not a template, just return the original temp string
-	// and nothing changes.
-	return temp;
-}
-
 // Prints a bunch of strings which may have leading whitespace, into
 // a single multiline string
 void printQuotedText( ofstream& fout, vector< string >& s )
@@ -253,7 +205,6 @@ void printQuotedText( ofstream& fout, vector< string >& s )
 
 void Mpp::parse() 
 {
-	parseHeader();
 	vector<string>::iterator i;
 	string ret;
 	int j = 0;
@@ -316,18 +267,6 @@ void Mpp::parseInternalMsgs()
 	}
 }
 
-void Mpp::parseHeader( )
-{
-	vector< string >::iterator i;
-	for (i = startstuff_.begin() + 1; i < startstuff_.end(); i++ ) {
-		if ( i->find( "#include" ) == 0 ) {
-			includes_.push_back( *i );
-		} else {
-			headerText_.push_back( *i );
-		}
-	}
-}
-
 void Mpp::printHeader( const string& name )
 {
 	ofstream fout( (name + ".h").c_str(), ios::out );
@@ -338,12 +277,12 @@ void Mpp::printHeader( const string& name )
 
 	// fout << copyleft;
 
-	for ( j = 0; j < headerText_.size(); j++ )
-		fout << headerText_[ j ] << "\n";
-
 	fout << "#ifndef _" << className_ << "_h\n";
 	fout << "#define _" << className_ << "_h\n";
 	
+	for ( j = 0; j < startstuff_.size(); j++ )
+		fout << startstuff_[ j ];
+
 	fout << pub_[0] << '\n';
 	fout << pub_[1] << '\n';
 	fout << "	friend class " << className_ << "Wrapper;\n";
@@ -374,9 +313,6 @@ void Mpp::printWrapperH(const string& name)
 	string fname = name + "Wrapper.h";
 	ofstream fout( fname.c_str(), ios::out );
 	unsigned long i;
-
-	for ( i = 0; i < headerText_.size(); i++ )
-		fout << headerText_[ i ] << "\n";
 
 	// fout << copyleft;
 	fout << "#ifndef _" << className_ << "Wrapper_h\n";
@@ -482,18 +418,10 @@ void Mpp::printWrapperCpp(const string& name)
 	string funcname = name + "Wrapper.cpp";
 	ofstream fout( funcname.c_str(), ios::out );
 
-	unsigned long i;
-
-	for ( i = 0; i < headerText_.size(); i++ )
-		fout << headerText_[ i ] << "\n";
-
+	// fout << copyleft;
 	fout << "#include \"header.h\"\n";
 //	fout << "typedef double ProcArg;\n";
 //	fout << "typedef int  SynInfo;\n";
-
-	for ( i = 0; i < includes_.size(); i++ )
-		fout << includes_[ i ] << "\n";
-
 	fout << "#include \"" << className_ << ".h\"\n";
 	fout << "#include \"" << className_ << "Wrapper.h\"\n\n";
 
@@ -753,53 +681,4 @@ void runTest()
 
 	// Still need to do: Internal Msgs
 	cout << "\nPassed Dest parsing\n";
-// const string checkForVector( const string& temp, 
-// 	const string& line, unsigned int& j )
-	cout << "Testing template argument parsing: ";
-	string line = "single solve( vector< double >* y, vector < int > & yPrime );";
-	string temp = "vector<";
-	unsigned int j = line.find( "double" );
-	temp = checkForVector( temp, line, j );
-	ASSERT( temp == "vector<double >* " && j == line.find( "y" ),
-		"test1: Single template parsing" );
-	temp = "vector";
-	j = line.find( "< int" );
-	temp = checkForVector( temp, line, j );
-	ASSERT( temp == "vector< int > & " && j == line.find( "yPrime" ),
-		"test2: Second template argument parsing" );
-
-	line = "single solve( map < double, int* >* y );";
-	j = line.find( "< double" );
-	temp = "map";
-	temp = checkForVector( temp, line, j );
-	ASSERT( temp == "map< double, int* >* " && j == line.find( "y"),
-		"test3: map template parsing" );
-
-	line = "single solve( map< string, vector< int >* >* y );";
-	j = line.find( "string" );
-	temp = "map<";
-	temp = checkForVector( temp, line, j );
-	ASSERT( temp == "map<string, vector< int >* >* " && j == line.find( "y" ),
-		"test4: map nested template parsing" );
-
-	// Test 4: 1 arg message destination with 3 outgoing msgs.
-	srcString.resize( 0 );
-	srcString.push_back( "single solve( vector< double >* y, vector< double >* yPrime );" );
-	destString.resize( 0 );
-	destString.push_back( "single solve( vector< double >* y, double t, double dt );" );
-	Dest::parse( mh.destVec_, mh.connVec_, mh.srcVec_, destString );
-	ASSERT( mh.destVec_.size() == 8, "test5: MsgDest generation");
-	ASSERT( mh.destVec_[7]->type_ == "single", "test5: type");
-	ASSERT( mh.destVec_[7]->name_ == "solve", "test5: naming");
-	ASSERT( mh.destVec_[7]->connName_ == "solveInConn", "test4: conn");
-	ASSERT( mh.destVec_[7]->argtypes_.size() == 3, "test5: nargs");
-	ASSERT( mh.destVec_[7]->argnames_.size() == 3, "test5: nargs");
-	ASSERT( mh.destVec_[7]->argtypes_[0] == "vector< double >* ", "test5: argtype0");
-	ASSERT( mh.destVec_[7]->argnames_[0] == "y", "test5: argname0");
-	ASSERT( mh.destVec_[7]->argtypes_[1] == "double", "test5: argtype1");
-	ASSERT( mh.destVec_[7]->argnames_[1] == "t", "test5: argname1");
-	ASSERT( mh.destVec_[7]->argtypes_[2] == "double", "test5: argtype2");
-	ASSERT( mh.destVec_[7]->argnames_[2] == "dt", "test5: argname2");
-
-	cout << "\nPassed Template argument parsing\n";
 }

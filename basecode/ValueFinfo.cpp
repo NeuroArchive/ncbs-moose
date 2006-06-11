@@ -97,7 +97,7 @@ Finfo* valueFinfoRespondToAdd(
 		// Look for a relay sending out a value message
 		rf = e->findVacantValueRelay( vf, 1 );
 		if ( !rf ) {
-			// Field temp( vf, e );
+			Field temp( vf, e );
 			rf = createValueRelayFinfo( temp );
 			e->appendRelay( rf );
 		}
@@ -121,14 +121,14 @@ Finfo* valueFinfoRespondToAdd(
 
 Finfo* obtainValueRelay( 
 	Finfo *( *createValueRelayFinfo )( Field& ),
-	Finfo* f, Element* e, bool isSending )
+	Finfo* f, Element* e, bool useSharedConn )
 {
-	Finfo* rf = e->findVacantValueRelay( f, isSending );
+	Finfo* rf = e->findVacantValueRelay( f, useSharedConn );
 	if ( !rf ) {
 		Field temp( f, e );
 		rf = createValueRelayFinfo( temp );
 		if ( rf )
-			e->appendRelay( rf );
+			temp.appendRelay( rf );
 	}
 	return rf;
 }

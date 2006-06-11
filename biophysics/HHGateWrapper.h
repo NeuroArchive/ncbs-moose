@@ -1,12 +1,15 @@
 #ifndef _HHGateWrapper_h
 #define _HHGateWrapper_h
-class HHGateWrapper: public HHGate, public Neutral
+class HHGateWrapper: 
+	public HHGate, public Neutral
 {
+	friend Element* gateConnHHGateLookup( const Conn* );
     public:
 		HHGateWrapper(const string& n)
 		:
 			Neutral( n ),
-			gateConn_( this )
+			gateSrc_( &gateConn_ )
+			// gateConn uses a templated lookup function
 		{
 			;
 		}
@@ -26,14 +29,6 @@ class HHGateWrapper: public HHGate, public Neutral
 		static double getState( const Element* e ) {
 			return static_cast< const HHGateWrapper* >( e )->state_;
 		}
-
-		static void setInstant( Conn* c, int value ) {
-			static_cast< HHGateWrapper* >( c->parent() )->instant_ = value;
-		}
-		static int getInstant( const Element* e ) {
-			return static_cast< const HHGateWrapper* >( e )->instant_;
-		}
-
 		static void setA( Conn* c, Interpol value ) {
 			static_cast< HHGateWrapper* >( c->parent() )->A_ = value;
 		}
@@ -84,31 +79,23 @@ class HHGateWrapper: public HHGate, public Neutral
 ///////////////////////////////////////////////////////
 // Msgsrc header definitions .                       //
 ///////////////////////////////////////////////////////
+		static SingleMsgSrc* getGateSrc( Element* e ) {
+			return &( static_cast< HHGateWrapper* >( e )->gateSrc_ );
+		}
+
 ///////////////////////////////////////////////////////
 // dest header definitions .                         //
 ///////////////////////////////////////////////////////
-		void gateFuncLocal( Conn* c, double v, double state, double dt);
-
+		void gateFuncLocal( double v, double state, double dt );
 		static void gateFunc( Conn* c, double v, double state, double dt ) {
 			static_cast< HHGateWrapper* >( c->parent() )->
-				gateFuncLocal( c, v, state, dt );
+				gateFuncLocal( v, state, dt );
 		}
 
-		void reinitFuncLocal( Conn* c, double Vm, double power,
-			int instant );
-		static void reinitFunc( Conn* c, double Vm, double power,
-			int instant ) {
+		void reinitFuncLocal( double Vm );
+		static void reinitFunc( Conn* c, double Vm ) {
 			static_cast< HHGateWrapper* >( c->parent() )->
-				reinitFuncLocal( c, Vm, power, instant );
-		}
-
-		void tabFillFuncLocal( Conn* c, int xdivs, int mode ) {
-			A_.tabFill( xdivs, mode );
-			B_.tabFill( xdivs, mode );
-		}
-		static void tabFillFunc( Conn* c, int xdivs, int mode ) {
-			static_cast< HHGateWrapper* >( c->parent() )->
-				tabFillFuncLocal( c, xdivs, mode );
+				reinitFuncLocal( Vm );
 		}
 
 
@@ -120,9 +107,6 @@ class HHGateWrapper: public HHGate, public Neutral
 // Conn access functions.                            //
 ///////////////////////////////////////////////////////
 		static Conn* getGateConn( Element* e ) {
-			return &( static_cast< HHGateWrapper* >( e )->gateConn_ );
-		}
-		static MultiReturnConn* getGateMultiReturnConn( Element* e ) {
 			return &( static_cast< HHGateWrapper* >( e )->gateConn_ );
 		}
 
@@ -147,7 +131,8 @@ class HHGateWrapper: public HHGate, public Neutral
 ///////////////////////////////////////////////////////
 // MsgSrc template definitions.                      //
 ///////////////////////////////////////////////////////
-		MultiReturnConn gateConn_;
+		SingleMsgSrc2< double, double > gateSrc_;
+		UniConn< gateConnHHGateLookup > gateConn_;
 
 ///////////////////////////////////////////////////////
 // Synapse definition.                               //

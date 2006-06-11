@@ -47,7 +47,7 @@ Finfo* HHChannelWrapper::fieldArray_[] =
 		"channelIn", 1 ),
 	new SingleSrc1Finfo< double >(
 		"IkOut", &HHChannelWrapper::getIkSrc, 
-		"channelIn" ),
+		"" ),
 	new SingleSrc3Finfo< double, double, double >(
 		"xGateOut", &HHChannelWrapper::getXGateSrc, 
 		"channelIn", 1 ),
@@ -57,13 +57,13 @@ Finfo* HHChannelWrapper::fieldArray_[] =
 	new SingleSrc3Finfo< double, double, double >(
 		"zGateOut", &HHChannelWrapper::getZGateSrc, 
 		"channelIn", 1 ),
-	new SingleSrc3Finfo< double, double, int >(
+	new SingleSrc1Finfo< double >(
 		"xGateReinitOut", &HHChannelWrapper::getXGateReinitSrc, 
 		"reinitIn", 1 ),
-	new SingleSrc3Finfo< double, double, int >(
+	new SingleSrc1Finfo< double >(
 		"yGateReinitOut", &HHChannelWrapper::getYGateReinitSrc, 
 		"reinitIn", 1 ),
-	new SingleSrc3Finfo< double, double, int >(
+	new SingleSrc1Finfo< double >(
 		"zGateReinitOut", &HHChannelWrapper::getZGateReinitSrc, 
 		"reinitIn", 1 ),
 ///////////////////////////////////////////////////////
@@ -146,33 +146,18 @@ void HHChannelWrapper::channelFuncLocal( double Vm, ProcInfo info )
 	Gk_ = g_;
 	channelSrc_.send( Gk_, Ek_ );
 	Ik_ = ( Ek_ - Vm ) * g_;
-	IkSrc_.send( Ik_ );
 	g_ = 0.0;
 }
-
 void HHChannelWrapper::reinitFuncLocal( double Vm )
 {
 	g_ = Gbar_;
-	// Should find a way to do this using piggyback messages.
-	/*
-	if ( xGateConn_->nTargets() > 0 )
-		Ftype1< double >::set(
-			xGateconn_->target( 0 )->parent(),  "power", Xpower_ );
-	if ( yGateConn_->nTargets() > 0 )
-		Ftype1< double >::set(
-			yGateconn_->target( 0 )->parent(),  "power", Ypower_ );
-	if ( zGateConn_->nTargets() > 0 )
-		Ftype1< double >::set(
-			zGateconn_->target( 0 )->parent(),  "power", Zpower_ );
-	*/
-		
-	xGateReinitSrc_.send( Vm, Xpower_, ( instant_ & 1 ) );
-	yGateReinitSrc_.send( Vm, Ypower_, ( instant_ & 2 ) );
+	xGateReinitSrc_.send( Vm );
+	yGateReinitSrc_.send( Vm );
 	useConcentration_ = concenInConn_.nTargets();
 	if ( useConcentration_ )
-		zGateReinitSrc_.send( conc_, Zpower_, (instant_ & 4 ) );
+		zGateReinitSrc_.send( conc_ );
 	else
-		zGateReinitSrc_.send( Vm, Zpower_, (instant_ & 4 ) );
+		zGateReinitSrc_.send( Vm );
 	Gk_ = g_;
 	channelSrc_.send( Gk_, Ek_ );
 	Ik_ = ( Ek_ - Vm ) * g_;
@@ -244,45 +229,3 @@ Element* reinitInConnHHChannelLookup( const Conn* c )
 	return reinterpret_cast< HHChannelWrapper* >( ( unsigned long )c - OFFSET );
 }
 
-///////////////////////////////////////////////////
-// Create function.
-///////////////////////////////////////////////////
-
-// Note that we are not creating the gates, just adding more messages
-// to them.
-void addGate( Element* chan, Conn* tgt, const string& name )
-{
-	if (tgt ) {
-		Element* gate = tgt->parent();
-		if ( gate ) {
-			Field temp( gate, "gate" );
-			chan->field( name ).add( temp );
-		}
-	}
-}
-
-Element* HHChannelWrapper::create(
-	const string& name, Element* pa, const Element* proto )
-{
-	const HHChannelWrapper* p = 
-		dynamic_cast<const HHChannelWrapper *>(proto);
-
-	HHChannelWrapper *ret = new HHChannelWrapper( name );
-
-	if ( p ) {
-		// Want to assign the HHChannel part only.
-		ret->Gbar_ = p->Gbar_;
-		ret->Ek_ = p->Ek_;
-		ret->Xpower_ = p->Xpower_;
-		ret->Ypower_ = p->Ypower_;
-		ret->Zpower_ = p->Zpower_;
-		ret->surface_ = p->surface_;
-		ret->instant_ = p->instant_;
-		ret->useConcentration_ = p->useConcentration_;
-
-		addGate( ret, p->xGateConn_.target( 0 ), "xGate" );
-		addGate( ret, p->yGateConn_.target( 0 ), "yGate" );
-		addGate( ret, p->zGateConn_.target( 0 ), "zGate" );
-	}
-	return ret;
-}

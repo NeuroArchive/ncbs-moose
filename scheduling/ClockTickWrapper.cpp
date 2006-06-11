@@ -94,7 +94,7 @@ const Cinfo ClockTickWrapper::cinfo_(
 void ClockTickWrapper::innerSetPath( const string& path )
 {
 	path_ = path;
-	size_t pos = path.find_last_of("/");
+	unsigned int pos = path.find_last_of("/");
 	if ( pos == string::npos || pos == path.length()) {
 		cerr << "Error:ClockTickWrapper::innerSetPath: no finfo name in" << path << "\n"; 
 		return;
