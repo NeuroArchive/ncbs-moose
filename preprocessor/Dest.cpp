@@ -94,7 +94,6 @@ class SrcNameMatch: public unary_function< Src*, bool > {
 		string name_;
 };
 
-	//	single solve( vector< double >* y, double t, double dt );
 // Parse the argument list to work out the templating
 // make a list of candidate outgoing messages
 void Dest::internalParse( vector< Src* >& srcVec ) 
@@ -106,7 +105,6 @@ void Dest::internalParse( vector< Src* >& srcVec )
 
 	j = next_token( temp, argstr_, 0);
 	while ( j < argstr_.length() && temp != ")" ) {
-		temp = checkForVector( temp, argstr_, j );
 		argtypes_.push_back( temp );
 		j = next_token( temp, argstr_, j); // Name of arg
 		argnames_.push_back( temp );
