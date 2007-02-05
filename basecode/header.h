@@ -11,34 +11,52 @@
 #ifndef _HEADER_H
 #define _HEADER_H
 #define UNIX
+//#define WINDOWS
 
-/// Here we set up an enhanced variant of assert, used in unit tests.
-#ifndef NDEBUG
-# define ASSERT( isOK, message ) \
-	if ( !(isOK) ) { \
-   cout << "\nERROR: Assert '" << #isOK << "' failed on line " << __LINE__ << "\nin file " << __FILE__ << ": " << #message << endl; \
-    exit( 1 ); \
-} else { \
-	   	cout << "."; \
-}
-#else
-# define ASSERT( unused, message ) do {} while ( false )
-#endif
+#define MOOSE_THREADS 0
 
+enum SolverOp { SOLVER_SET, SOLVER_GET, SOLVER_REBUILD, SOLVER_ADD, SOLVER_DROP };
+
+#include <iostream>
 #include <vector>
 #include <string>
-#include <iostream>
-#include <cassert>
+#include <map>
+#include <algorithm>
+// Special headers needed for some compilers, like gcc2.96
+#include <sstream>
+#include <stdio.h>
+// End of special headers
+
+// #ifdef WINDOWS
 
 using namespace std;
 
 class Element;
+class Finfo;
+class Field;
 class Conn;
+class Ftype;
 
 #include "RecvFunc.h"
+#include "dummyFunc0.h"
+#include "OffsetOf.h"
 #include "Conn.h"
-#include "Ftype.h"
+#include "Cinfo.h"
+#include "Field.h"
 #include "Finfo.h"
+#include "MsgSrc.h"
+// #include "AssignFinfo.h"
 #include "Element.h"
+#include "Ftype.h"
+#include "SharedFinfo.h"
+#include "RelayFinfo.h"
+#include "ValueFinfo.h"
+#include "DestFinfo.h"
+#include "SingleSrcFinfo.h"
+#include "NSrcFinfo.h"
+#include "ReturnFinfo.h"
+#include "ObjFinfo.h"
+#include "Neutral.h"
+#include "ProcInfo.h"
 
 #endif // _HEADER_H

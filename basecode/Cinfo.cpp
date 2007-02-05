@@ -8,41 +8,27 @@
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 #include <fstream>
-#include <map>
 #include "header.h"
-#include "Cinfo.h"
-#include "ThisFinfo.h"
-
-// The three includes below are needed because of the create function
-// requiring an instantiable Element class. Could get worse if we
-// permit multiple variants of Element, say an array form.
-
-#include "MsgSrc.h"
-#include "MsgDest.h"
-#include "SimpleElement.h"
+#include "CinfoWrapper.h"
 
 //////////////////////////////////////////////////////////////////
 // Cinfo is the class info for the MOOSE classes.
 //////////////////////////////////////////////////////////////////
 
-Cinfo::Cinfo(const std::string& name,
-				const std::string& author,
-				const std::string& description,
-				const std::string& baseName,
-				Finfo** finfoArray,
-				unsigned int nFinfos,
-				const Ftype* ftype
+Cinfo::Cinfo(const string& name,
+				const string& author,
+				const string& description,
+				const string& baseName,
+				Finfo** fieldArray,
+				const unsigned long nFields,
+				Element* (*createWrapper)(const string&, Element*,
+					const Element*)
 )
-		: name_(name), author_(author), 
-		description_(description), baseName_(baseName),
-		base_( 0 ), ftype_( ftype ), nSrc_( 0 ), nDest_( 0 )
+	: name_(name), author_(author), 
+	description_(description), baseName_(baseName),
+	fieldArray_(fieldArray), nFields_(nFields),
+	createWrapper_(createWrapper)
 {
-	unsigned int i;
-	for ( i = 0 ; i < nFinfos; i++ ) {
-		finfoArray[i]->countMessages( nSrc_, nDest_ );
-		finfos_.push_back( finfoArray[i] );
-	}
-	thisFinfo_ = new ThisFinfo( this );
 	lookup()[name] = this;
 }
 
@@ -55,60 +41,104 @@ const Cinfo* Cinfo::find( const string& name )
 	return 0;
 }
 
-const Finfo* Cinfo::findFinfo( Element* e, const string& name ) const
+Field Cinfo::field( const string& name ) const
 {
-	vector< Finfo* >::const_iterator i;
-	for ( i = finfos_.begin(); i != finfos_.end(); i++ ) {
-		const Finfo* ret = (*i)->match( e, name );
-		if ( ret )
+	for ( unsigned int i = 0; i < nFields_; i++ ) {
+		Field ret = fieldArray_[ i ]->match( name );
+		if ( ret.good() )
 			return ret;
 	}
 
 	// Fallthrough. No matches were found, so ask the base class.
 	if (base_ != this)
-		return base_->findFinfo( e, name );
+		return base_->field(name);
 
-	return 0;
+	// Give up. Return a dummy field.
+	return Field();
 }
 
-const Finfo* Cinfo::findFinfo( 
-		const Element* e, unsigned int connIndex) const
+void Cinfo::listFields( vector< Finfo* >& ret ) const
 {
-	vector< Finfo* >::const_iterator i;
-	for ( i = finfos_.begin(); i != finfos_.end(); i++ ) {
-		const Finfo* ret = (*i)->match( e, connIndex );
-		if ( ret )
-			return ret;
+	for ( unsigned int i = 0; i < nFields_; i++ )
+		ret.push_back( fieldArray_[ i ] );
+
+	if (base_ != this)
+		const_cast< Cinfo* >( base_ )->listFields( ret );
+}
+
+const Finfo* Cinfo::findMsg( const Conn* c, RecvFunc func ) const
+{
+	for (unsigned int i = 0; i < nFields_; i++) {
+		Finfo* f = fieldArray_[i];
+		if ( f->inConn( c->parent() ) == c  && f->recvFunc() == func )
+			return f;
 	}
 
 	// Fallthrough. No matches were found, so ask the base class.
-	// This could be problematic, if the base class indices disagree
-	// with the child class.
-	///\todo: Figure out how to manage base class index alignment here
-	if ( base_ && base_ != this)
-		return base_->findFinfo( e, connIndex );
+	if (base_ != this)
+		return base_->findMsg( c, func );
 
+	// Give up
 	return 0;
 }
 
 /*
-void Cinfo::listFinfos( vector< Finfo* >& ret ) const
+const Finfo* Cinfo::findMsg( const Conn* c ) const
 {
-	ret.insert( ret.end(), finfos_.begin(), finfos.end() );
-	
-	// for ( unsigned int i = 0; i < nFinfos; i++ )
-		// ret.push_back( finfoArray_[ i ] );
+	for (unsigned int i = 0; i < nFields_; i++) {
+		if ( fieldArray_[i]->inConn( c->parent() ) == c )
+			return fieldArray_[i];
+	}
 
+	// Fallthrough. No matches were found, so ask the base class.
 	if (base_ != this)
-		const_cast< Cinfo* >( base_ )->listFinfos( ret );
+		return base_->findMsg( c );
+
+	// Give up
+	return 0;
 }
 */
 
+/*
+bool Cinfo::funcDrop( Element* e, const Conn* target  ) const
+{
+	bool dropped = 0;
+	for (unsigned int i = 0; i < nFields_; i++) {
+		dropped |= fieldArray_[i]->funcDrop( e, target );
+	}
+
+	// Fallthrough. Also drop any messages to the base class.
+	if (base_ != this)
+		dropped |= base_->funcDrop( e, target );
+	return dropped;
+}
+*/
+
+// Finfo* Cinfo::findRemoteMsg( Element* e, RecvFunc func ) const
+Finfo* Cinfo::findRemoteMsg( Conn* c, RecvFunc func ) const
+{
+	Element* e = c->parent();
+	for (unsigned int i = 0; i < nFields_; i++) {
+		Finfo* f = fieldArray_[i];
+		// Nasty hack here: If it was a postmaster, the remote
+		// func would be one of the postRecvFunc family. Postmaster
+		// has no idea what it is. So we send in a dummyfunc0.
+		if ( f->outConn( e ) == c && 
+			(func == dummyFunc0 || f->matchRemoteFunc( e, func ) ) )
+			return f;
+	}
+
+	// Fallthrough. No matches were found, so ask the base class.
+	if (base_ != this)
+		return base_->findRemoteMsg( c, func );
+
+	// Give up
+	return 0;
+}
 
 // Called by main() when starting up.
 void Cinfo::initialize()
 {
-		/*
 	map<string, Cinfo*>::iterator i;
 	for (i = lookup().begin(); i != lookup().end(); i++) {
 		// Make the Cinfo object on /classes
@@ -133,33 +163,38 @@ void Cinfo::initialize()
 			i->second->fieldArray_[k]->initialize( i->second );
 		}
 	}
-	*/
 }
 
-std::map<std::string, Cinfo*>& Cinfo::lookup()
+Element* Cinfo::create(
+	const string& name, Element* parent, const Element* proto ) const
 {
-	static std::map<std::string, Cinfo*> lookup_;
-	return lookup_;
+	Element* e = createWrapper_( name, parent, proto );
+	if ( e ) {
+		if ( parent->adoptChild( e ) ) {
+			return e;
+		} else {
+			delete e;
+		}
+	}
+	return 0;
 }
 
-/**
- * Create a new element, complete with data, a set of Finfos and
- * the MsgSrc and MsgDest allocated.
- */
-Element* Cinfo::create( const std::string& name ) const
+/*
+Element* Cinfo::create(const string& name) const
 {
-	SimpleElement* ret = 
-		new SimpleElement( name, nSrc_, nDest_, ftype_->create(1) );
-	ret->addFinfo( thisFinfo_ );
-	return ret;
+	return createWrapper_( name, Element::root(), 0);
 }
+*/
 
-/**
- * listFinfo fills in the finfo list onto the flist.
- * \todo: Should we nest the finfos in Cinfo? Or should we only show
- * the deepest layer?
- */
-void Cinfo::listFinfos( vector< const Finfo* >& flist ) const
+bool Cinfo::isA( const Cinfo* other ) const
 {
-	flist.insert( flist.end(), finfos_.begin(), finfos_.end() );
+	if ( other == this )
+			return 1;
+	const Cinfo* b = base_;
+	while ( b && b != b->base_ ) {
+		if ( b == other )
+			return 1;
+		b = b->base_;
+	}
+	return 0;
 }

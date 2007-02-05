@@ -16,17 +16,39 @@ TARGET = maindir.o
 
 OBJ = \
 	main.o	\
+	TestField.o	\
+	TestMsg.o	\
+	MyClassWrapper.o
 
 HEADERS = \
 	../basecode/header.h \
 	../basecode/Conn.h \
+	../basecode/Cinfo.h \
+	../basecode/Field.h \
+	../basecode/Finfo.h \
+	../basecode/MsgSrc.h \
+	../basecode/Ftype.h \
+	../basecode/SharedFinfo.h \
+	../basecode/RelayFinfo.h \
+	../basecode/ValueFinfo.h \
+	../basecode/DestFinfo.h \
+	../basecode/SingleSrcFinfo.h \
+	../basecode/NSrcFinfo.h \
+	../basecode/ReturnFinfo.h \
+	../basecode/SharedFinfo.h \
+	../basecode/ObjFinfo.h \
 	../basecode/Element.h \
+	../basecode/Neutral.h \
+	../basecode/ProcInfo.h \
 
 default: $(TARGET)
 
 $(OBJ)	: $(HEADERS)
-
-#MyClassWrapper.o: MyClassWrapper.h
+main.o: TestField.h ../basecode/
+main.o: TestMsg.h
+speed.o: TestMsg.h
+TestMsg.o: TestMsg.h
+MyClassWrapper.o: MyClassWrapper.h
 
 .cpp.o:
 	$(CXX) $(CFLAGS) -I../basecode $< -c
