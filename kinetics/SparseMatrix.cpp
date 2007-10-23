@@ -11,7 +11,6 @@
 #include <vector>
 #include <iostream>
 #include <cassert>
-#include <math.h> // used for isnan
 
 using namespace std;
 
@@ -168,8 +167,6 @@ double SparseMatrix::computeRowRate(
 	for ( i = N_.begin() + rowStart_[ row ]; i != end; i++ )
 		ret += *i * v[ *j++ ];
 
-	// assert ( !( ret !<>= 0.0 ) );
-	assert ( !( isnan( ret ) ) );
 	return ret;
 }
 

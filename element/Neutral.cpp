@@ -90,8 +90,6 @@ const Cinfo* initNeutralCinfo()
 			reinterpret_cast< RecvFunc >( &Neutral::childFunc ) ),
 		new DestFinfo( "create", Ftype2< string, string >::global(),
 			reinterpret_cast< RecvFunc >( &Neutral::mcreate ) ),
-		new DestFinfo( "createArray", Ftype3< string, string, int >::global(),
-			reinterpret_cast< RecvFunc >( &Neutral::mcreateArray ) ),
 		new DestFinfo( "destroy", Ftype0::global(),
 			&Neutral::destroy ),
 
@@ -210,13 +208,6 @@ void Neutral::mcreate( const Conn& conn,
 */
 }
 
-void Neutral::mcreateArray( const Conn& conn,
-				const string cinfo, const string name, int n )
-{
-		createArray( cinfo, name, conn.targetElement(), n );
-}
-
-
 /**
  * Underlying utility function for creating objects in scratch space.
  * Not to be used when creating objects explicitly on commands from
@@ -245,29 +236,6 @@ Element* Neutral::create(
 	return 0;
 }
 
-Element* Neutral::createArray(
-		const string& cinfo, const string& name, Element* parent, int n )
-{
-	// Need to check here if the name is an existing one.
-	const Cinfo* c = Cinfo::find( cinfo );
-	if ( c ) {
-		Element* kid = c->createArray( Id::scratchId(), name, n, 0 );
-		// Here a global absolute or a relative finfo lookup for
-		// the childSrc field would be useful.
-		bool ret = parent->findFinfo( "childSrc" )->
-				add( parent, kid, kid->findFinfo( "child" ) ); 
-		assert( ret );
-		ret = c->schedule( kid );
-		assert( ret );
-		return kid;
-	} else {
-		cout << "Error: Neutral::create: class " << cinfo << 
-				" not found\n";
-	}
-	return 0;
-}
-
-
 void Neutral::destroy( const Conn& c )
 {
 	childFunc( c, MARK_FOR_DELETION );
@@ -277,38 +245,13 @@ void Neutral::destroy( const Conn& c )
 
 Id Neutral::getParent( const Element* e )
 {
-	if ( e->id().index() > 0 ){
-		Id i = e->id().assignIndex(0);
-		e = i();
-	}
-	const Element *se = e;
-	//const SimpleElement* se = dynamic_cast< const SimpleElement* >( e );
-	/*if (se == 0){//to allow array elements
-		const ArrayElement* ae = dynamic_cast< const ArrayElement* >( e );
-		assert(ae != 0);
-		assert( ae->destSize() > 0 );//Why do we need it?
-		// The zero dest is the child dest.
-		assert( ae->connDestEnd( 0 ) > ae->connDestBegin( 0 ) );
-		return ae->connDestBegin( 0 )->targetElement()->id();
-	}*/
-	
+	const SimpleElement* se = dynamic_cast< const SimpleElement* >( e );
 	assert( se != 0 );
 	assert( se->destSize() > 0 );
-
-	const Finfo* f = se->constFindFinfo( "child" );
-	assert( f != 0 );
-	vector< Conn > list;
-
-	f->incomingConns( se, list );
-	assert( list.size() > 0 );
-	return list[0].targetElement()->id();
-
-	/*
 	// The zero dest is the child dest.
 	assert( se->connDestEnd( 0 ) > se->connDestBegin( 0 ) );
 
 	return se->connDestBegin( 0 )->targetElement()->id();
-	*/
 }
 
 /**
@@ -324,7 +267,7 @@ Id Neutral::getChildByName( const Element* elm, const string& s )
 	vector< Conn >::const_iterator i;
 	// For neutral, src # 0 is the childSrc.
 	vector< Conn >::const_iterator begin = elm->connSrcBegin( 0 );
-	vector< Conn >::const_iterator end = elm->connSrcVeryEnd( 0 );
+	vector< Conn >::const_iterator end = elm->connSrcEnd( 0 );
 
 	string name;
 	assert( s.length() > 0 );
@@ -364,18 +307,16 @@ Id Neutral::getChildByName( const Element* elm, const string& s )
 				// index == 0, elm->index == 0: simple element return
 				if ( index == 0 )
 					return kid->id();
-				else{ // index > 0, elm->index == 0: Child should be an array
+				else // index > 0, elm->index == 0: Child should be an array
 					if ( kid->numEntries() < index )
 						return Id::badId();
 					else
 						return kid->id().assignIndex( index );
-				}
 			} else {
 				if ( index == 0 ) // Here the child id inherits the parent indx
 					return kid->id().assignIndex( elm->id().index() );
-				else{ // Nasty: indices for parent as well as child. Work out later.
+				else // Nasty: indices for parent as well as child. Work out later.
 					return Id::badId();
-				}
 			}
 		}
 	}
@@ -398,7 +339,7 @@ void Neutral::lookupChild( const Conn& c, const string s )
 	vector< Conn >::const_iterator i;
 	// For neutral, src # 0 is the childSrc.
 	vector< Conn >::const_iterator begin = e->connSrcBegin( 0 );
-	vector< Conn >::const_iterator end = e->connSrcVeryEnd( 0 );
+	vector< Conn >::const_iterator end = e->connSrcEnd( 0 );
 	for ( i = begin; i != end; i++ ) {
 		if ( i->targetElement()->name() == s ) {
 			// For neutral, src # 1 is the shared message.
@@ -421,7 +362,7 @@ vector< Id > Neutral::getChildList( const Element* e )
 	vector< Conn >::const_iterator i;
 	// For neutral, src # 0 is the childSrc.
 	vector< Conn >::const_iterator begin = e->connSrcBegin( 0 );
-	vector< Conn >::const_iterator end = e->connSrcVeryEnd( 0 );
+	vector< Conn >::const_iterator end = e->connSrcEnd( 0 );
 
 	vector< Id > ret;
 	if ( end == begin ) // zero children
@@ -483,9 +424,11 @@ void testNeutral()
 
 
 		Element* n1 = neutralCinfo->create( Id::scratchId(), "n1" );
-		bool ret = childSrcFinfo->add( 
-			Element::root(), n1, n1->findFinfo( "child" ) );
-		ASSERT( ret, "adding n1");
+
+		ASSERT( childSrcFinfo->add( 
+			Element::root(), n1, n1->findFinfo( "child" ) ), 
+				"adding n1"
+			);
 
 		string s;
 		get< string >( n1, n1->findFinfo( "name" ), s );
@@ -497,23 +440,28 @@ void testNeutral()
 
 		Element* n2 = neutralCinfo->create( Id::scratchId(), "n2" );
 		
-		ret = childSrcFinfo->add( n1, n2, n2->findFinfo( "child" ) );
-		ASSERT( ret , "adding child");
+		ASSERT( childSrcFinfo->add( n1, n2, n2->findFinfo( "child" ) ),
+						"adding child"
+			  );
 
 		Element* n3 = neutralCinfo->create( Id::scratchId(), "n3" );
 		
-		ret = childSrcFinfo->add( n1, n3, n3->findFinfo( "child" ) );
-		ASSERT( ret, "adding child");
+		ASSERT( childSrcFinfo->add( n1, n3, n3->findFinfo( "child" ) ),
+						"adding child"
+			  );
 
 		Element* n21 = neutralCinfo->create( Id::scratchId(), "n21" );
 		
-		ret = childSrcFinfo->add( n2, n21, n21->findFinfo( "child" ) );
-		ASSERT( ret, "adding child");
+		ASSERT( childSrcFinfo->add( n2, n21, n21->findFinfo( "child" ) ),
+						"adding child"
+			  );
 
 		Element* n22 = neutralCinfo->create( Id::scratchId(), "n22" );
 		
-		ret = childSrcFinfo->add( n2, n22, n22->findFinfo( "child" ) );
-		ASSERT( ret, "adding child");
+		ASSERT( childSrcFinfo->add(
+								n2, n22, n22->findFinfo( "child" ) ),
+						"adding child"
+			  );
 
 		ASSERT( n1->connSize() == 3, "count children and parent" );
 
@@ -564,7 +512,7 @@ void testNeutral()
 		ASSERT( initialNumInstances - SimpleElement::numInstances == 1,
 						"Check that foo is made" );
 		ASSERT( foo->name() == "foo", "Neutral::create" );
-		ret = set( n1, "destroy" );
+		bool ret = set( n1, "destroy" );
 		ASSERT( ret, "cleaning up n1" );
 
 		//

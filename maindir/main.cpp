@@ -19,15 +19,15 @@
  */
 
 #include <iostream>
-#include <basecode/header.h>
-#include <basecode/moose.h>
-#include <element/Neutral.h>
-#include <basecode/IdManager.h>
+#include "header.h"
+#include "moose.h"
+#include "../element/Neutral.h"
+#include "IdManager.h"
+#include <mpi.h>
+
 #ifdef USE_MPI
 #include <mpi.h>
 #endif
-
-extern int mooseInit(std::string confFile);
 
 #ifdef DO_UNIT_TESTS
 	extern void testBasecode();
@@ -52,7 +52,6 @@ extern int mooseInit(std::string confFile);
 	extern bool nonBlockingGetLine( string& s );
 #endif
 
-/*
 void setupDefaultSchedule( 
 	Element* t0, Element* t1, 
 	Element* t2, Element* t3, 
@@ -70,21 +69,104 @@ void setupDefaultSchedule(
 	set( cj, "resched" );
 	set( cj, "reinit" );
 }
-*/
-void setupDefaultSchedule( 
-	Element* t0, Element* t1, Element* cj)
-{
-	set< double >( t0, "dt", 1e-2 );
-	set< double >( t1, "dt", 1e-2 );
-	set< int >( t1, "stage", 1 );
-	set( cj, "resched" );
-	set( cj, "reinit" );
-}
 
 int main(int argc, char** argv)
 {
 	unsigned int mynode = 0;
-        mooseInit("config.xml");
+
+	int iMyRank, iTotalProcesses;
+	//MPI_Status status;
+
+        MPI_Init(&argc, &argv);
+        MPI_Comm_rank(MPI_COMM_WORLD, &iMyRank);
+        MPI_Comm_size(MPI_COMM_WORLD, &iTotalProcesses);
+        if(iMyRank == 0)
+        {
+              cout<<"Root Process started:"<<iMyRank;
+        }
+
+	// Create the shell on id 1.
+	const Cinfo* c = Cinfo::find( "Shell" );
+	assert ( c != 0 );
+	const Finfo* childSrc = Element::root()->findFinfo( "childSrc" );
+	assert ( childSrc != 0 );
+	Element* shell = c->create( Id( 1 ), "shell" );
+	assert( shell != 0 );
+	bool ret = childSrc->add( Element::root(), shell, 
+		shell->findFinfo( "child" ) );
+	assert( ret );
+
+#ifdef USE_MPI
+// 	Element* shell =
+// 			Neutral::create( "Shell", "shell", Element::root() );
+	MPI::Init( argc, argv );
+	unsigned int totalnodes = MPI::COMM_WORLD.Get_size();
+	mynode = MPI::COMM_WORLD.Get_rank();
+	Id::manager().setNodes( mynode, totalnodes );
+
+	Element* postmasters =
+			Neutral::create( "Neutral", "postmasters", Element::root());
+	vector< Element* > post;
+	post.reserve( totalnodes );
+	for ( unsigned int i = 0; i < totalnodes; i++ ) {
+		char name[10];
+		if ( i != mynode ) {
+			sprintf( name, "node%d", i );
+			Element* p = Neutral::create(
+					"PostMaster", name, postmasters );
+			assert( p != 0 );
+			set< unsigned int >( p, "remoteNode", i );
+			post.push_back( p );
+		}
+	}
+	Id::manager().setPostMasters( post );
+	// Perhaps we will soon want to also connect up the clock ticks.
+	// How do we handle different timesteps?
+#else	
+//	Neutral::create( "Shell", "shell", Element::root() );
+#endif
+	
+	/**
+	 * Here we set up a bunch of predefined objects, that
+	 * exist simultaneously on each node.
+	 */
+	Element* sched =
+			Neutral::create( "Neutral", "sched", Element::root() );
+	// This one handles the simulation clocks
+	Element* cj =
+			Neutral::create( "ClockJob", "cj", sched );
+
+	// Element* library = 
+			Neutral::create( "Neutral", "library", Element::root() );
+	// Element* proto = 
+			Neutral::create( "Neutral", "proto", Element::root() );
+	Element* solvers = 
+			Neutral::create( "Neutral", "solvers", Element::root() );
+	// These two should really be solver managers because there are
+	// a lot of decisions to be made about how the simulation is best
+	// solved. For now let the Shell deal with it.
+	// Element* chem = 
+			Neutral::create( "Neutral", "chem", solvers );
+	// Element* neuronal = 
+			Neutral::create( "Neutral", "neuronal", solvers );
+
+#ifdef USE_MPI
+	// This one handles parser and postmaster scheduling.
+	Element* pj =
+			Neutral::create( "ClockJob", "pj", sched );
+	Element* t0 =
+			Neutral::create( "ParTick", "t0", cj );
+	Element* pt0 =
+			Neutral::create( "ParTick", "t0", pj );
+#else
+	Element* t0 = Neutral::create( "Tick", "t0", cj );
+	Element* t1 = Neutral::create( "Tick", "t1", cj );
+	Element* t2 = Neutral::create( "Tick", "t2", cj );
+	Element* t3 = Neutral::create( "Tick", "t3", cj );
+	Element* t4 = Neutral::create( "Tick", "t4", cj );
+	Element* t5 = Neutral::create( "Tick", "t5", cj );
+#endif
+
 #ifdef DO_UNIT_TESTS
 	// if ( mynode == 0 )
 	if ( 1 )
@@ -186,47 +268,45 @@ int main(int argc, char** argv)
 		}
 		Element* sli = makeGenesisParser();
 		assert( sli != 0 );
+
 		// Need to do this before the first script is loaded, but
 		// after the unit test for the parser.
-                Id cj("/sched/cj");
-                Id t0("/sched/cj/t0");
-                Id t1("/sched/cj/t1");
-				/*
-                Id t2("/sched/cj/t2");
-                Id t3("/sched/cj/t3");
-                Id t4("/sched/cj/t4");
-                Id t5("/sched/cj/t5");
-		setupDefaultSchedule( t0(), t1(), t2(), t3(), t4(), t5(), cj() );
-				*/
-		setupDefaultSchedule( t0(), t1(), cj() );
+		setupDefaultSchedule( t0, t1, t2, t3, t4, t5, cj );
 
 		const Finfo* parseFinfo = sli->findFinfo( "parse" );
 		assert ( parseFinfo != 0 );
 
-		set< string >( sli, parseFinfo, line );
-		set< string >( sli, parseFinfo, "\n" );
+		if(iMyRank == 0)
+		{
+			set< string >( sli, parseFinfo, line );
+			set< string >( sli, parseFinfo, "\n" );		
 
-		/**
-		 * Here is the key infinite loop for getting terminal input,
-		 * parsing it, polling postmaster, managing GUI and other 
-		 * good things.
-		 */
-		string s = "";
-		unsigned int lineNum = 0;
-		cout << "moose #" << lineNum << " > " << flush;
-		while( 1 ) {
-			if ( nonBlockingGetLine( s ) ) {
-				set< string >( sli, parseFinfo, s );
-				if ( s.find_first_not_of( " \t\n" ) != s.npos )
-					lineNum++;
-				s = "";
-				cout << "moose #" << lineNum << " > " << flush;
-			}
-#ifdef USE_MPI
-			// Here we poll the postmaster
-			ret = set< int >( pj, stepFinfo, 1 );
-#endif
-			// gui stuff here maybe.
+			/**
+			 * Here is the key infinite loop for getting terminal input,
+			 * parsing it, polling postmaster, managing GUI and other 
+			 * good things.
+			 */
+			/*string s = "";
+			unsigned int lineNum = 0;
+			cout << "moose #" << lineNum << " > " << flush;
+			while( 1 ) {
+				if ( nonBlockingGetLine( s ) ) {
+					set< string >( sli, parseFinfo, s );
+					if ( s.find_first_not_of( " \t\n" ) != s.npos )
+						lineNum++;
+					s = "";
+					cout << "moose #" << lineNum << " > " << flush;
+				}
+	#ifdef USE_MPI
+				// Here we poll the postmaster
+				ret = set< int >( pj, stepFinfo, 1 );
+	#endif
+				// gui stuff here maybe.
+			}*/
+		}
+		else
+		{
+			set< string >( sli, parseFinfo, "nonroot");
 		}
 	}
 #endif
@@ -237,5 +317,7 @@ int main(int argc, char** argv)
 	}
 	MPI::Finalize();
 #endif
+
+	//MPI::Finalize();
 	cout << "done" << endl;
 }

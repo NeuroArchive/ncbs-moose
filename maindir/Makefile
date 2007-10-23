@@ -17,12 +17,11 @@ TARGET = maindir.o
 OBJ = \
 	main.o	\
 	nonblock.o \
-	init.o
+
 HEADERS = \
 	../basecode/header.h \
 	../basecode/Conn.h \
 	../basecode/Element.h \
-	../basecode/Id.h
 
 default: $(TARGET)
 
@@ -31,10 +30,10 @@ $(OBJ)	: $(HEADERS)
 #MyClassWrapper.o: MyClassWrapper.h
 
 .cpp.o:
-	$(CXX) $(CFLAGS) -I.. -I../basecode $< -c
+	$(CXX) $(CFLAGS) -I../basecode $< -c
 
 $(TARGET):		$(OBJ) $(HEADERS)
-	$(LD) -r -o $(TARGET) $(OBJ)
+	$(LD) -r -o $(TARGET) $(OBJ) $(LIBS)
 
 clean:
 	-rm -f *.o $(TARGET) core core.*

@@ -59,8 +59,6 @@ class Shell
 
 		bool create( const string& type, const string& name,
 						Id parent, Id id );
-		bool createArray( const string& type, const string& name,
-						Id parent, Id id, int n );
 		void destroy( Id victim );
 
 		/**
@@ -70,8 +68,7 @@ class Shell
 		 */
 		static void staticCreate( const Conn&, string type,
 						string name, Id parent );
-		static void staticCreateArray( const Conn&, string type,
-						string name, Id parent, vector <double> parameter );
+		static void planarconnect1( const Conn& c, string source, string dest, string spikegenRank, string synchanRank);
 		static void planarconnect( const Conn& c, string source, string dest, double probability);
 		static void planardelay(const Conn& c, string source, double delay);
 		static void planarweight(const Conn& c, string source, double weight);
@@ -96,7 +93,6 @@ class Shell
 				Id id, string field, bool isIncoming );
 
 		static void copy( const Conn& c, Id src, Id parent, string name );
-		static void copyIntoArray( const Conn& c, Id src, Id parent, string name, vector <double> parameter );
 		static void move( const Conn& c, Id src, Id parent, string name );
 
 ////////////////////////////////////////////////////////////////////
@@ -145,13 +141,6 @@ class Shell
 			string filename, string path );
 		static void simObjDump( const Conn& c, string fields );
 		static void simUndump( const Conn& c, string args );
-		static void openFile( const Conn& c, string filename, string mode );
-		static void closeFile( const Conn& c, string filename );
-		static void writeFile( const Conn& c, string filename, string text );
-		static void readFile( const Conn& c, string filename, bool linemode );
-		static void listFiles( const Conn& c );
-		static void loadtab( const Conn& c, string data );
-		void innerLoadTab( const string& data );
 			/*
 		void add( const string& src, const string& dest );
 		void drop( const string& src, const string& dest );
@@ -169,8 +158,7 @@ class Shell
 		void remoteCommand( string arglist );
 		void command( int argc, const char** argv );
 		*/
-		
-	
+
 	private:
 		/// Current working element
 		Id cwe_;
@@ -178,18 +166,9 @@ class Shell
 		Id recentElement_;
 		vector< Id > workingElementStack_;
 		// True if prompts etc are to be printed.
-		///stores all the filehandles create by genesis style format.
-		static map <string, FILE*> filehandler;
-		// variable for file handling
-		static vector <string> filenames;
-		static vector <string> modes;
-		static vector <FILE*> filehandles;
-		
 		int isInteractive_;
 		string parser_;
 		SimDump* simDump_;
-		Id lastTab_; // Used for the loadtab -continue option, which 
-			// contines loading numbers into the previously selected table.
 };
 
 #endif // _SHELL_H

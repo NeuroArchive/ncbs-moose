@@ -10,6 +10,20 @@
 #ifndef _SynChan_h
 #define _SynChan_h
 
+#include <mpi.h>
+
+struct stMPIRecvStatus
+{
+	MPI_Request request;
+	MPI_Status status;
+	bool bExecutedRecv;
+
+	stMPIRecvStatus()
+	{
+		bExecutedRecv = false;
+	}
+
+};
 class SynChan
 {
 	public:
@@ -43,6 +57,8 @@ class SynChan
 		static double getIk( const Element* e );
 
 		static int getNumSynapses( const Element* e );
+
+		static void recvRank( const Conn& c, int rank );
 
 		static void setWeight(
 				const Conn& c, double val, const unsigned int& i );
@@ -99,5 +115,7 @@ class SynChan
 		double Vm_;
 		vector< SynInfo > synapses_;
 		priority_queue< SynInfo > pendingEvents_;
+		vector< int > recvRank_;
+		struct stMPIRecvStatus objRecvStatus[MAX_MPI_PROCESSES];
 };
 #endif // _SynChan_h

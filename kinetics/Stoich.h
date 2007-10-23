@@ -47,9 +47,6 @@ class Stoich
 		unsigned int nVarMols() const {
 			return nVarMols_;
 		}
-		void clear( Element* stoich );
-		// static void rebuild( const Conn& c );
-		// void localRebuild( Element* stoich );
 
 		///////////////////////////////////////////////////
 		// Functions used by the GslIntegrator
@@ -64,9 +61,6 @@ class Stoich
 		// permitted to look at the insides of the Stoich class.
 		double* S() {
 			return &S_[0];
-		}
-		double* Sinit() {
-			return &Sinit_[0];
 		}
 		void runStats();
 #endif // USE_GSL
@@ -91,7 +85,7 @@ class Stoich
 			Element* e, const string& msgFieldName, 
 			vector< const double* >& ret );
 
-		bool findIncoming( 
+		unsigned int findIncoming( 
 			Element* e, const string& msgFieldName, 
 			vector< const double* >& ret );
 

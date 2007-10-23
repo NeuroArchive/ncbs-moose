@@ -19,7 +19,6 @@ OBJ = \
 	Kintegrator.o	\
 	MathFunc.o	\
 	TestKinetics.o	\
-	KineticManager.o	\
 
 HEADERS = \
 	../basecode/header.h \
@@ -33,9 +32,9 @@ HEADERS = \
 # under the GPL, so only GPL-compliant uses of MOOSE will be able to
 # use it. Should be fine for academic use.
 # Optional: Comment out the following three items if not using GSL
-GSL_OBJ = GslIntegrator.o
-GSL_LIBS = -lgsl -lgslcblas
-GSL_FLAGS = -DUSE_GSL
+#GSL_OBJ = GslIntegrator.o
+#GSL_LIBS = -lgsl -lgslcblas
+#GSL_FLAGS = -DUSE_GSL
 
 
 default: $(TARGET)
@@ -48,19 +47,17 @@ SparseMatrix.o:	SparseMatrix.h
 KineticHub.o:	RateTerm.h Molecule.h Reaction.h Enzyme.h KineticHub.h
 Stoich.o:	RateTerm.h Stoich.h SparseMatrix.h Makefile
 Kintegrator.o:	Kintegrator.h
-KineticManager.o:	KineticManager.h
 TestKinetics.o:	RateTerm.h Molecule.h Reaction.h Enzyme.h KineticHub.h Stoich.h SparseMatrix.h Makefile
 
 #Optional: Comment out the following two items if not using GSL.
-$(GSL_OBJ) : $(HEADERS)
-GslIntegrator.o:	GslIntegrator.h Stoich.h RateTerm.h SparseMatrix.h 
+#$(GSL_OBJ) : $(HEADERS)
+#GslIntegrator.o:	GslIntegrator.h Stoich.h RateTerm.h SparseMatrix.h
 
 .cpp.o:
 	$(CXX) $(CFLAGS) $(GSL_FLAGS) -I../basecode $< -c
 
 $(TARGET):		$(OBJ) $(GSL_OBJ) $(HEADERS)
-	$(LD) -r -o $(TARGET) $(OBJ) $(GSL_OBJ) $(GSL_LIBS)
-#	$(LD) -r -o $(TARGET) $(OBJ) $(GSL_OBJ) $(LIBS) $(GSL_LIBS)
+	$(LD) -r -o $(TARGET) $(OBJ) $(GSL_OBJ) $(LIBS) $(GSL_LIBS)
 
 clean:
 	-rm -f *.o $(TARGET) core core.*

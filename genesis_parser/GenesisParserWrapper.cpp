@@ -10,6 +10,7 @@
 
 #include "moose.h"
 #include <math.h>
+#include <mpi.h> 
 
 #include <setjmp.h>
 #include <FlexLexer.h>
@@ -52,8 +53,7 @@ const Cinfo* initGenesisParserCinfo()
 		new SrcFinfo( "create",
 				Ftype3< string, string, Id >::global() ),
 		// Creating an object: Recv the returned object id.
-		new SrcFinfo( "createArray",
-				Ftype4< string, string, Id, vector <double> >::global() ),
+		new SrcFinfo( "planarconnect1", Ftype4< string, string, string, string >::global() ),
 		new SrcFinfo( "planarconnect", Ftype3< string, string, double >::global() ),
 		new SrcFinfo( "planardelay", Ftype2< string, double >::global() ),
 		new SrcFinfo( "planarweight", Ftype2< string, double >::global() ),
@@ -121,7 +121,6 @@ const Cinfo* initGenesisParserCinfo()
 		// This function is for copying an element tree, complete with
 		// messages, onto another.
 		new SrcFinfo( "copy", Ftype3< Id, Id, string >::global() ),
-		new SrcFinfo( "copyIntoArray", Ftype4< Id, Id, string, vector <double> >::global() ),
 		// This function is for moving element trees.
 		new SrcFinfo( "move", Ftype3< Id, Id, string >::global() ),
 
@@ -159,24 +158,13 @@ const Cinfo* initGenesisParserCinfo()
 		// simundump
 		new SrcFinfo( "simUndump",
 					Ftype1< string >::global() ),
-		new SrcFinfo( "openfile", 
-			Ftype2< string, string >::global() ),
-		new SrcFinfo( "writefile", 
-			Ftype2< string, string >::global() ),
-		new SrcFinfo( "listfiles", 
-			Ftype0::global() ),
-		new SrcFinfo( "closefile", 
-			Ftype1< string >::global() ),
-		new SrcFinfo( "readfile", 
-			Ftype2< string, bool >::global() ),
+
 		///////////////////////////////////////////////////////////////
 		// Setting field values for a vector of objects
 		///////////////////////////////////////////////////////////////
 		// Setting a vec of field values as a string: send out request:
 		new SrcFinfo( "setVecField", // object, field, value 
 			Ftype3< vector< Id >, string, string >::global() ),
-		new SrcFinfo( "loadtab", 
-			Ftype1< string >::global() ),
 	};
 	
 	static Finfo* genesisParserFinfos[] =
@@ -217,9 +205,9 @@ static const unsigned int requestCweSlot =
 static const unsigned int requestLeSlot = 
 	initGenesisParserCinfo()->getSlotIndex( "parser.trigLe" );
 static const unsigned int createSlot = 
-	initGenesisParserCinfo()->getSlotIndex( "parser.create" );
-static const unsigned int createArraySlot = 
-	initGenesisParserCinfo()->getSlotIndex( "parser.createArray" );
+       initGenesisParserCinfo()->getSlotIndex( "parser.create" );
+static const unsigned int planarconnect1Slot =
+        initGenesisParserCinfo()->getSlotIndex( "parser.planarconnect1" );
 static const unsigned int planarconnectSlot = 
 	initGenesisParserCinfo()->getSlotIndex( "parser.planarconnect" );
 static const unsigned int planardelaySlot = 
@@ -252,8 +240,6 @@ static const unsigned int listMessagesSlot =
 	initGenesisParserCinfo()->getSlotIndex( "parser.listMessages" );
 static const unsigned int copySlot = 
 	initGenesisParserCinfo()->getSlotIndex( "parser.copy" );
-static const unsigned int copyIntoArraySlot = 
-	initGenesisParserCinfo()->getSlotIndex( "parser.copyIntoArray" );
 static const unsigned int moveSlot = 
 	initGenesisParserCinfo()->getSlotIndex( "parser.move" );
 static const unsigned int readCellSlot = 
@@ -277,21 +263,8 @@ static const unsigned int simObjDumpSlot =
 static const unsigned int simUndumpSlot = 
 	initGenesisParserCinfo()->getSlotIndex( "parser.simUndump" );
 
-static const unsigned int openFileSlot = 
-	initGenesisParserCinfo()->getSlotIndex( "parser.openfile" );
-static const unsigned int writeFileSlot = 
-	initGenesisParserCinfo()->getSlotIndex( "parser.writefile" );
-static const unsigned int listFilesSlot = 
-	initGenesisParserCinfo()->getSlotIndex( "parser.listfiles" );
-static const unsigned int closeFileSlot = 
-	initGenesisParserCinfo()->getSlotIndex( "parser.closefile" );
-static const unsigned int readFileSlot = 
-	initGenesisParserCinfo()->getSlotIndex( "parser.readfile" );
 static const unsigned int setVecFieldSlot = 
 	initGenesisParserCinfo()->getSlotIndex( "parser.setVecField" );
-static const unsigned int loadtabSlot = 
-	initGenesisParserCinfo()->getSlotIndex( "parser.loadtab" );
-
 
 //////////////////////////////////////////////////////////////////
 // Now we have the GenesisParserWrapper functions
@@ -329,10 +302,53 @@ void GenesisParserWrapper::processFunc( const Conn& c )
 
 void GenesisParserWrapper::parseFunc( const Conn& c, string s )
 {
+	MPI_Status status;
+	int i;
+	char **pArgs;	
+
 	GenesisParserWrapper* data =
 	static_cast< GenesisParserWrapper* >( c.targetElement()->data() );
+	
+	MPI_Comm_rank(MPI_COMM_WORLD, &(data->processrank_));
 
-	data->ParseInput( s );
+	MPI_Comm_size(MPI_COMM_WORLD, &(data->processcount_));
+	
+
+	if( data->processrank_ == 0)
+	{
+		data->ParseInput( s );
+	}
+	else
+	{
+		while(1)
+		{
+			MPI_Recv ( 	data->arrArgs, 
+					MAX_COMMAND_SIZE * MAX_COMMAND_ARGUMENTS, 
+					MPI_CHAR, 
+					0, 
+					MPI_ANY_TAG, 
+					MPI_COMM_WORLD, 
+					&status
+				);
+
+			pArgs = new char* [status.MPI_TAG];
+		
+			for(i=0; i<status.MPI_TAG; i++)
+			{
+				pArgs[i] = new char [strlen(data->arrArgs[i])+1];
+				strcpy(pArgs[i], data->arrArgs[i]);
+			}
+				
+
+			data->ExecuteCommand(status.MPI_TAG, pArgs );
+			
+			delete[] pArgs;
+
+			if( data->arrArgs[i-1][0] == 'q')
+				break;
+
+		}
+	}
 }
 
 void GenesisParserWrapper::setReturnId( const Conn& c, Id id )
@@ -450,7 +466,7 @@ map< string, string >& sliSrcLookup()
 
 	src[ "SUMTOTAL n nInit" ] = "nSrc";	// for molecules
 	src[ "SUMTOTAL output output" ] = "outputSrc";	// for tables
-	src[ "SLAVE output" ] = "outputSrc";	// for tables
+	src[ "SLAVE output" ] = "out";	// for tables
 	src[ "INTRAMOL n" ] = "nOut"; 	// target is an enzyme.
 	src[ "CONSERVE n nInit" ] = ""; 	// Deprecated
 	src[ "CONSERVE nComplex nComplexInit" ] = ""; 	// Deprecated
@@ -465,7 +481,6 @@ map< string, string >& sliSrcLookup()
 	// Some messages for channels.
 	src[ "VOLTAGE Vm" ] = "";
 	src[ "CHANNEL Gk Ek" ] = "channel";
-	src[ "SynChan.Mg_block.CHANNEL Gk Ek" ] = "origChannel";
 
 	// Some messages for gates, used in the squid demo. This 
 	// is used to set the reset value of Vm in the gates, which is 
@@ -511,7 +526,7 @@ map< string, string >& sliDestLookup()
 
 	dest[ "SUMTOTAL n nInit" ] = "sumTotal";	// for molecules
 	dest[ "SUMTOTAL output output" ] = "sumTotal";	// for molecules
-	dest[ "SLAVE output" ] = "sumTotal";	// for molecules
+	dest[ "SLAVE output" ] = "sumTotalIn";	// for molecules
 	dest[ "INTRAMOL n" ] = "intramolIn"; 	// target is an enzyme.
 	dest[ "CONSERVE n nInit" ] = ""; 	// Deprecated
 	dest[ "CONSERVE nComplex nComplexInit" ] = ""; 	// Deprecated
@@ -526,7 +541,6 @@ map< string, string >& sliDestLookup()
 	// Some messages for channels.
 	dest[ "VOLTAGE Vm" ] = "";
 	dest[ "CHANNEL Gk Ek" ] = "channel";
-	dest[ "SynChan.Mg_block.CHANNEL Gk Ek" ] = "origChannel";
 
 	// Some messages for gates, used in the squid demo. This 
 	// is used to set the reset value of Vm in the gates, which is 
@@ -561,7 +575,6 @@ map< string, string >& sliClassNameConvert()
 	classnames[ "conc_chan" ] = "ConcChan";
 	classnames[ "Ca_concen" ] = "CaConc";
 	classnames[ "compartment" ] = "Compartment";
-	classnames[ "symcompartment" ] = "Compartment";//needs to be changed
 	classnames[ "hh_channel" ] = "HHChannel";
 	classnames[ "tabchannel" ] = "HHChannel";
 	classnames[ "vdep_channel" ] = "HHChannel";
@@ -584,23 +597,17 @@ map< string, string >& sliClassNameConvert()
 	return classnames;
 }
 
-
+/*
 map< string, string >& sliFieldNameConvert()
 {
 	static map< string, string > fieldnames;
 
 	if ( fieldnames.size() > 0 )
 		return fieldnames;
-	
-	fieldnames["Molecule.Co"] = "conc";
-	fieldnames["Molecule.CoInit"] = "concInit";
-	fieldnames["SpikeGen.thresh"] = "threshold";
-	fieldnames["SpikeGen.output_amp"] = "amplitude";
-	fieldnames["Table.table->dx"] = "dx";
-	fieldnames["Table.table->invdx"] = "";
+
 	return fieldnames;
 }
-
+*/
 
 
 string sliMessage(
@@ -688,18 +695,12 @@ void GenesisParserWrapper::doAdd(
 		for ( int i = 4; i < argc; i++ )
 			msgType = msgType + " " + argv[ i ];
 
-		Id src( argv[1] );
-		Id dest( argv[2] );
-		
-		if ( msgType == "CHANNEL Gk Ek" && src()->className() == "SynChan" && dest()->className() == "Mg_block" )
-			msgType = src()->className() + "." + dest()->className() + "." + msgType;
-		
 		string srcF = sliMessage( msgType, sliSrcLookup() );
 		string destF = sliMessage( msgType, sliDestLookup() );
 
 		if ( srcF.length() > 0 && destF.length() > 0 ) {
-			//Id src( argv[1] );
-			//Id dest( argv[2] );
+			Id src( argv[1] );
+			Id dest( argv[2] );
 			// Id src = path2eid( argv[1], s );
 			// Id dest = path2eid( argv[2], s );
 	// 		cout << "in do_add " << src << ", " << dest << endl;
@@ -759,7 +760,6 @@ void GenesisParserWrapper::doSet( int argc, const char** argv, Id s )
 		start = 1;
 	} else  {
 		string path = argv[1];
-		//Shell::getWildCardList(conn, path, 0);
 		send2< string, bool >( sh, requestWildcardListSlot, path, 0 );
 		if ( elist_.size() == 0 ) {
 			return;
@@ -779,10 +779,6 @@ void GenesisParserWrapper::doSet( int argc, const char** argv, Id s )
 	for ( int i = start; i < argc; i += 2 ) {
 		// s->setFuncLocal( path + "/" + argv[ i ], argv[ i + 1 ] );
 		string field = argv[i];
-		map< string, string >::iterator iter = 
-			sliFieldNameConvert().find( elist_[0]()->className() + "." + field );
-		if ( iter != sliFieldNameConvert().end() ) 
-			field = iter->second;
 		string value = argv[ i+1 ];
 		string::size_type pos = field.find( "->table" );
 		if ( pos == string::npos )
@@ -808,8 +804,6 @@ void GenesisParserWrapper::doSet( int argc, const char** argv, Id s )
 		}
 		// cout << "in do_set " << path << "." << field << " " <<
 				// value << endl;
-		
-		//Shell::setVecField(conn, elist_, field, value)
 		send3< vector< Id >, string, string >( s(),
 			setVecFieldSlot, elist_, field, value );
 	}
@@ -859,19 +853,6 @@ bool GenesisParserWrapper::tabCreate( int argc, const char** argv, Id s)
 			}
 			// id = path2eid( tempA, s );
 			id = Id( tempA );
-			if ( id.zero() || id.bad() ) { //creating the gates
-				string name;
-				if ( string( argv[3] ) == "X" ) {
-					name = "xGate";
-				} else if ( string( argv[3] ) == "Y" ) {
-					name = "yGate";
-				} else if ( string( argv[3] ) == "Z" ) {
-					name = "zGate";
-				}
-				send3< string, string, Id >( s(),
-				createSlot, "HHGate", name, Id(path) );
-				id = Id( tempA );
-			}
 			if ( id.zero() || id.bad() ) return 0; //Error msg here
 			send3< Id, string, string >( s(),
 				setFieldSlot, id, "xdivs", argv[4] );
@@ -994,18 +975,10 @@ int do_isa( int argc, const char** const argv, Id s )
 bool GenesisParserWrapper::fieldExists(
 			Id eid, const string& field, Id s )
 {
-	//conversion of field
-	map< string, string >::iterator i = 
-			sliFieldNameConvert().find( eid()->className() + "." + field );
-	string newfield;
-	if ( i != sliFieldNameConvert().end() ) 
-		newfield = i->second;
-	//conversion of field, if needed, complete
-		
 	send2< Id, string >( s(), requestFieldSlot, eid, "fieldList" );
 	if ( fieldValue_.length() == 0 ) // Nothing came back
 		return 0;
-	return ( fieldValue_.find( newfield ) != string::npos );
+	return ( fieldValue_.find( field ) != string::npos );
 }
 
 int do_exists( int argc, const char** const argv, Id s )
@@ -1047,7 +1020,6 @@ char* GenesisParserWrapper::doGet( int argc, const char** argv, Id s )
 	if ( argc == 3 ) {
 		// e = GenesisParserWrapper::path2eid( argv[1], s );
 		e = Id( argv[1] );
-		if ( e.bad() ) cout << "bad!!" << endl;
 		if ( e.bad() )
 			return copyString( "" );
 		field = argv[2];
@@ -1059,10 +1031,6 @@ char* GenesisParserWrapper::doGet( int argc, const char** argv, Id s )
 		cout << "usage:: " << argv[0] << " [element] field\n";
 		return copyString( "" );
 	}
-	map< string, string >::iterator i = 
-			sliFieldNameConvert().find( e()->className() + "." + field );
-	if ( i != sliFieldNameConvert().end() ) 
-		field = i->second;
 	fieldValue_ = "";
 	send2< Id, string >( s(),
 		requestFieldSlot, e, field );
@@ -1310,7 +1278,6 @@ void do_copy( int argc, const char** const argv, Id s )
 	Id pa;
 	string name;
 	if ( parseCopyMove( argc, argv, s, e, pa, name ) ) {
-		//Shell::copy(conn, e, pa, name);
 		send3< Id, Id, string >( s(), copySlot, e, pa, name );
 	}
 }
@@ -1557,7 +1524,6 @@ void GenesisParserWrapper::showAllFields( Id e, Id s )
 		if ( *i == "fieldList" )
 			continue;
 		fieldValue_ = "";
-		//Shell::getField(conn, e->id(), *i)
 		send2< Id, string >( s(), requestFieldSlot, e, *i );
 		if ( fieldValue_.length() > 0 ) {
 			sprintf( temp, "%-25s%s", i->c_str(), "= " );
@@ -1599,26 +1565,21 @@ void GenesisParserWrapper::doShow( int argc, const char** argv, Id s )
 			firstField = 2;
 		}
 	}
+
 	// print( "[ " + eid2path( e ) + " ]" );
 	print( "[ " + e.path() + " ]" );
+
 	for ( int i = firstField; i < argc; i++ ) {
 		if ( strcmp( argv[i], "*") == 0 ) {
 			showAllFields( e, s );
 		} else { // get specific field here.
 			fieldValue_ = "";
-			//Shell::getField(conn, e, argv[i])
-			string field = argv[i];
-			map< string, string >::iterator iter = 
-				sliFieldNameConvert().find( e()->className() + "." + field );
-			if ( iter != sliFieldNameConvert().end() ) 
-				field = iter->second;
-				
-			send2< Id, string >( s(), requestFieldSlot, e, field );
+			send2< Id, string >( s(), requestFieldSlot, e, argv[i] );
 			if ( fieldValue_.length() > 0 ) {
-				sprintf( temp, "%-25s%s", field.c_str(), "= " );//printing the new field name 
+				sprintf( temp, "%-25s%s", argv[i], "= " );
 				print( temp + fieldValue_ );
 			} else {
-				cout << "'" << field << "' is not an element or the field of the working element\n";
+				cout << "'" << argv[i] << "' is not an element or the field of the working element\n";
 				return;
 			}
 		}
@@ -1739,16 +1700,6 @@ void do_tab2file( int argc, const char** const argv, Id s )
 }
 
 /**
- * Utility function for returning an empty argv list
- */
-char** NULLArgv()
-{
-	char** argv = (char** )malloc( sizeof( char* ) );
-	argv[0] = 0;
-	return argv;
-}
-
-/**
  * This returns a space-separated list of individual element paths
  * generated from the wildcard list of the 'path' argument.
  * The path argument can be a comma-separated series of individual
@@ -1760,51 +1711,37 @@ char** NULLArgv()
  * 	-listname listname'
  * which I have no clue about and have not implemented.
  */
-char** do_element_list( int argc, const char** const argv, Id s )
+char* do_element_list( int argc, const char** const argv, Id s )
 {
 	static string space = " ";
 	if ( argc != 2 ) {
 		cout << "usage:: " << argv[0] << " path\n";
-		return NULLArgv();
+		return copyString( "" );
 	}
 	string path = argv[1];
 	GenesisParserWrapper* gpw = static_cast< GenesisParserWrapper* >
 			( s()->data() );
-	return gpw->elementList( path, s );
+	string ret;
+	gpw->elementList( ret, path, s );
 
 	// return copyString( s->getmsgFuncLocal( field, options ) );
-//	return copyString( ret.c_str() );
+	return copyString( ret.c_str() );
 }
-/**
- * Allocates and returns an array of char* for the element list
- * entries, just like the old GENESIS sim_list.c::do_construct_list
- * function. There too I did not know how the list was supposed to be
- * freed.
- */
-char** GenesisParserWrapper::elementList( const string& path, Id s)
+
+void GenesisParserWrapper::elementList(
+		string& ret, const string& path, Id s)
 {
- 	//Shell::getWildCardList(conn, path, 0(ordered))
  	send2< string, bool >( s(), requestWildcardListSlot, path, 0 );
-	// bool first = 1;
+	bool first = 1;
 	vector< Id >::iterator i;
-	// Need to use old-style allocation because the genesis parser 
-	// just might free it in the old style.
-	if ( elist_.size() == 0 )
-		return( NULLArgv() );
-	char** ret = ( char** )calloc( elist_.size() + 1, sizeof( char * ) );
-	char** j = ret;
 	for ( i = elist_.begin(); i != elist_.end(); i++ ) {
-		*j++ = copyString( i->path().c_str() );
-		/*
 		if ( first )
 			ret = i->path(); // ret = eid2path( *i );
 		else
 			ret = ret + " " + i->path();
 			// ret = ret + " " + eid2path( *i );
 		first = 0;
-		*/
 	}
-	return ret;
 }
 
 /**
@@ -1857,29 +1794,17 @@ Id findChanGateId( int argc, const char** const argv, Id s )
 	// and here we merge the two cases.
 	
 	string gate = argv[1];
-	string type = "";
 	if ( argv[2][0] == 'X' )
-			type =  "xGate";
+			gate = gate + "/xGate";
 	else if ( argv[2][0] == 'Y' )
-			type = "yGate";
+			gate = gate + "/yGate";
 	else if ( argv[2][0] == 'Z' )
-			type = "zGate";
+			gate = gate + "/zGate";
 	// Id gateId = GenesisParserWrapper::path2eid( gate, s );
-	
-	gate = gate + "/" + type;
 	Id gateId( gate );
-	if ( gateId.bad() ) // Don't give up, it might be a tabgate or might not have been created
+	if ( gateId.bad() ) // Don't give up, it might be a tabgate
 		gateId = Id( argv[1] );
 		// gateId = GenesisParserWrapper::path2eid( argv[1], s );
-	Id channelId( argv[1] );
-	Element *channel = channelId();
-	if ( channel->className()=="HHChannel" ){
-		if (type == "") /*error*/;
-		send3< string, string, Id >( s(),
-		createSlot, "HHGate", type, channelId );
-		gateId = Id(gate);
-	}
-	
 	if ( gateId.bad() ) { // Now give up
 			cout << "Error: findChanGateId: unable to find channel/gate '" << argv[1] << "/" << argv[2] << endl;
 			return gateId;
@@ -2215,16 +2140,9 @@ void do_addfield( int argc, const char** const argv, Id s )
 	}
 }
 
-void do_loadtab ( int argc, const char** const argv, Id s )
+void doShellCommand ( int argc, const char** const argv, Id s )
 {
-	// cout << "in do_loadtab: argc = " << argc << endl;
-	string line = "";
-	for ( int i = 1 ; i < argc; i++ ) {
-		line.append( argv[i] );
-		line.append( " " );
-	}
-
-	send1< string >( s(), loadtabSlot, line );
+; //	s->commandFuncLocal( argc, argv );
 }
 
 void do_complete_loading( int argc, const char** const argv, Id s )
@@ -2266,94 +2184,29 @@ void do_xsendevent ( int argc, const char** const argv, Id s )
 	//s->error( "not implemented yet." );
 }
 
-void do_xps ( int argc, const char** const argv, Id s ){
-	cout << "Not yet implemented!!" << endl;
-}
 
-void do_createmap(int argc, const char** const argv, Id s){
-//#define DEBUG
-	//createmap source dest 
-	//	Nx Ny 
-	//	-delta dx dy 
-	//	-origin x y
-	//	-object
-	
-	const char* source, *dest;
-	int Nx, Ny;
-	double dx, dy;
-	double xorigin, yorigin;
-	bool object = false;
-	vector <double> parameter;
-	
-	//if (argc != 11 && argc != 12) {/*error*/;}
-	
-	source = argv[1];
-	dest = argv[2];
-	Nx = atoi(argv[3]);
-	Ny = atoi(argv[4]);
-	
-	for(int i = 0; i < argc; i++){
-		if (strcmp(argv[i], "-delta") == 0){
-		if (i+2 >= argc) {/*error*/}
-		dx = atof(argv[i+1]);
-		dy = atof(argv[i+2]);
-		}	
-		else if (strcmp(argv[i], "-origin") == 0){
-			if (i+2 >= argc) {/*error*/}
-			xorigin = atof(argv[i+1]);
-			yorigin = atof(argv[i+2]);
-		}
-		else if (strcmp(argv[i], "-object") == 0){
-			object = true;
-		}
-	}
-	
-#ifdef DEBUG
-	cout << source << endl;
-	cout << dest << endl;
-	cout << Nx << " " << Ny << endl;
-	cout << dx << " " << dy << endl;
-	cout << xorigin << " " << yorigin << endl;
-	cout << object << endl;
-#endif //DEBUG
-	parameter.push_back(Nx);
-	parameter.push_back(Ny);
-	parameter.push_back(dx);
-	parameter.push_back(dy);
-	parameter.push_back(xorigin);
-	parameter.push_back(yorigin);
-	
-	
-	if (object){
-		string className = source;
-		if ( !Cinfo::find( className ) )  {
-			cout << "Not handled yet!!" << endl;
-			/*WORK*/
-		}
-		string name = Shell::tail(dest, "/");
-		if ( name.length() < 1 ) {
-			cout << "Error: invalid object name : " << name << endl;
-			return;
-		}
-		string parent = Shell::head( argv[2], "/" );
-		Id pa(parent);
-		//Shell::staticCreateArray( conn, className, name, pa, n )
-		send4< string, string, Id, vector <double> >( s(),
-		createArraySlot, className, name, pa, parameter );
-	}
-	else{
-		string name;
-		Id e;
-		Id pa;
-		if ( parseCopyMove( 3, argv, s, e, pa, name ) ) {
-			//Shell::copy(conn, e, pa, name);
-			send4< Id, Id, string, vector <double> >( s(), copyIntoArraySlot, e, pa, name, parameter );
-		}
-	}
-	//src = src_list[0];
-	//dst = dst_list[0];
-	
-	
+void do_planarconnect1( int argc, const char** const argv, Id s )
+{
+/*
+ * source-path dest-path SpikeGenRank SynChanRank
+ * planarconnect source-path dest-path 
+ * */
+        string source, dest;
+        string spikegenrank, synchanrank;
+
+        if(argc != 5)
+        {
+                cout << "Error in planarconnect1" << endl;
+                return;
+        }
+
+        source = argv[1];
+        dest = argv[2];
+
+        spikegenrank = argv[3];
+        synchanrank = argv[4];
+
+        send4<string, string, string, string>(s(), planarconnect1Slot, source, dest, spikegenrank, synchanrank);
 }
 
 void do_planarconnect( int argc, const char** const argv, Id s )
@@ -2398,331 +2251,10 @@ void do_planarweight( int argc, const char** const argv, Id s )
 	send2<string, double>(s(), planarweightSlot, source, weight);
 }
 
-int do_getsyncount( int argc, const char** const argv, Id s )
+void do_setrank(int argc, const char **argv, Id s)
 {
-	vector <Conn> conn;
-	if (argc == 3){
-		Element* src = Id(argv[1])();
-		Element* dst = Id(argv[2])();
-		src->findFinfo("event")->outgoingConns(src, conn);
-		unsigned int count = 0;
-		for(size_t i = 0; i < conn.size(); i++){
-			if(conn[i].targetElement() == dst)
-				count++;
-		}
-		return count;
-	}
-	else if (argc == 2){
-		Element* src = Id(argv[1])();
-		src->findFinfo("event")->outgoingConns(src, conn);
-		return conn.size();
-	}
-	return 0;
-	//send2<string, string>(s(), planarweightSlot, source, dest);
+
 }
-
-char* do_getsynsrc( int argc, const char** const argv, Id s ){
-//getsynsrc <postsynaptic-element> <index>
-	if (argc != 3) {
-		cout << "usage:: getsynsrc <postsynaptic-element> <index>" << endl;
-		string s = "";
-		return copyString(s.c_str()); 
-	}
-	vector <Conn> conn;
-	string ret = "";
-	Element *dst = Id(argv[1])();
-	dst->findFinfo("synapse")->incomingConns(dst, conn);
-	unsigned int index = atoi(argv[2]);
-	if (index >= conn.size()){/*error*/}
-	Element *src = conn[index].targetElement();
-	ret = src->id().path();
-	return copyString(ret.c_str());
-}
-
-
-char* do_getsyndest( int argc, const char** const argv, Id s ){
-//getsynsrc <presynaptic-element> <index>
-	if (argc != 3) {
-		cout << "usage:: getsynsrc <presynaptic-element> <index>" << endl;
-		string s = "";
-		return copyString(s.c_str()); 
-	}
-	vector <Conn> conn;
-	string ret = "";
-	Element *src = Id(argv[1])();
-	src->findFinfo("event")->outgoingConns(src, conn);
-	unsigned int index = atoi(argv[2]);
-	if (index >= conn.size()){/*error*/}
-	Element *dst = conn[index].targetElement();
-	ret = dst->id().path();
-	return copyString(ret.c_str());
-}
-
-int do_getsynindex( int argc, const char** const argv, Id s ){
-//getsynsrc <presynaptic-element> <postsynaptic-element> [-number n]
-	if (argc != 3) {
-		cout << "usage:: getsynsrc <presynaptic-element> <postsynaptic-element> [-number n]" << endl;
-		return -1; 
-	}
-	vector <Conn> conn;
-	Element *src = Id(argv[1])();
-	Element *dst = Id(argv[2])();
-	if (src == 0 || dst == 0){
-		cout << "Wrong paths!!" << endl;
-		return -1;
-	}
-	src->findFinfo("event")->outgoingConns(src, conn);
-	for(size_t i = 0; i < conn.size(); i++){
-		if (conn[i].targetElement() == dst){
-			return i;
-		}
-	}
-	return -1;
-}
-
-int do_strcmp(int argc, const char** const argv, Id s ){
-	if (argc != 3){
-		cout << "usage:: strcmp <str1> <str2>" << endl;
-		return 0;
-	}
-	return strcmp(argv[1], argv[2]);
-}
-
-int do_strlen(int argc, const char** const argv, Id s ){
-	if (argc != 2){
-		cout << "usage:: strlen <str>" << endl;
-		return 0;
-	}
-	return strlen(argv[1]);
-}
-
-char* do_strcat(int argc, const char** const argv, Id s ){
-	if (argc != 3){
-		cout << "usage:: strcat <str1> <str2>" << endl;
-		return 0;
-	}
-	string str1 = argv[1];
-	string str2 = argv[2];
-	string concat = str1 + str2;
-	return copyString(concat.c_str());
-}
-
-
-char* do_substring(int argc, const char** const argv, Id s ){
-	if (argc < 3 || argc > 4){
-		cout << "usage:: substring <str1> <start> <end>" << endl;
-		return 0;
-	}
-	string str = argv[1];
-	//check whether argv[2] and argv[3] are in correct format
-	size_t start = atoi(argv[2]);
-	size_t end = str.size();
-	if (argc == 4) 
-		end = atoi(argv[3]);
-	if (start > end){
-		cout << "You cannot start after end" << endl;
-		return 0;
-	}
-	if (start > str.size() || end > str.size()){
-		cout << "You string has only " << str.size() << " chars"  << endl;
-	}
-	string substr = str.substr(start, end);	
-	return copyString(substr.c_str());
-}
-
- 
-int do_findchar(int argc, const char** const argv, Id s ){
-	if (argc != 3){
-		cout << "usage:: strcmp <str> <char>" << endl;
-		return 0;
-	}
-	string str1 = argv[1];
-	string str2 = argv[2];
-	size_t pos = str1.find(str2, 0); 	
-	if (pos == string::npos)
-		pos = -1;
-	return pos;
-}
-/*
-Function: opens file
-Question: Where will the file handle go?
-*/
-
-void do_openfile(int argc, const char** const argv, Id s){
-	if ( argc != 3 ){
-		cout << "usage:: openfile <filename> <mode>" << endl;
-		return;
-	}
-	string filename = argv[1];
-	string mode = argv[2];
-	send2<string, string>(s(), openFileSlot, filename, mode);
-}
-
-void do_writefile(int argc, const char** const argv, Id s){
-	//writefile <filename> text
-	if ( argc < 2 ) {
-		cout << "Too less arguments" << endl;
-		return;
-	}
-	bool newline = true;
-	bool userformat = false;
-	string format = "%s";
-	int max = argc;
-	for (int i = 2; i < argc; i++){
-		if (strcmp(argv[i], "-nonewline") == 0){
-			newline = false;
-			if (max > i) 
-				max = i;
-		}
-		if (strcmp(argv[i], "-format") == 0){
-			if (i+1 >= argc){
-				cout << "writefile::format not mentioned." << endl;
-				continue;
-			}
-			userformat = true;
-			format = argv[i+1];
-			if (max > i)
-				max = i;
-			i++;
-		}
-	}
-	
-	
-	string filename = argv[1];
-	string text = "";
-	for ( int i = 2; i < max; i++ ){ 
-		char e[100];
-		sprintf(e, format.c_str(), argv[i]);
-		text = text + e;
-		if (!userformat && i < max - 1)
-			text = text + " ";
-	}
-	if (newline)
-		text = text + "\n";
-	send2 < string, string > ( s(), writeFileSlot, filename, text );
-}
-
-
-void do_closefile(int argc, const char** const argv, Id s){
-	if ( argc != 2 ){
-		cout << "usage:: openfile <filename>" << endl;
-	}
-	string filename = argv[1];
-	send1< string > ( s(), closeFileSlot, filename );
-}
-
-void do_listfiles(int argc, const char** const argv, Id s){
-	if ( argc != 1 ){
-		cout << "usage:: openfile <filename> <mode>" << endl;
-	}
-	send0( s(), listFilesSlot );
-	GenesisParserWrapper* gpw = static_cast< GenesisParserWrapper* >
-			( s()->data() );
-	cout << gpw->getFieldValue();	
-}
-
-string GenesisParserWrapper::getFieldValue(){
-	return fieldValue_;
-}
-
-char* do_readfile(int argc, const char** const argv, Id s){
-	if ( argc < 2 ){
-		cout << "usage:: readfile <filename> -linemode" << endl;
-		return 0;
-	}
-	string filename = argv[1];
-	bool linemode = false;
-	if (argc == 3)
-		if (strcmp(argv[2], "-linemode") == 0) 
-			linemode = true;
-	send2< string , bool > ( s(), readFileSlot, filename, linemode );
-	GenesisParserWrapper* gpw = static_cast< GenesisParserWrapper* >
-			( s()->data() );
-	string text = "" + gpw->getFieldValue();
-	return copyString(text.c_str());
-}
-
-char* do_getarg( int argc, const char** const argv, Id s ){
-	if ( !( argc >= 2  && strcmp(argv[argc-1], "-count") == 0) &&
-		!( argc >= 3  && strcmp(argv[argc-2], "-arg") == 0 ) ){
-		cout << "usage:: getarg <list of argument> <-count OR -arg #>" << endl;
-		return 0;
-	}
-	if ( strcmp(argv[argc-1], "-count") == 0 ){
-		char e[5];
-		sprintf(e, "%d", argc-2);
-		return strdup(e);
-	}
-	if ( strcmp(argv[argc-2], "-arg") == 0 ){
-		// check whether argv[argc -1] is a number
-		int index = atoi(argv[argc-1]);
-		if (index > argc-2){
-			cout << "getarg:: Improper index" << endl;
-			return 0;
-		}
-		return strdup(argv[index]);
-	}
-	return 0;
-}
-
-int do_randseed( int argc, const char** const argv, Id s ){
-	if (argc == 1){
-		return static_cast <int> (mtrand()*294967296);
-	}
-	if (argc == 2){
-		//check whether argv[1] is an int in string!!
-		int seed = atoi(argv[1]);
-		//copied the error message from genesis
-		cout << "WARNING from init_rng: changing global seed value! Independence of streams is not guaranteed" << endl;
-		mtseed(seed);
-		return 0;
-	}
-	cout << "usage:: randseed [seed]" << endl;
-	return 0;
-}
-
-float do_rand( int argc, const char** const argv, Id s ){
-	if (argc != 3){
-		cout << "usage:: rand <lo> <hi>" << endl;
-		return 0;
-	}
-	//check whether argv[1] and argv[2] are in proper formats
-	double lo = atof(argv[1]);
-	double hi = atof(argv[2]);
-	//return lo + rand()*(hi - lo)/RAND_MAX;
-	return lo + mtrand()*(hi - lo);
-}
-
-void do_disable( int argc, const char** const argv, Id s ){
-	cout << "Not yet implemented!!" << endl;
-}
-
-void do_setup_table2( int argc, const char** const argv, Id s ){
-	cout << "Not yet implemented!!" << endl;
-}
-
-int do_INSTANTX(int argc, const char** const argv, Id s ){
-	if (argc != 1){
-		cout << "Error:: INSTANTX is a constant" << endl;
-	}
-	return 1;
-}
-
-int do_INSTANTY(int argc, const char** const argv, Id s ){
-	if (argc != 1){
-		cout << "Error:: INSTANTY is a constant" << endl;
-	}
-	return 2;
-}
-
-
-int do_INSTANTZ(int argc, const char** const argv, Id s ){
-	if (argc != 1){
-		cout << "Error:: INSTANTZ is a constant" << endl;
-	}
-	return 4;
-}
-
 
 
 //////////////////////////////////////////////////////////////////
@@ -2766,7 +2298,7 @@ void GenesisParserWrapper::loadBuiltinCommands()
 	AddFunc( "echo", do_echo, "void" );
 	AddFunc( "tab2file", do_tab2file, "void" );
 	AddFunc( "el",
-			reinterpret_cast< slifunc >( do_element_list ), "char**" );
+			reinterpret_cast< slifunc >( do_element_list ), "char*" );
 	AddFunc( "element_list",
 			reinterpret_cast< slifunc >( do_element_list ), "char*" );
 	AddFunc( "addtask", do_addtask, "void" );
@@ -2789,7 +2321,7 @@ void GenesisParserWrapper::loadBuiltinCommands()
 	AddFunc( "argc", 
 		reinterpret_cast< slifunc >( doArgc ), "int" );
 
-	AddFunc( "loadtab", do_loadtab, "void" );
+	AddFunc( "loadtab", doShellCommand, "void" );
 	AddFunc( "addfield", do_addfield, "void" );
 	AddFunc( "complete_loading", do_complete_loading, "void" );
 	AddFunc( "exp", reinterpret_cast< slifunc>( do_exp ), "float" );
@@ -2808,34 +2340,11 @@ void GenesisParserWrapper::loadBuiltinCommands()
 	AddFunc( "xcolorscale", do_xcolorscale, "void" );
 	AddFunc( "x1setuphighlight", do_x1setuphighlight, "void" );
 	AddFunc( "xsendevent", do_xsendevent, "void" );
-	AddFunc( "createmap", do_createmap, "void" );
+	AddFunc( "planarconnect1", do_planarconnect1, "void" );
 	AddFunc( "planarconnect", do_planarconnect, "void" );
 	AddFunc( "planardelay", do_planardelay, "void" );
 	AddFunc( "planarweight", do_planarweight, "void" );
-	AddFunc( "getsyncount", reinterpret_cast< slifunc >(do_getsyncount), "int" );
-	AddFunc( "getsynsrc", reinterpret_cast< slifunc >(do_getsynsrc), "char*" );
-	AddFunc( "getsyndest", reinterpret_cast< slifunc >(do_getsyndest), "char*" );
-	AddFunc( "getsynindex", reinterpret_cast< slifunc >(do_getsynindex), "int" );
-	AddFunc( "strcmp", reinterpret_cast< slifunc >(do_strcmp), "int" );
-	AddFunc( "strlen", reinterpret_cast< slifunc >(do_strlen), "int" );
-	AddFunc( "strcat", reinterpret_cast< slifunc >(do_strcat), "char*" );
-	AddFunc( "substring", reinterpret_cast< slifunc >(do_substring), "char*" );
-	AddFunc( "findchar", reinterpret_cast< slifunc >(do_findchar), "int" );
-	AddFunc( "getelementlist", reinterpret_cast< slifunc >(do_element_list ), "char*");
-	AddFunc( "openfile", do_openfile, "void" );
-	AddFunc( "writefile", do_writefile, "void" );
-	AddFunc( "readfile", reinterpret_cast< slifunc >( do_readfile ), "char*");
-	AddFunc( "listfiles", do_listfiles, "void" );
-	AddFunc( "closefile", do_closefile, "void" );
-	AddFunc( "getarg", reinterpret_cast< slifunc >( do_getarg ), "char*" );
-	AddFunc( "randseed", reinterpret_cast< slifunc >( do_randseed ), "int" );
-	AddFunc( "rand", reinterpret_cast< slifunc >( do_rand ), "float" );
-	AddFunc( "xps", do_xps, "void" );
-	AddFunc( "disable", do_disable, "void" );
-	AddFunc( "setup_table2", do_setup_table2, "void" );
-	AddFunc( "INSTANTX", reinterpret_cast< slifunc > ( do_INSTANTX ), "int" );
-	AddFunc( "INSTANTY", reinterpret_cast< slifunc > ( do_INSTANTY ), "int" );
-	AddFunc( "INSTANTZ", reinterpret_cast< slifunc > ( do_INSTANTZ ), "int" );
+	AddFunc( "setrank", do_setrank, "void" );
 }
 
 //////////////////////////////////////////////////////////////////
@@ -3064,19 +2573,15 @@ void GenesisParserWrapper::unitTest()
 	gpAssert( "alias gf getfield", "" );
 	gpAssert( "alias", "gf\tgetfield shf\tshowfield " );
 	gpAssert( "alias gf", "getfield " );
-	gpAssert( "le /sched/cj", "t0 t1 " );
-//	Autoscheduling causes solver to spawn here
-//	gpAssert( "setclock 1 0.1", "" );
-	// gpAssert( "le /sched/cj", "t0 t1 t2 t3 t4 t5 " );
+	gpAssert( "le /sched/cj", "t0 t1 t2 t3 t4 t5 " );
+	gpAssert( "setclock 1 0.1", "" );
+	gpAssert( "le /sched/cj", "t0 t1 t2 t3 t4 t5 " );
 	gpAssert( "echo {getfield /sched/cj/t0 dt}", "1 " );
-//	Autoscheduling interferes with these tests
-//	gpAssert( "echo {getfield /sched/cj/t1 dt}", "0.1 " );
-//	gpAssert( "useclock /##[TYPE=Compartment] 1", "" );
+	gpAssert( "echo {getfield /sched/cj/t1 dt}", "0.1 " );
+	gpAssert( "useclock /##[TYPE=Compartment] 1", "" );
 	gpAssert( "delete /compt", "" );
 	gpAssert( "le", lestr );
-	gpAssert( "echo {strcmp \"hello\" \"hello\"} ", "0 " );
-	gpAssert( "echo {strcmp \"hello\" \"hell\"} ", "1 " );
-	gpAssert( "echo {strcmp \"hell\" \"hello\"} ", "-1 " );
+
 	cout << "\n";
 }
 #endif

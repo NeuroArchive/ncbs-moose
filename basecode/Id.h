@@ -21,10 +21,6 @@ class Id
 	// This access is needed so that main can assign the nodes to
 	// the manager.
 	friend int main( int argc, char** argv );
-        friend int mooseInit(std::string confFile);
-        
-    
-    
 	friend class IdManager;
         friend class PyMooseContext;
     
@@ -44,9 +40,6 @@ class Id
 		 * May go off-node to find it.
 		 */
 		Id( const std::string& path, const std::string& separator = "/" );
-
-                ~Id(){}
-    
 
 		/**
 		 * Creates a new childId based on location of parent node and
@@ -81,8 +74,6 @@ class Id
 		static Id shellId();
 
 		Id assignIndex( unsigned int index );
-		
-		void setIndex( unsigned int index );
 
 		//////////////////////////////////////////////////////////////
 		//	Id info
@@ -143,12 +134,6 @@ class Id
 		 * Checks if id has been given an error flag
 		 */
 		bool bad() const;
-
-		/**
-		 * Returns true only if id is not bad, not zero and not out of range
-		 * Note that this more restrictive than !Id::bad().
-		 */
-		bool good() const;
 
 		/**
 		 * True if id points to zero object

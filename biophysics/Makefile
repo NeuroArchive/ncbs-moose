@@ -13,7 +13,6 @@ TARGET = biophysics.o
 OBJ = \
 	Compartment.o	\
 	HHChannel.o	\
-	Mg_block.o	\
 	HHGate.o	\
 	CaConc.o	\
 	Nernst.o	\
@@ -24,7 +23,6 @@ OBJ = \
 	NeuroScanBase.o \
 	NeuroScan.o \
 	NeuroHub.o \
-	Cell.o	\
 	TestBiophysics.o	\
 
 HEADERS = \
@@ -37,7 +35,6 @@ default: $(TARGET)
 $(OBJ)	: $(HEADERS)
 Compartment.o:	Compartment.h ../basecode/Ftype2.h
 HHChannel.o:	HHChannel.h ../basecode/Ftype2.h ../basecode/Ftype3.h
-Mg_block.o:	Mg_block.h ../basecode/Ftype2.h ../basecode/Ftype3.h
 HHGate.o:	HHGate.h ../builtins/Interpol.h
 CaConc.o:	CaConc.h
 Nernst.o:	Nernst.h
@@ -48,13 +45,12 @@ HSolve.o:	HSolve.h HSolveBase.h HSolveStructure.h
 NeuroScanBase.o:	NeuroScanBase.h HSolveStructure.h
 NeuroScan.o:	NeuroScan.h NeuroScanBase.h HSolveStructure.h
 NeuroHub.o:	NeuroHub.h HSolveStructure.h
-Cell.o:		Cell.h 
+
 .cpp.o:
 	$(CXX) $(CFLAGS) -I../basecode $< -c
 
 $(TARGET):		$(OBJ) $(HEADERS)
-	$(LD) -r -o $(TARGET) $(OBJ)
-#	$(LD) -r -o $(TARGET) $(OBJ) $(LIBS)
+	$(LD) -r -o $(TARGET) $(OBJ) $(LIBS)
 
 clean:
 	-rm -f *.o $(TARGET) core core.*

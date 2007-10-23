@@ -19,6 +19,8 @@
 #include <fstream>
 #include <map>
 #include <string>
+#include <mpi.h>
+#include <stdio.h>
 
 // Upi Bhalla, 24 May 2004:
 // I did a little checking up about portability of the setjmp construct
@@ -445,6 +447,153 @@ Result func_entry::Execute(int argc, const char** argv, Id s)
 	return(result);
 }
 
+
+int myFlexLexer::SendCommand(int argc)
+{
+	int i;
+
+	if( strlen(arrArgs[0]) == 0 )
+		return 1;
+
+	if(commandrank_ == 0)
+	{
+		for(i=1; i < processcount_; i++)
+		{
+			MPI_Send(arrArgs, MAX_COMMAND_SIZE * argc, MPI_CHAR, i, argc, MPI_COMM_WORLD);
+		}
+	}
+	else
+	{
+		MPI_Send(arrArgs, MAX_COMMAND_SIZE * argc, MPI_CHAR, commandrank_, argc, MPI_COMM_WORLD);
+	}
+
+   return 0;
+}
+
+bool myFlexLexer::checkUnique(int randomVar, int spikeIndex)
+{
+	int i;
+	for(i = 0; 0 != arrSpikegenConnections[spikeIndex][i]; i++) // check for duplication
+	{
+		if(arrSpikegenConnections[spikeIndex][i] == randomVar)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void myFlexLexer::generateRandomConnections(int argc, char** argv)
+{
+	int connectionCount;
+	int i,j,k;
+	bool bValid = false;
+	int randomVar;
+	char szRandomNumber[MAX_MPI_PROCESSES];
+	int origCommandRank = commandrank_;
+	
+	//memset(arrArgs, 0, MAX_MPI_PROCESSES * MAX_MPI_PROCESSES);
+
+	strcpy(arrArgs[0], "planarconnect1");
+
+	for(i=1; i<argc; i++)
+	{
+		strcpy(arrArgs[i], argv[i]);
+	}
+
+	memset(arrSpikegenConnections, 0, MAX_MPI_PROCESSES * MAX_MPI_PROCESSES);
+	memset(arrSynchanConnections, 0, MAX_MPI_PROCESSES * MAX_MPI_PROCESSES);
+	
+
+	for(i=1; i<processcount_; i++)
+	{
+		bValid = false;
+		while(bValid == false)
+		{
+			connectionCount = rand()%processcount_;
+			
+			if(connectionCount != 0)
+				bValid = true;
+		}
+		
+		cout<<endl<<"Connection count for "<<i<<" = "<<connectionCount<<flush;
+
+		for(j=0; j<connectionCount; j++)
+		{
+			bValid = false;
+			while(bValid == false)
+			{
+				randomVar = rand()%processcount_;
+				if(randomVar != 0 && randomVar != i) 
+				{
+					bValid = true;
+				}
+			}
+
+			if(checkUnique(randomVar, i) == true)
+			{
+				arrSpikegenConnections[i][j] = randomVar;			
+
+				for(k=0; 0 != arrSynchanConnections[randomVar][k]; k++);		
+
+				arrSynchanConnections[randomVar][k] = i;
+			}
+		}
+	}
+
+	/*cout<<endl<<"Planarconnect Array"<<endl;
+
+	for(i=1; i < processcount_; i++)
+	{
+		cout<<endl<<" "<<i<<": ";
+
+		for(j=0; 0 != arrSpikegenConnections[i][j]; j++)
+		{
+			cout<<arrSpikegenConnections[i][j]<<" , ";
+		}
+		
+		cout<<" ---- ";
+
+		for(j=0; 0 != arrSynchanConnections[i][j]; j++)
+		{
+			cout<<arrSynchanConnections[i][j]<<" , ";
+		}
+	}*/
+
+	cout<<endl<<"Planarconnect arguments";
+	for(i=1; i < processcount_; i++)
+	{
+		cout<<endl<<" For Process "<<i;
+		
+		strcpy(arrArgs[argc], "");
+		for(j=0; 0 != arrSpikegenConnections[i][j]; j++)
+		{
+			sprintf(szRandomNumber, "%d", arrSpikegenConnections[i][j]);
+			strcat(arrArgs[argc], szRandomNumber );
+			strcat(arrArgs[argc], "|");
+		}
+		
+		strcpy(arrArgs[argc+1], "");
+		for(j=0; 0 != arrSynchanConnections[i][j]; j++)
+		{
+			sprintf(szRandomNumber, "%d", arrSynchanConnections[i][j]);
+			strcat(arrArgs[argc+1], szRandomNumber );
+			strcat(arrArgs[argc+1], "|");
+		}			
+
+		for(j=0; j < argc+2; j++)
+		{
+			cout<<endl<<arrArgs[j]<<flush;
+		}
+
+		commandrank_ = i;
+		SendCommand(argc+2);
+	}
+	
+	commandrank_ = origCommandRank;
+}
+
 Result myFlexLexer::ExecuteCommand(int argc, char** argv)
 {
 FILE		*pfile;
@@ -457,15 +606,51 @@ Result		result;
 // int		ival;
 func_entry	*command;
 
+
     result.r_type = IntType();
     result.r.r_int = 0;
     if(argc < 1){
 	return(result);
     }
+
+
     /*
     ** is this an simulator shell function?
     */
-    command = GetCommand(argv[0]);
+    if( processrank_ == 0)
+    {
+	if( argc > MAX_COMMAND_ARGUMENTS)
+		return result;
+	
+	memset(arrArgs, 0, MAX_COMMAND_SIZE * MAX_COMMAND_ARGUMENTS);
+
+	if(!strcmp(argv[0], "planarconnect"))
+	{
+		generateRandomConnections(argc, argv);
+		return result;
+	}
+	else if(!strcmp(argv[0], "setrank"))
+	{
+		commandrank_ = atoi(argv[1]);
+		return result;
+	}
+	else
+	{
+		for(i=0; argv[i] != NULL ; i++)
+		{
+			strcpy(arrArgs[i], argv[i]);
+		}	
+	}
+
+	SendCommand(argc);
+
+	return result;
+    }
+    else
+    {
+        command = GetCommand(argv[0]);
+    }
+
 	if (command && command->HasFunc() ) {
 	/*
 	** check through the arg list for stdout
@@ -673,3 +858,4 @@ FILE	*pfile;
 	return(0);
     }
 }
+

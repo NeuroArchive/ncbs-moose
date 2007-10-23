@@ -276,9 +276,6 @@ class BidirectionalReaction: public RateTerm
 class SumTotal
 {
 	public:
-		SumTotal() // Needed for array setup.
-		{;}
-
 		SumTotal( double* target, const vector< const double* >& mol )
 			: target_( target ), mol_( mol )
 		{;}

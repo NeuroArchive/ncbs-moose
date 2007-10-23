@@ -19,7 +19,6 @@ OBJ = \
 	Shell.o	\
 	ReadCell.o \
 	SimDump.o \
-	LoadTab.o \
 
 HEADERS = \
 	../basecode/header.h \
@@ -38,7 +37,7 @@ ReadCell.o: ReadCell.h Shell.h
 	$(CXX) $(CFLAGS) -I../basecode $< -c
 
 $(TARGET):		$(OBJ) $(HEADERS)
-	$(LD) -r -o $(TARGET) $(OBJ)
+	$(LD) -r -o $(TARGET) $(OBJ) $(LIBS)
 
 
 clean:

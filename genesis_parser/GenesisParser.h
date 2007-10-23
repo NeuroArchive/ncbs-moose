@@ -129,30 +129,37 @@ class myFlexLexer: public yyFlexLexer
 		myFlexLexer();
 		
 		int yylex();
+                int yyparse();
+                static void yyerror(char* s);
 
 		int state;
-		int yyparse();
-		static void yyerror(char* s);
+		int commandrank_;
+		int processrank_;
+		int processcount_;
+		int SendCommand(int argc);
+		char arrArgs[MAX_COMMAND_SIZE][MAX_COMMAND_ARGUMENTS];
 
-		int add_word(int type, char* word);
-		int lookup_word(char* word);
-		int yychar; // Lookahead symbol
-		YYSTYPE yylval; // Semantic value of lookahead symbol
-		int yynerrs; // Number of parse errors.
-		int yylloc; // Location data for lookahead symbol
-
-		void AddInput(const std::string& s);
-		void Process();
-		void ParseInput(const std::string& s);
-
-		const std::string GetOutput();
-		void alias(const std::string& alias, const std::string& old );
-		void listCommands();
-
-		void setElement( Id id );
-
-	protected:
-		int LexerInput( char* buf, int max_size );
+                int add_word(int type, char* word);
+                int lookup_word(char* word);
+                int yychar; // Lookahead symbol
+                YYSTYPE yylval; // Semantic value of lookahead symbol
+                int yynerrs; // Number of parse errors.
+                int yylloc; // Location data for lookahead symbol
+ 
+                void AddInput(const std::string& s);
+                void Process();
+                void ParseInput(const std::string& s);
+ 
+                const std::string GetOutput();
+                void alias(const std::string& alias, const std::string& old );
+                void listCommands();
+ 
+                void setElement( Id id );
+ 
+ 
+      protected:
+                int LexerInput( char* buf, int max_size );
+ 
 
 		void LexerOutput( const char* buf, int size );
 		void Ccomment();
@@ -244,7 +251,9 @@ class myFlexLexer: public yyFlexLexer
 		Id element() const {
 			return element_;
 		}
-
+		
+		void generateRandomConnections(int argc, char** argv);
+		bool checkUnique(int randomVar, int spikeIndex);
 	private:
 		std::string currstr;
 		std::string outstr;
@@ -278,6 +287,9 @@ class myFlexLexer: public yyFlexLexer
 		short script_ptr;
 		Script script[MAXSCRIPTS];
 		Id element_;
+		int arrSpikegenConnections[MAX_MPI_PROCESSES][MAX_MPI_PROCESSES];
+		int arrSynchanConnections[MAX_MPI_PROCESSES][MAX_MPI_PROCESSES];
+
 };
 
 #endif // _GENESIS_PARSER_H

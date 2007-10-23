@@ -45,6 +45,7 @@ class SpikeGen
 	static void processFunc( const Conn& c, ProcInfo p );
 	static void reinitFunc( const Conn& c, ProcInfo p );
 	static void VmFunc( const Conn& c, double val );
+	static void sendRank( const Conn& c, int rank );
 
 	private:
 		double threshold_;
@@ -53,5 +54,6 @@ class SpikeGen
 		double state_;
 		double lastEvent_;
 		double V_;
+		vector < int > sendRank_;
 };
 #endif // _SpikeGen_h

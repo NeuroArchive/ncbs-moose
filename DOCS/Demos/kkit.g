@@ -16,8 +16,7 @@ end
 function initdump
 end
 
-create KineticManager /kinetics
-// create neutral /kinetics
+create neutral /kinetics
 
 create neutral /graphs
 create neutral /moregraphs
@@ -25,46 +24,46 @@ create neutral /moregraphs
 function enddump
 	setclock 0 {SIMDT} 0
 	setclock 1 {SIMDT} 1
-	setclock 2 {PLOTDT}
-	setclock 3 {CONTROLDT}
+	setclock 2 {SIMDT} 0
+	setclock 3 {SIMDT} 1
+	setclock 4 {PLOTDT}
+	setclock 5 {CONTROLDT}
 
 	/*
 	useclock /kinetics/##[TYPE=Molecule] 0
 	useclock /kinetics/##[TYPE=Enzyme],/kinetics/##[TYPE=Reaction] 1
 	*/
-	useclock /graphs/##[TYPE=Table] 2
+	useclock /graphs/##[TYPE=Table] 4
 
 	setfield /graphs/##[TYPE=Table] step_mode 3
+
+/*
+	str name
+	foreach name ( { el /graphs/#/#[TYPE=Table] } )
+		echo {name}
+		echo setfield {name} step_mode 3
+		setfield {name} step_mode 3
+	end
+	setfield /graphs/conc1/E.Co step_mode 3
+	setfield /graphs/conc1/P.Co step_mode 3
+	setfield /graphs/conc1/S.Co step_mode 3
+	*/
 
 	echo done reading dump
 	reset
 end
 
-function do_save_all_plots( filename )
-	str filename
-	str name
-	foreach name ( {el /graphs/##[TYPE=Table] } )
-		openfile {filename} a
-		writefile {filename} "/newplot"
-		writefile {filename} "/plotname "{name}
-		closefile {filename}
-		setfield {name} print {filename}
-	end
-end
-
 function save
 	setfield /graphs/##[TYPE=Table] print kkit.plot
-end
-
-function save2
-	// str name
-	setfield /graphs/##[TYPE=Table] print kkit.plot2
+	/*
+	setfield /graphs/conc1/E.Co print "E.plot"
+	setfield /graphs/conc1/S.Co print "S.plot"
+	setfield /graphs/conc1/P.Co print "P.plot"
+	*/
 end
 
 function complete_loading
 	reset
-//	step {MAXTIME} -t
-//	save
-//	save2
-//	do_save_all_plots glug.plot
+	step {MAXTIME} -t
+	save
 end

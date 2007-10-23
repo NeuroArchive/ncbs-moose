@@ -52,9 +52,6 @@ const Cinfo* initStoichCinfo()
 		new SrcFinfo( "mmEnzConnectionSrc",
 			Ftype2< unsigned int, Element* >::global()
 		),
-		new SrcFinfo( "clearSrc",
-			Ftype0::global()
-		),
 	};
 
 	static Finfo* integrateShared[] =
@@ -143,12 +140,10 @@ const Cinfo* initStoichCinfo()
 		///////////////////////////////////////////////////////
 		// MsgDest definitions
 		///////////////////////////////////////////////////////
-		/*
-		new DestFinfo( "rebuild", 
+		new DestFinfo( "scanTicks", 
 			Ftype0::global(),
-			RFCAST( &Stoich::rebuild )
+			RFCAST( &Stoich::scanTicks )
 		),
-		*/
 		
 		///////////////////////////////////////////////////////
 		// Shared definitions
@@ -191,8 +186,6 @@ static const unsigned int enzConnectionSlot =
 	initStoichCinfo()->getSlotIndex( "hub.enzConnectionSrc" );
 static const unsigned int mmEnzConnectionSlot =
 	initStoichCinfo()->getSlotIndex( "hub.mmEnzConnectionSrc" );
-static const unsigned int clearSlot =
-	initStoichCinfo()->getSlotIndex( "hub.clearSrc" );
 static const unsigned int allocateSlot =
 	initStoichCinfo()->getSlotIndex( "integrate.allocate" );
 static const unsigned int assignStoichSlot =
@@ -277,12 +270,10 @@ unsigned int Stoich::getRateVectorSize( const Element* e ) {
 // Dest function definitions
 ///////////////////////////////////////////////////
 
-/*
-void Stoich::rebuild( const Conn& c ) {
+void Stoich::scanTicks( const Conn& c ) {
 	Element* e = c.targetElement();
-	static_cast< Stoich* >( e->data() )->localRebuild( e );
+	static_cast< Stoich* >( e->data() )->localScanTicks( e );
 }
-*/
 
 // Static func
 void Stoich::reinitFunc( const Conn& c )
@@ -290,8 +281,8 @@ void Stoich::reinitFunc( const Conn& c )
 	Element* e = c.targetElement();
 	Stoich* s = static_cast< Stoich* >( e->data() );
 	s->S_ = s->Sinit_;
-	// send1< vector< double >* >( e, allocateSlot, &s->S_ );
-	// send1< void* >( e, assignStoichSlot, e->data() );
+	send1< vector< double >* >( e, allocateSlot, &s->S_ );
+	send1< void* >( e, assignStoichSlot, e->data() );
 	s->lasty_ = 0;
 	s->nCopy_ = 0;
 	s->nCall_ = 0;
@@ -332,95 +323,37 @@ unsigned int countRates( Element* e, bool useOneWayReacs )
 	return 0;
 }
 
-void Stoich::clear( Element* stoich )
+void Stoich::localScanTicks( Element* stoich )
 {
-	// cout << "Sending clear signal for " << stoich->name() << "\n" << flush;
-	send0( stoich, clearSlot ); // Sends command to KineticHub to clear
-			// out the old messages to solved objects, and unzombify them
-	// cout << "Clear signal sent\n" << flush;
+	static Id t2( "/sched/cj/t2" );
+	static Id t3( "/sched/cj/t3" );
+	static const Finfo* processFinfo = t2()->findFinfo( "process" );
+	assert( !t2.bad() );
+	assert( !t3.bad() );
+	assert( processFinfo != 0 );
+	
+	vector< Element* > ret;
+	vector< Conn > list;
+	vector< Conn >::iterator i;
+	
+	processFinfo->outgoingConns( t2(), list );
+	for ( i = list.begin(); i != list.end(); i++ )
+		ret.push_back( i->targetElement() );
 
-	nMols_ = 0;
-	nVarMols_ = 0;
-	nSumTot_ = 0;
-	nBuffered_ =0;
-	nReacs_ = 0;
-	nEnz_ = 0;
-	nMmEnz_ = 0;
-	nExternalRates_ = 0;
-	S_.resize( 0 );
-	Sinit_.resize( 0 );
-	v_.resize( 0 );
-	rates_.resize( 0 );
-	sumTotals_.resize( 0 );
-	path2mol_.resize( 0 );
-	mol2path_.resize( 0 );
-	molMap_.clear( );
-#ifdef DO_UNIT_TESTS
-	reacMap_.clear( );
-#endif // DO_UNIT_TESTS
-	nVarMolsBytes_ = 0;
-	nCopy_ = 0;
-	nCall_ = 0;
+	processFinfo->outgoingConns( t3(), list );
+	for ( i = list.begin(); i != list.end(); i++ )
+		ret.push_back( i->targetElement() );
+
+	rebuildMatrix( stoich, ret );
 }
-
-// 
-// Instead of scanning the ticks, we'll scan the path itself.
-// First, check if the EL from the path matches that from the 
-// outgoing solver messages.
-// If so, no rebuild needed.
-// Otherwise, wipe clean and rebuild from the path.
-// The 'clear' call to the hub tells it to clear out all messages to
-// the zombie objects, after updating them with the latest values.
-/*
-void Stoich::localRebuild( Element* stoich )
-{
-	send0( stoich, clearSlot ); // Clears out the old messages to solved objects
-	nMols_ = 0;
-	nVarMols_ = 0;
-	nSumTot_ = 0;
-	nBuffered_ =0;
-	nReacs_ = 0;
-	nEnz_ = 0;
-	nMmEnz_ = 0;
-	nExternalRates_ = 0;
-	S_.resize( 0 );
-	Sinit_.resize( 0 );
-	v_.resize( 0 );
-	rates_.resize( 0 );
-	sumTotals_.resize( 0 );
-	path2mol_.resize( 0 );
-	mol2path_.resize( 0 );
-	molMap_.clear( );
-#ifdef DO_UNIT_TESTS
-	reacMap_.clear( );
-#endif // DO_UNIT_TESTS
-	nVarMolsBytes_ = 0;
-	nCopy_ = 0;
-	nCall_ = 0;
-
-	// rebuildMatrix( stoich, ret );
-	localSetPath( stoich, path_ );
-}
-*/
 
 void Stoich::localSetPath( Element* stoich, const string& value )
 {
 	path_ = value;
 	vector< Element* > ret;
 	wildcardFind( path_, ret );
-	clear( stoich );
-	if ( ret.size() > 0 ) {
 
-		rebuildMatrix( stoich, ret );
-
-		// This first target is for any Kintegrator objects
-		send1< vector< double >* >( stoich, allocateSlot, &S_ );
-
-		// The second target is for GSL integrator types.
-		send1< void* >( stoich, assignStoichSlot, stoich->data() );
-	} else {
-		cout << "No objects to simulate in path '" << value << "'\n";
-	}
+	rebuildMatrix( stoich, ret );
 }
 
 // Need to clean out existing stuff first.
@@ -479,10 +412,9 @@ void Stoich::rebuildMatrix( Element* stoich, vector< Element* >& ret )
 	send3< unsigned int, unsigned int, unsigned int >(
 			stoich, rateSizeSlot, nReac, nEnz, nMmEnz );
 	for ( i = ret.begin(); i != ret.end(); i++ ) {
-		const string& cn = ( *i )->className();
-		if ( cn == "Reaction" ) {
+		if ( ( *i )->className() == "Reaction" ) {
 			addReac( stoich, *i );
-		} else if ( cn == "Enzyme" ) {
+		} else if ( ( *i )->className() == "Enzyme" ) {
 			bool enzmode = 0;
 			isOK = get< bool >( *i, "mode", enzmode );
 			assert( isOK );
@@ -490,16 +422,10 @@ void Stoich::rebuildMatrix( Element* stoich, vector< Element* >& ret )
 				addEnz( stoich, *i );
 			else
 				addMmEnz( stoich, *i );
-		} else if ( cn == "Table" ) {
+		} else if ( ( *i )->className() == "Table" ) {
 			addTab( stoich, *i );
-		} else if ( cn == "Neutral" ) {
-			// cout << (*i)->name() << " is a Neutral\n";
-		} else if ( cn == "GslIntegrator" ||
-			cn == "Kintegrator" ||
-			cn == "KineticHub" ||
-			cn == "Stoich" )
-		{
-			// Ignore this too.
+		} else if ( ( *i )->className() == "Neutral" ) {
+			cout << (*i)->name() << " is a Neutral\n";
 		} else if ( ( *i )->className() != "Molecule" ) {
 			addRate( stoich, *i );
 		}
@@ -561,8 +487,7 @@ void Stoich::setupMols(
 void Stoich::addSumTot( Element* e )
 {
 	vector< const double* > mol;
-	// vector< const Element* > tab;
-	if ( findIncoming( e, "sumTotal", mol ) ) {
+	if ( findIncoming( e, "sumTotal", mol ) > 0 ) {
 		map< const Element*, unsigned int >::iterator j = molMap_.find( e );
 		assert( j != molMap_.end() );
 		SumTotal st( &S_[ j->second ], mol );
@@ -570,8 +495,9 @@ void Stoich::addSumTot( Element* e )
 	}
 }
 
-bool Stoich::findIncoming(
-	Element* e, const string& msgFieldName, vector< const double* >& ret )
+unsigned int Stoich::findIncoming(
+	Element* e, const string& msgFieldName, 
+	vector< const double* >& ret )
 {
 	const Finfo* srcFinfo = e->findFinfo( msgFieldName );
 	assert( srcFinfo != 0 );
@@ -587,18 +513,14 @@ bool Stoich::findIncoming(
 		j = molMap_.find( src );
 		if ( j != molMap_.end() ) {
 			ret.push_back( & S_[ j->second ] );
-		} else { // Should be a table or other object.
-			// tab.push_back( src );
-			/*
+		} else {
 			cerr << "Error: Unable to locate " << 
 				src->name() <<
-				" as incoming for " << e->name();
+				" as reactant for " << e->name();
 			return 0;
-			*/
 		}
 	}
-	// return ( ( ret.size() + tab.size() ) > 0 );
-	return ( ret.size() > 0 );
+	return ret.size();
 }
 
 /**
@@ -922,7 +844,6 @@ void Stoich::updateRates( vector< double>* yprime, double dt  )
 
 	// Much scope for optimization here.
 	vector< double >::iterator j = yprime->begin();
-	assert( yprime->size() >= nVarMols_ );
 	for (unsigned int i = 0; i < nVarMols_; i++) {
 		*j++ = dt * N_.computeRowRate( i , v_ );
 	}

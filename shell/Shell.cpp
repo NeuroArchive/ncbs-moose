@@ -15,8 +15,6 @@
 #include "Shell.h"
 #include "ReadCell.h"
 #include "SimDump.h"
-//#include <stdlib.h>
-//#include <time.h>
 
 //////////////////////////////////////////////////////////////////////
 // Shell MOOSE object creation stuff
@@ -50,10 +48,9 @@ const Cinfo* initShellCinfo()
 		new DestFinfo( "create",
 				Ftype3< string, string, Id >::global(),
 				RFCAST( &Shell::staticCreate ) ),
-		// Creating an array of objects
-		new DestFinfo( "createArray",
-				Ftype4< string, string, Id, vector<double> >::global(),
-				RFCAST( &Shell::staticCreateArray ) ),
+                new DestFinfo( "planarconnect1",
+                                Ftype4< string, string, string, string >::global(),
+                                RFCAST( &Shell::planarconnect1 ) ),
 		new DestFinfo( "planarconnect",
 				Ftype3< string, string, double >::global(),
 				RFCAST( &Shell::planarconnect ) ),
@@ -137,8 +134,6 @@ const Cinfo* initShellCinfo()
 		////////////////////////////////////////////////////////////
 		new DestFinfo( "copy",
 			Ftype3< Id, Id, string >::global(), RFCAST( &Shell::copy ) ),
-		new DestFinfo( "copyIntoArray",
-			Ftype4< Id, Id, string, vector <double> >::global(), RFCAST( &Shell::copyIntoArray ) ),
 		new DestFinfo( "move",
 			Ftype3< Id, Id, string >::global(), RFCAST( &Shell::move ) ),
 		////////////////////////////////////////////////////////////
@@ -178,21 +173,6 @@ const Cinfo* initShellCinfo()
 		new DestFinfo(	"simUndump",
 					// args is sequence of args for simundump command.
 			Ftype1< string >::global(), RFCAST( &Shell::simUndump ) ),
-		new DestFinfo( "openfile",
-				Ftype2< string, string >::global(),
-				RFCAST( &Shell::openFile ) ),
-		new DestFinfo( "writefile",
-				Ftype2< string, string >::global(),
-				RFCAST( &Shell::writeFile ) ),
-		new DestFinfo( "listfiles",
-				Ftype0::global(),
-				RFCAST( &Shell::listFiles ) ),
-		new DestFinfo( "closefile",
-				Ftype1< string >::global(),
-				RFCAST( &Shell::closeFile ) ),	
-		new DestFinfo( "readfile",
-				Ftype2< string, bool >::global(),
-				RFCAST( &Shell::readFile) ),	
 		////////////////////////////////////////////////////////////
 		// field assignment for a vector of objects
 		////////////////////////////////////////////////////////////
@@ -200,9 +180,6 @@ const Cinfo* initShellCinfo()
 		new DestFinfo( "setVecField",
 				Ftype3< vector< Id >, string, string >::global(),
 				RFCAST( &Shell::setVecField ) ),
-		new DestFinfo( "loadtab",
-				Ftype1< string >::global(),
-				RFCAST( &Shell::loadtab ) ),	
 	};
 
 	/**
@@ -336,6 +313,8 @@ static const unsigned int clockSlot =
 	initShellCinfo()->getSlotIndex( "parser.returnClocksSrc" );
 static const unsigned int listMessageSlot =
 	initShellCinfo()->getSlotIndex( "parser.listMessagesSrc" );
+
+
 static const unsigned int rCreateSlot =
 	initShellCinfo()->getSlotIndex( "master.create" );
 static const unsigned int rGetSlot =
@@ -376,7 +355,7 @@ Id Shell::parent( Id eid )
 	Element* e = eid();
 	Id ret;
 	// Check if eid is on local node, otherwise go to remote node
-	// ret = Neutral::getParent(e)
+	
 	if ( get< Id >( e, "parent", ret ) )
 		return ret;
 	return Id::badId();
@@ -401,9 +380,7 @@ Id Shell::traversePath( Id start, vector< string >& names )
 		} else {
 			Id ret;
 			Element* e = start();
-			//Neutral::getChildByName(e, *i);
 			lookupGet< Id, string >( e, "lookupChild", ret, *i );
-			//if ( ret.zero() || ret.bad() ) cout << "Shell:traversePath: The id is bad" << endl;
 			if ( ret.zero() || ret.bad() )
 					return Id::badId();
 			start = ret;
@@ -673,51 +650,46 @@ void Shell::staticCreate( const Conn& c, string type,
 	}
 }
 
-// Static function
-// parameter has following clumped in the order mentioned, Nx, Ny, dx, dy, xorigin, yorigin
-void Shell::staticCreateArray( const Conn& c, string type,
-					string name, Id parent, vector <double> parameter )
-{
-	Element* e = c.targetElement();
-	Shell* s = static_cast< Shell* >( e->data() );
+void Shell::planarconnect1(const Conn& c, string source, string dest, string spikegenRank, string synchanRank){
 
-	// This is where the IdManager does clever load balancing etc
-	// to assign child node.
-	Id id = Id::childId( parent );
-	// Id id = Id::scratchId();
-	Element* child = id();
-	if ( child == 0 ) { // local node
-		int n = (int) (parameter[0]*parameter[1]);
-		bool ret = s->createArray( type, name, parent, id, n );
-		assert(parameter.size() == 6);
-		ArrayElement* f = static_cast <ArrayElement *> (e);
-		f->setNoOfElements((int)(parameter[0]), (int)(parameter[1]));
-		f->setDistances(parameter[2], parameter[3]);
-		f->setOrigin(parameter[4], parameter[5]);
-		if ( ret ) { // Tell the parser it was created happily.
-			//GenesisParserWrapper::recvCreate(conn, id)
-			sendTo1< Id >( e, createSlot, c.targetIndex(), id);
-		}
-	} else {
-		// Shell-to-shell messaging here with the request to
-		// create a child.
-		// This must only happen on node 0.
-		assert( e->id().node() == 0 );
-		assert( id.node() > 0 );
-		OffNodeInfo* oni = static_cast< OffNodeInfo* >( child->data() );
-		// Element* post = oni->post;
-		unsigned int target = 
-		e->connSrcBegin( rCreateSlot ) - e->lookupConn( 0 ) +
-			id.node() - 1;
-		sendTo4< string , string, Id, Id>( 
-			e, rCreateSlot, target,
-			type, name, 
-			parent, oni->id );
-		// Here it needs to fork till the object creation is complete.
-		delete oni;
-		delete child;
-	}
+        int next, previous;
+        bool ret;
+
+
+        Id spkId(source);
+        Id synId(dest);
+        
+        Element *eSpkGen = spkId();
+        Element *eSynChan = synId();
+
+        previous = 0;   
+        while(1)
+        {
+                next = spikegenRank.find('|', previous);
+                if(next == -1)
+                        break;
+                //cout<<endl<<spikegenRank.substr(previous, next-previous);
+                ret = set< int >( eSpkGen, "sendRank", atoi(spikegenRank.substr(previous, next-previous).c_str()) ); 
+                previous = next+1;
+        }
+                    
+        cout<<endl<<endl;
+
+        previous = 0;   
+        while(1)
+        {
+                next = synchanRank.find('|', previous);
+
+                if(next == -1)
+                        break;
+
+                 ret = set< int >( eSynChan, "recvRank", atoi(synchanRank.substr(previous, next-previous).c_str()) );
+                previous = next+1;
+        }
 }
+        
+
+
 
 void Shell::planarconnect(const Conn& c, string source, string dest, double probability){
 	vector <Element* > src_list, dst_list;
@@ -770,21 +742,6 @@ void Shell::planarweight(const Conn& c, string source, double weight){
 	}
 }
 
-/*void Shell::getSynCount(const Conn& c, string source, string dest){
-	Element* src = Id(source)();
-	Element* dst = Id(dest)();
-	vector <Conn> conn;
-	
-	src->findFinfo("event")->outgoingConns(src, conn);
-	unsigned int count = 0;
-	for(size_t i = 0; i < conn.size(); i++){
-		if(conn[i].targetElement() == dst)
-			count++;
-	}
-	
-}*/
-
-
 
 
 // Static function
@@ -808,19 +765,15 @@ void Shell::getField( const Conn& c, Id id, string field )
 		return;
 	string ret;
 	Element* e = id();
-	//cout << e->name() << endl;
-	
 	// Appropriate off-node stuff here.
 
 	const Finfo* f = e->findFinfo( field );
 	// Error messages are the job of the parser. So we just return
 	// the value when it is good and leave the rest to the parser.
 	if ( f )
-		if ( f->strGet( e, ret ) ){
-			//GenesisParserWrapper::recvField (conn, ret);
+		if ( f->strGet( e, ret ) )
 			sendTo1< string >( c.targetElement(),
 				getFieldSlot, c.targetIndex(), ret );
-		}
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -979,29 +932,6 @@ void Shell::copy( const Conn& c,
 		sendTo1< Id >( c.targetElement(),
 					createSlot, c.targetIndex(), e->id() );
 	}
-}
-
-/**
- * This function copies the prototype element in form of an array.
- * It is similar to copy() only that it creates an array of copies 
- * elements
-*/
-
-void Shell::copyIntoArray( const Conn& c, 
-				Id src, Id parent, string name, vector <double> parameter )
-{
-	// Shell* s = static_cast< Shell* >( c.targetElement()->data() );
-	int n = (int) (parameter[0]*parameter[1]);
-	Element* e = src()->copyIntoArray( parent(), name, n );
-	//assign the other parameters to the arrayelement
-	assert(parameter.size() == 6);
-	ArrayElement* f = static_cast <ArrayElement *> (e);
-	f->setNoOfElements((int)(parameter[0]), (int)(parameter[1]));
-	f->setDistances(parameter[2], parameter[3]);
-	f->setOrigin(parameter[4], parameter[5]);
-	if ( e )  // Send back the id of the new element base
-		sendTo1< Id >( c.targetElement(),
-					createSlot, c.targetIndex(), e->id() );
 }
 
 // Static placeholder.
@@ -1232,9 +1162,8 @@ void Shell::getWildcardList( const Conn& c, string path, bool ordered )
 	vector< Element* >::iterator j;
 
 	for (i = ret.begin(), j = list.begin(); j != list.end(); i++, j++ )
-			*i = ( *j )->id();
+		*i = ( *j )->id();
 	
-	//GenesisParserWrapper::recvElist(conn, elist)
 	send1< vector< Id > >( c.targetElement(), elistSlot, ret );
 }
 
@@ -1472,111 +1401,6 @@ void Shell::simUndump( const Conn& c, string args )
 	sh->simDump_->simUndump( args );
 }
 
-void Shell::loadtab( const Conn& c, string data )
-{
-	Shell* sh = static_cast< Shell* >( c.data() );
-	sh->innerLoadTab( data );
-}
-
-//////////////////////////////////////////////////////////////////
-// File handling functions
-//////////////////////////////////////////////////////////////////
-
-///\todo These things should NOT be globals.
-map <string, FILE*> Shell::filehandler;
-vector <string> Shell::filenames;
-vector <string> Shell::modes;
-vector <FILE*> Shell::filehandles;
-
-void Shell::openFile( const Conn& c, string filename, string mode )
-{
-	FILE* o = fopen( filename.c_str(), mode.c_str() );
-	if (o == NULL){
-		cout << "Error: Shell::openFile Cannot openfile " << filename << endl;
-		return;
-	}
-	map<string, FILE*>::iterator iter = filehandler.find(filename);
-	if (iter != filehandler.end() ){
-		cout << "File " << filename << " already being used." << endl;
-		return;
-	}
-	//filehandler[filename] = o;
-	filenames.push_back(filename);
-	modes.push_back(mode);
-	filehandles.push_back(o);
-}
-
-
-
-void Shell::writeFile( const Conn& c, string filename, string text )
-{
-	size_t i = 0;
-	while (filenames[i] != filename && ++i);
-	if ( i < filenames.size() ){
-		if ( !( modes[i] == "w" || modes[i] == "a" ) ) {
-			cout << "Error:: The file has not been opened in write mode" << endl;
-			return;
-		}
-		fprintf(filehandles[i], "%s", text.c_str());
-	}
-	else {
-		cout << "Error:: File "<< filename << " not opened!!" << endl;
-		return;
-	}
-}
-
-void Shell::closeFile( const Conn& c, string filename ){
-	size_t i = 0;
-	while (filenames[i] != filename && ++i);
-	if ( i < filenames.size() ){
-		if ( fclose(filehandles[i]) != 0 ) {
-			cout << "Error:: Could not close the file." << endl;
-			return;
-		}
-		filenames.erase( filenames.begin() + i );
-		modes.erase( modes.begin() + i );
-		filehandles.erase( filehandles.begin() + i );
-	}
-	else {
-		cout << "Error:: File "<< filename << " not opened!!" << endl;
-		return;
-	}
-}
-
-void Shell::listFiles( const Conn& c ){
-	string ret = "";
-	for ( size_t i = 0; i < filenames.size(); i++ ) 
-		ret = ret + filenames[i] + "\n";
-	sendTo1< string >( c.targetElement(), getFieldSlot, c.targetIndex(), ret );	
-}
-
-
-/*
-Limitation: lines should be shorter than 1000 chars
-*/
-void Shell::readFile( const Conn& c, string filename, bool linemode ){
-	size_t i = 0;
-	while (filenames[i] != filename && ++i);
-	if ( i < filenames.size() ){
-		char str[1000];
-		if (linemode){
-			fgets( str, 1000, filehandles[i] );
-		}
-		else 
-			fscanf( filehandles[i], "%s", str);
-		string ret = str;
-		if (ret[ ret.size() -1 ] == '\n' && !linemode)
-			ret.erase( ret.end() - 1 );
-		sendTo1< string >( c.targetElement(), getFieldSlot, c.targetIndex(), ret );
-	}
-	else {
-		cout << "Error:: File "<< filename << " not opened!!" << endl;
-		return;
-	}
-}
-
-
-
 //////////////////////////////////////////////////////////////////
 // Helper functions.
 //////////////////////////////////////////////////////////////////
@@ -1613,42 +1437,6 @@ bool Shell::create( const string& type, const string& name,
 	}
 	return 0;
 }
-
-// Regular function
-bool Shell::createArray( const string& type, const string& name, 
-		Id parent, Id id, int n )
-{	
-	const Cinfo* c = Cinfo::find( type );
-	Element* p = parent();
-	if ( !p ) {
-		cout << "Error: Shell::create: No parent " << p << endl;
-		return 0;
-	}
-
-	const Finfo* childSrc = p->findFinfo( "childSrc" );
-	if ( !childSrc ) {
-		// Sorry, couldn't resist it.
-		cout << "Error: Shell::create: parent cannot handle child\n";
-		return 0;
-	}
-	if ( c != 0 && p != 0 ) {
-		Element* e = c->createArray( id, name, n, 0 );
-		//cout << e->name() << endl;
-		bool ret = childSrc->add( p, e, e->findFinfo( "child" ) );
-		assert( ret );
-		//cout << "OK\n";
-		recentElement_ = id;
-		ret = c->schedule( e );
-		assert( ret );
-		return 1;
-	} else  {
-		cout << "Error: Shell::create: Unable to find type " <<
-			type << endl;
-	}
-	return 0;
-}
-
-
 
 // Regular function
 void Shell::destroy( Id victim )
@@ -1698,7 +1486,6 @@ void Shell::le ( Id eid )
 
 #ifdef DO_UNIT_TESTS
 
-#include <math.h>
 #include "../element/Neutral.h"
 
 void testShell()
@@ -1795,27 +1582,6 @@ void testShell()
 	ASSERT( a() == 0, "destroy a" );
 	ASSERT( a1() == 0, "destroy a1" );
 	ASSERT( a2() == 0, "destroy a2" );
-
-	/////////////////////////////////////////
-	// Test the loadTab operation
-	/////////////////////////////////////////
-	Element* tab = Neutral::create( "Table", "t1", Element::root() );
-	static const double EPSILON = 1.0e-9;
-	static double values[] = 
-		{ 1, 1.0628, 1.1253, 1.1874, 1.2487, 1.309,
-			1.3681, 1.4258, 1.4817, 1.5358, 1.5878 };
-	sh.innerLoadTab( "/t1 table 1 10 0 10		1 1.0628 1.1253 1.1874 1.2487 1.309 1.3681 1.4258 1.4817 1.5358 1.5878" );
-	int ival;
-	ret = get< int >( tab, "xdivs", ival );
-	ASSERT( ret, "LoadTab" );
-	ASSERT( ival == 10 , "LoadTab" );
-	for ( unsigned int i = 0; i < 11; i++ ) {
-		double y = 0.0;
-		ret = lookupGet< double, unsigned int >( tab, "table", y, i );
-		ASSERT( ret, "LoadTab" );
-		ASSERT( fabs( y - values[i] ) < EPSILON , "LoadTab" );
-	}
-	set( tab, "destroy" );
 }
 
 #endif // DO_UNIT_TESTS

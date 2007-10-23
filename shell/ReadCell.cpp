@@ -72,8 +72,7 @@ Element* ReadCell::start( const string& cellpath )
 		cellpa = Element::root();
 		cellname = cellpath.substr( 1 );
 	} else {
-		cout << cellpath.substr( 0, pos ) << endl;
-		cellId = Id( cellpath.substr( 0, pos  ), "/" );
+		cellId = Id( cellpath.substr( 0, pos - 1 ), "/" );
 		if ( cellId.bad() ) {
 			cout << "Warning: cell path '" << cellpath <<
 					"' not found.\n";
@@ -108,8 +107,6 @@ void ReadCell::read( const string& filename, const string& cellpath )
 			line = line.substr( pos );
 		if ( line.substr( 0, 2 ) == "//" )
 				continue;
-		if ( (pos = line.find("//")) != string::npos ) 
-			line = line.substr( 0, pos );
 		if ( line.substr( 0, 2 ) == "/*" ) {
 				parseMode = COMMENT;
 		} else if ( line.find( "*/" ) != string::npos ) {

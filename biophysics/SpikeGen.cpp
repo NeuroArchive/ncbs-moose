@@ -9,6 +9,7 @@
 
 #include "moose.h"
 #include <math.h>
+#include <mpi.h>
 
 #include "SpikeGen.h"
 
@@ -77,6 +78,9 @@ const Cinfo* initSpikeGenCinfo()
 	//////////////////////////////////////////////////////////////////
 		new DestFinfo( "Vm", Ftype1< double >::global(),
 			RFCAST( &SpikeGen::VmFunc ) ),
+
+                new DestFinfo( "sendRank", Ftype1< int >::global(),
+                        RFCAST( &SpikeGen::sendRank ) ),
 	};
 
 	// We want the spikeGen to update after the compartments have done so
@@ -142,14 +146,31 @@ double SpikeGen::getState( const Element* e )
 	return static_cast< SpikeGen* >( e->data() )->state_;
 }
 
+void SpikeGen::sendRank( const Conn& c, int rank )
+{
+        static_cast< SpikeGen* >( c.data() )->sendRank_.push_back(rank);
+}
+
 //////////////////////////////////////////////////////////////////
 // SpikeGen::Dest function definitions.
 //////////////////////////////////////////////////////////////////
 
 void SpikeGen::innerProcessFunc( const Conn& c, ProcInfo p )
 {
+	int iMyRank;
+	MPI_Comm_rank(MPI_COMM_WORLD, &iMyRank);
+
 	double t = p->currTime_;
 	if ( V_ > threshold_ && t >= lastEvent_ + refractT_ ) {
+	cout<<endl<<"Sending a spike"<<flush;	
+
+	
+		for(int i=0; i<sendRank_.size(); i++)
+		{
+			MPI_Send(&t, 1, MPI_DOUBLE, sendRank_[i], 0, MPI_COMM_WORLD);
+			cout<<endl<<"Rank "<<iMyRank<<" sent a tick to rank "<< sendRank_[i] <<flush;
+		}
+	
 		send1< double >( c.targetElement(), eventSlot, t );
 		lastEvent_ = t;
 		state_ = amplitude_;

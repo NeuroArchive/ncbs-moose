@@ -45,6 +45,7 @@ class GenesisParserWrapper: public myFlexLexer
 		void doShowMsg( int argc, const char** argv, Id s );
 		void showAllFields( Id e, Id s );
 		void doAdd( int argc, const char** const argv, Id s );
+		void doSetRank( int argc, const char** const argv, Id s );
 		bool innerAdd( Id src, const string& srcF, Id dest,
 						const string& destF );
 		void useClock( Id tickId, const string& path,
@@ -53,9 +54,8 @@ class GenesisParserWrapper: public myFlexLexer
 		void showClocks( Element* e );
 
 		bool tabCreate( int argc, const char** argv, Id s );
-		char** elementList( const string& path, Id s);
+		void elementList( string& ret, const string& path, Id s );
 		bool fieldExists( Id eid, const string& field, Id s );
-		string getFieldValue();
 
 		////////////////////////////////////////////////
 		//  Utility functions

@@ -14,12 +14,9 @@
 
 # Use the options below for compiling on GCC3. Pick your favourite
 # optimization settings.
-# Higher optimization levels should use -DNDEBUG to eliminate the
-# assertions sprinkled throughout the code
-#
 #CFLAGS  =	-g -Wall -pedantic -DDO_UNIT_TESTS
-#CFLAGS  =	-O3 -Wall -pedantic -DNDEBUG
-#CFLAGS  =	-O3 -pg -Wall -pedantic -DNDEBUG
+#CFLAGS  =	-O3 -Wall -pedantic
+#CFLAGS  =	-O3 -pg -Wall -pedantic
 
 # Use the options below for compiling on GCC4.0
 
@@ -37,10 +34,9 @@
 # in the working directory of moose. Also you have to do some editing to get the 
 # generated code to work. 
 # It is completely harmless except for a few file existence checks at startup.
-CFLAGS = -g -Wall -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER 
+CFLAGS = -g -Wall -pedantic -DUSE_GENESIS_PARSER -DGENERATE_WRAPPERS
 
-#CFLAGS = -O3 -Wall -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER -DGENERATE_WRAPPERS -DNDEBUG
-#CFLAGS = -O3 -Wall -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER
+#CFLAGS = -O3 -Wall -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER -DGENERATE_WRAPPERS
 
 # Use the options below for compiling on GCC4.1
 # GNU C++ 4.1 and newer might need -ffriend-injection
@@ -51,7 +47,7 @@ CFLAGS = -g -Wall -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER
 # Libraries are defined below. For now we do not use threads.
 SUBLIBS = 
 #LIBS = 		-lm -lpthread
-LIBS = 		-lm -lgsl -lgslcblas
+LIBS = 		-lm
 
 # Here we decide if we want to use MPI and the parallel library
 # Uncomment the line below if you do.
@@ -71,15 +67,14 @@ LIBS = 		-lm -lgsl -lgslcblas
 #
 # If you do use mpicxx, comment out the version below.
 #
-CXX = g++
+CXX = mpicxx
 
 LD = ld
 
-SUBDIR = genesis_parser basecode shell element maindir biophysics kinetics builtins scheduling example utility $(PARALLEL_DIR)
+SUBDIR = genesis_parser basecode shell element maindir biophysics kinetics builtins scheduling example $(PARALLEL_DIR)
 
 OBJLIBS =	\
 	basecode/basecode.o \
-	utility/utility.o \
 	maindir/maindir.o \
 	genesis_parser/SLI.o \
 	element/element.o \
@@ -89,10 +84,6 @@ OBJLIBS =	\
 	builtins/builtins.o \
 	scheduling/scheduling.o \
 	example/example.o \
-
-export CFLAGS
-export LD
-export LIBS
 
 moose: libs $(OBJLIBS) $(PARALLEL_LIB)
 	$(CXX) $(CFLAGS) $(PARALLEL_FLAGS) $(OBJLIBS) $(PARALLEL_LIB) $(LIBS) -o moose
@@ -108,7 +99,7 @@ pymoose: libs $(OBJLIBS) $(PARALLEL_LIB)
 	$(MAKE) -C $@
 
 libs:
-	@(for i in $(SUBDIR); do echo cd $$i; cd $$i && $(MAKE) $(PARALLEL_FLAGS) ; cd ..; done)
+	@(for i in $(SUBDIR); do echo cd $$i; cd $$i; make CXX="$(CXX)" CFLAGS="$(CFLAGS) $(PARALLEL_FLAGS)" LD="$(LD)" LIBS="$(SUBLIBS)"; cd ..; done)
 	@echo "All Libs compiled"
 
 mpp: preprocessor/*.cpp preprocessor/*.h
@@ -117,5 +108,5 @@ mpp: preprocessor/*.cpp preprocessor/*.h
 default: moose mpp
 
 clean:
-	@(for i in $(SUBDIR) ; do echo cd $$i; cd $$i; $(MAKE) clean; cd ..; done)
+	@(for i in $(SUBDIR) ; do echo cd $$i; cd $$i; make clean; cd ..; done)
 	-rm -rf moose mpp core.* DOCS/html *.so *.py *.pyc

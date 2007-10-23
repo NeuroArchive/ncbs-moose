@@ -108,7 +108,7 @@ const Cinfo* initMoleculeCinfo()
 	};
 
 	// Schedule molecules for the slower clock, stage 0.
-	static SchedInfo schedInfo[] = { { process, 0, 0 } };
+	static SchedInfo schedInfo[] = { { process, 1, 0 } };
 	
 	static Cinfo moleculeCinfo(
 		"Molecule",
@@ -189,19 +189,7 @@ void Molecule::setMode( const Conn& c, int value )
 
 int Molecule::getMode( const Element* e )
 {
-	return static_cast< Molecule* >( e->data() )->localGetMode( e );
-}
-
-int Molecule::localGetMode( const Element* e )
-{
-	static const Finfo* sumTotFinfo = 
-			Cinfo::find( "Molecule" )->findFinfo( "sumTotal" );
-	if ( mode_ == 0 && sumTotFinfo->numIncoming( e ) > 0 )
-		mode_ = 1;
-	else if ( mode_ == 1 && sumTotFinfo->numIncoming( e ) == 0 )
-		mode_ = 0;
-
-	return mode_;
+	return static_cast< Molecule* >( e->data() )->mode_;
 }
 
 double Molecule::localGetConc() const

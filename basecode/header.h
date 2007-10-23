@@ -59,4 +59,9 @@ class IdManager;
 #include "Id.h"
 #include "Element.h"
 
+
+#define MAX_COMMAND_ARGUMENTS	25
+#define MAX_COMMAND_SIZE	1024
+#define MAX_MPI_PROCESSES	1024
+
 #endif // _HEADER_H

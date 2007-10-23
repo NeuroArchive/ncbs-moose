@@ -13,6 +13,7 @@
 #include "SynInfo.h"
 #include "SynChan.h"
 #include "../element/Neutral.h"
+#include <mpi.h>
 
 // static const double M_E = 2.7182818284590452354;
 static const double SynE = 2.7182818284590452354;
@@ -101,8 +102,11 @@ const Cinfo* initSynChanCinfo()
 // Shared message definitions
 ///////////////////////////////////////////////////////
 		process,
+
+		/*
 		new SharedFinfo( "process", processShared,
 			sizeof( processShared ) / sizeof( Finfo* ) ), 
+			*/
 		new SharedFinfo( "channel", channelShared,
 			sizeof( channelShared ) / sizeof( Finfo* ) ),
 
@@ -110,8 +114,6 @@ const Cinfo* initSynChanCinfo()
 // MsgSrc definitions
 ///////////////////////////////////////////////////////
 		new SrcFinfo( "IkSrc", Ftype1< double >::global() ),
-		new SrcFinfo( "origChannel", Ftype2< double, double >::
-			global() ),
 
 ///////////////////////////////////////////////////////
 // MsgDest definitions
@@ -127,6 +129,9 @@ const Cinfo* initSynChanCinfo()
 		// Modulate channel response
 		new DestFinfo( "modulator", Ftype1< double >::global(),
 				RFCAST( &SynChan::modulatorFunc ) ),
+
+                new DestFinfo( "recvRank", Ftype1< int >::global(),
+                                RFCAST( &SynChan::recvRank ) ),
 	};
 
 	// SynChan is scheduled after the compartment calculations.
@@ -150,8 +155,6 @@ static const Cinfo* synChanCinfo = initSynChanCinfo();
 
 static const unsigned int channelSlot =
 	initSynChanCinfo()->getSlotIndex( "channel" );
-static const unsigned int origChannelSlot =
-	initSynChanCinfo()->getSlotIndex( "origChannel" );
 static const unsigned int ikSlot =
 	initSynChanCinfo()->getSlotIndex( "IkSrc" );
 static const unsigned int synapseSlot =
@@ -230,6 +233,11 @@ int SynChan::getNumSynapses( const Element* e )
 	return static_cast< SynChan* >( e->data() )->synapses_.size();
 }
 
+void SynChan::recvRank( const Conn& c, int rank )
+{
+        static_cast< SynChan* >( c.data() )->recvRank_.push_back(rank);
+}
+
 void SynChan::setWeight(
 				const Conn& c, double val, const unsigned int& i )
 {
@@ -278,7 +286,7 @@ unsigned int SynChan::updateNumSynapse( const Element* e )
 {
 	static const Finfo* synFinfo = initSynChanCinfo()->findFinfo( "synapse" );
 
-	unsigned int n = synFinfo->numIncoming( e );
+	unsigned int n = recvRank_.size();	//synFinfo->numIncoming( e );
 	if ( n >= synapses_.size() )
 			synapses_.resize( n );
 	return synapses_.size();
@@ -290,6 +298,33 @@ unsigned int SynChan::updateNumSynapse( const Element* e )
 
 void SynChan::innerProcessFunc( Element* e, ProcInfo info )
 {
+	int flag;
+	int iMyRank;
+	double tick;
+	int i;
+
+	for (i = 0; i< recvRank_.size(); i++)
+	{
+		if(objRecvStatus[i].bExecutedRecv == false)
+		{
+        		MPI_Irecv (&tick, 1, MPI_DOUBLE, recvRank_[i], MPI_ANY_TAG, MPI_COMM_WORLD, &(objRecvStatus[i].request));
+			objRecvStatus[i].bExecutedRecv = true;
+		}
+
+		if(objRecvStatus[i].bExecutedRecv == true)
+		{
+			MPI_Test(&objRecvStatus[i].request, &flag, &objRecvStatus[i].status);
+	
+			if(flag == true)
+			{
+				MPI_Comm_rank(MPI_COMM_WORLD, &iMyRank);
+				cout<<endl<<"Process "<<iMyRank<<" received spike from "<<objRecvStatus[i].status.MPI_SOURCE<<flush;
+				pendingEvents_.push( synapses_[i].event( info->currTime_ ) );
+				objRecvStatus[i].bExecutedRecv = false;
+			}
+		}
+	}
+	
 	while ( !pendingEvents_.empty() &&
 		pendingEvents_.top().delay <= info->currTime_ ) {
 		activation_ += pendingEvents_.top().weight / info->dt_;
@@ -302,8 +337,10 @@ void SynChan::innerProcessFunc( Element* e, ProcInfo info )
 	activation_ = 0.0;
 	modulation_ = 1.0;
 	send2< double, double >( e, channelSlot, Gk_, Ek_ );
-	send2< double, double >( e, origChannelSlot, Gk_, Ek_ );
 	send1< double >( e, ikSlot, Ik_ );
+	
+	if(Ik_ != 0)
+		cout<<endl<<"SynChan: Send inject value "<<Ik_;
 }
 void SynChan::processFunc( const Conn& c, ProcInfo p )
 {

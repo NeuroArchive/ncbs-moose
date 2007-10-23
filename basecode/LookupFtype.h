@@ -219,8 +219,7 @@ template < class T1, class T2 > class LookupFtype: public Ftype1< T1 >
 			 * intermediates like the DynamicFinfo.
 			 * This may only be called from lookupGet< T1, T2 >
 			 * It is happy with the Finfo either as a DynamicFinfo
-			 * or as a LookupFinfo.
-			 * \todo Unresolved issue: How to report bad index?
+			 * or as a LookupFinfo
 			 */
 			bool lookupGet( const Element* e, const Finfo* f,
 							T1& v, const T2& index ) const {
@@ -255,7 +254,6 @@ template < class T1, class T2 > class LookupFtype: public Ftype1< T1 >
 			 * This may only be called from lookupSet< T1, T2 >
 			 * It is happy with the Finfo either as a DynamicFinfo
 			 * or as a LookupFinfo
-			 * \todo Unresolved issue: How to report bad index?
 			 */
 			bool lookupSet( Element* e, const Finfo* f,
 							T1 v, const T2& index ) const {

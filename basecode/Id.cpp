@@ -76,10 +76,6 @@ Id Id::assignIndex( unsigned int index )
 	return i;
 }
 
-void Id::setIndex(unsigned int index){
-	id_ = index;
-}
-
 //////////////////////////////////////////////////////////////
 //	Id manager static access function. Private.
 //////////////////////////////////////////////////////////////
@@ -151,11 +147,6 @@ Id Id::badId()
 bool Id::bad() const
 {
 	return id_ == BAD_ID;
-}
-
-bool Id::good() const
-{
-	return ( !( bad() || outOfRange() || zero() ) );
 }
 
 bool Id::zero() const
