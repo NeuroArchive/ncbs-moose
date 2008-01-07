@@ -124,6 +124,13 @@ unsigned int SimpleElement::insertConnOnSrc(
 		unsigned int src, FuncList& rf,
 		unsigned int dest, unsigned int nDest )
 {
+	return innerInsertConnOnSrc( src, src, rf, dest, nDest );
+}
+
+unsigned int SimpleElement::innerInsertConnOnSrc(
+		unsigned int src, unsigned int origSrc, FuncList& rf,
+		unsigned int dest, unsigned int nDest )
+{
 	assert ( rf.size() > 0 );
 	assert ( src_.size() > 0 );
 	assert ( src_.size() >= src + rf.size() );
@@ -148,24 +155,29 @@ unsigned int SimpleElement::insertConnOnSrc(
 			assert( src_[ src + i ].recvFunc() == dummyFunc );
 			src_[ src + i ].setFunc( rf[i] );
 		}
-		return insertConn( src, rf.size(), dest, nDest );
+		return insertConn( src, origSrc, rf.size(), dest, nDest );
 	}
 
 	if ( oldFuncs == rf ) // This src matches, insertion in this src
-		return insertConn( src, rf.size(), dest, nDest );
+		return insertConn( src, origSrc, rf.size(), dest, nDest );
 
 	if ( next != 0 ) // Look in next range for insertion
-		return insertConnOnSrc( src + next, rf, dest, nDest );
+		return innerInsertConnOnSrc( src + next, origSrc, rf, dest, nDest );
 
 	// Nothing matches. So we create a new range at the end of the src_.
 	unsigned int offset = src_.size() - src;
+	// Not clear to me why I should iterate over rf.size, specially
+	// using the iterator as an offset.
 	for (unsigned int i = 0; i < rf.size(); i++ ) {
 		src_[ src + i ].setNext( offset );
 		// Note that the new src uses the 'end' from the previous one.
 		// This ensures that all Conns within a MsgSrc are contiguous.
+		// This means that the 'begin' and 'end' of all intervening
+		// MsgSrcs in src_ must be shifted.
 		src_.push_back( MsgSrc( end, end, rf[i] ) );
 	}
-	return insertConn( src_.size() - rf.size(), rf.size(), dest, nDest);
+	return insertConn(
+		src_.size() - rf.size(), origSrc, rf.size(), dest, nDest);
 }
 
 /**
@@ -203,9 +215,9 @@ unsigned int SimpleElement::insertSeparateConnOnSrc(
 			assert( src_[ src + i ].recvFunc() == dummyFunc );
 			src_[ src + i ].setFunc( rf[i] );
 			if ( i == 0 )
-				ret = insertConn( src, 1, dest, nDest );
+				ret = insertConn( src, src, 1, dest, nDest );
 			else 
-				insertConn( src + i, 1, dest, nDest );
+				insertConn( src + i, src + i, 1, dest, nDest );
 		}
 		return ret;
 	}
@@ -220,9 +232,9 @@ unsigned int SimpleElement::insertSeparateConnOnSrc(
 		for ( i = 0; i < rf.size(); i++ ) {
 			assert( src_[ src + i ].recvFunc() == rf[i] );
 			if ( i == 0 )
-				ret = insertConn( src, 1, dest, nDest );
+				ret = insertConn( src, src, 1, dest, nDest );
 			else 
-				insertConn( src + i, 1, dest, nDest );
+				insertConn( src + i, src + i,  1, dest, nDest );
 		}
 		return ret;
 	}
@@ -244,9 +256,9 @@ unsigned int SimpleElement::insertSeparateConnOnSrc(
 		for ( i = 0; i < rf.size(); i++ ) {
 			assert( src_[ src + i ].recvFunc() == rf[i] );
 			if ( i == 0 )
-				ret = insertConn( src, 1, dest, nDest );
+				ret = insertConn( src, src, 1, dest, nDest );
 			else 
-				insertConn( src + i, 1, dest, nDest );
+				insertConn( src + i, src + i, 1, dest, nDest );
 		}
 		return ret;
 	//return insertConn( src_.size() - rf.size(), rf.size(), dest, nDest);
@@ -266,7 +278,7 @@ unsigned int SimpleElement::insertConnOnDest(
 {
 	assert( dest_.size() >= dest + nDest );
 
-	return insertConn( 0, 0, dest, nDest );
+	return insertConn( 0, 0, 0, dest, nDest );
 }
 
 vector< Conn >::const_iterator
@@ -411,7 +423,7 @@ vector< Conn >::const_iterator
  * Return the location of the inserted Conn.
  */
 unsigned int SimpleElement::insertConn(
-				unsigned int src, unsigned int nSrc,
+				unsigned int src, unsigned int origSrc, unsigned int nSrc,
 				unsigned int dest, unsigned int nDest )
 {
 	assert( src + nSrc <= src_.size() );
@@ -432,8 +444,31 @@ unsigned int SimpleElement::insertConn(
 		vector< MsgSrc >::iterator j = src_.begin() + src + nSrc;
 		for ( i = src_.begin() + src; i != j; i++ )
 			i->insertWithin( );
+		/*
+		// Here we need to go through the entire src list to update
+		// entries in case the inserted location is before the
+		// src/end of the src entry.
+		j = src_.begin() + src;
+		for ( i = src_.begin(); i != j; i++ ) {
+			if ( location <= i->begin() )
+				i->insertBefore( );
+		}
+		for ( i = src_.begin() + src + nSrc; i != src_.end(); i++ ) {
+			if ( location <= i->begin() )
+				i->insertBefore( );
+		}
+		*/
 		for ( ; i != src_.end(); i++ )
 			i->insertBefore( );
+
+		// Here we fill in the intervening ones if any.
+		// Won't work. We could have even more complex interleaving of
+		// multiple shared messages.
+		if ( origSrc + nSrc < src ) {
+			j = src_.begin() + src;
+			for ( i = src_.begin() + origSrc + nSrc; i != j; i++ )
+				i->insertBefore( );
+		}
 	}
 
 	vector< MsgDest >::iterator k;

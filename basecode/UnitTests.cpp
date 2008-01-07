@@ -45,8 +45,8 @@ void connTest()
 	ASSERT( c1.targetElement() == &e1, "targetElement access" );
 	ASSERT( c1.targetIndex() == 1234, "targetIndex access" );
 	
-	unsigned int ic1 = e1.insertConn( 0, 1, 0, 0 );
-	unsigned int ic2 = e2.insertConn( 0, 0, 0, 1 );
+	unsigned int ic1 = e1.insertConn( 0, 0, 1, 0, 0 );
+	unsigned int ic2 = e2.insertConn( 0, 0, 0, 0, 1 );
 	e1.connect( ic1, &e2, ic2 );
 	ASSERT( e1.lookupConn( ic1 )->targetElement() == &e2,
 					"connected targetElement" );
@@ -57,8 +57,8 @@ void connTest()
 	 * Here we set up a conn at range 1, to see if it correctly handles
 	 * updating conn indices when we subsequently add conns at range 0.
 	 */
-	ic1 = e1.insertConn( 1, 1, 0, 0 );
-	ic2 = e2.insertConn( 0, 0, 1, 1 );
+	ic1 = e1.insertConn( 1, 1, 1, 0, 0 );
+	ic2 = e2.insertConn( 0, 0, 0, 1, 1 );
 	e1.connect( ic1, &e2, ic2 );
 	ASSERT( e1.lookupConn( ic1 )->targetIndex() == ic2,
 					"Testing conn indices following insert: 1" );
@@ -80,8 +80,8 @@ void connTest()
 					"sourceIndex()" );
 
 	SimpleElement e3(  Id::scratchId(), "e3", 2, 2 );
-	unsigned int ic3 = e3.insertConn( 0, 1, 0, 0 );
-	ic2 = e2.insertConn( 0, 0, 0, 1 );
+	unsigned int ic3 = e3.insertConn( 0, 0, 1, 0, 0 );
+	ic2 = e2.insertConn( 0, 0, 0, 0, 1 );
 	e3.connect( ic3, &e2, ic2 );
 	ASSERT( ic3 == 0 && ic2 == 1,
 					"Testing conn indices following insert: 5" );

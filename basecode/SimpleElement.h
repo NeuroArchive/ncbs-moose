@@ -196,7 +196,7 @@ class SimpleElement: public Element
 		}
 
 		unsigned int insertConn(
-				unsigned int src, unsigned int nSrc,
+				unsigned int src, unsigned int origSrc, unsigned int nSrc,
 				unsigned int dest, unsigned int nDest );
 
 		void connect( unsigned int myConn, 
@@ -225,6 +225,9 @@ class SimpleElement: public Element
 				unsigned int src, FuncList& rf,
 				unsigned int dest, unsigned int nDest
 		);
+		unsigned int innerInsertConnOnSrc(
+			unsigned int src, unsigned int origSrc, FuncList& rf,
+			unsigned int dest, unsigned int nDest );
 
 		unsigned int insertSeparateConnOnSrc(
 			unsigned int src, FuncList& rf,
