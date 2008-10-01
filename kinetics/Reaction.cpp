@@ -11,8 +11,6 @@
 #include "moose.h"
 #include "Reaction.h"
 
-extern double getVolScale( Eref e ); // defined in KinCompt.cpp
-
 const Cinfo* initReactionCinfo()
 {
 	static Finfo* processShared[] =
@@ -45,21 +43,10 @@ const Cinfo* initReactionCinfo()
 	///////////////////////////////////////////////////////
 		new ValueFinfo( "kf", 
 			ValueFtype1< double >::global(),
-			GFCAST( &Reaction::getRawKf ), 
-			RFCAST( &Reaction::setRawKf ) 
-		),
-		new ValueFinfo( "kb", 
-			ValueFtype1< double >::global(),
-			GFCAST( &Reaction::getRawKb ), 
-			RFCAST( &Reaction::setRawKb ) 
-		),
-
-		new ValueFinfo( "Kf", 
-			ValueFtype1< double >::global(),
 			GFCAST( &Reaction::getKf ), 
 			RFCAST( &Reaction::setKf ) 
 		),
-		new ValueFinfo( "Kb", 
+		new ValueFinfo( "kb", 
 			ValueFtype1< double >::global(),
 			GFCAST( &Reaction::getKb ), 
 			RFCAST( &Reaction::setKb ) 
@@ -73,13 +60,6 @@ const Cinfo* initReactionCinfo()
 		new DestFinfo( "scaleKb", 
 			Ftype1< double >::global(),
 			RFCAST( &Reaction::scaleKbFunc ) ),
-		/**
-		 * This handles volume changes of compartment. Argument is ratio
-		 * of new to old volume.
-		 */
-		new DestFinfo( "rescaleRates", 
-			Ftype1< double >::global(),
-			RFCAST( &Reaction::rescaleRates ) ),
 	///////////////////////////////////////////////////////
 	// Shared definitions
 	///////////////////////////////////////////////////////
@@ -118,108 +98,24 @@ static const Slot productSlot =
 // Field function definitions
 ///////////////////////////////////////////////////
 
-/**
- * The RawKf and RawKb are rates in units of #/cell. They have the
- * disadvantage that they change when the cell volume is altered, and the
- * units are unfamiliar. They have the advantage that the calculations
- * both for deterministic and stochastic situations, are done in these
- * units. Also they can be assigned without knowing the order of the
- * reaction.
- */
-
-void Reaction::setRawKf( const Conn* c, double value )
+void Reaction::setKf( const Conn* c, double value )
 {
 	static_cast< Reaction* >( c->data() )->kf_ = value;
 }
 
-double Reaction::getRawKf( Eref e )
+double Reaction::getKf( Eref e )
 {
 	return static_cast< Reaction* >( e.data() )->kf_;
 }
 
-void Reaction::setRawKb( const Conn* c, double value )
+void Reaction::setKb( const Conn* c, double value )
 {
 	static_cast< Reaction* >( c->data() )->kb_ = value;
 }
 
-double Reaction::getRawKb( Eref e )
-{
-	return static_cast< Reaction* >( e.data() )->kb_;
-}
-
-// Assigns rates in term of regular concentration units, e.g., uM.
-// Problem is if the connectivity is set up after the messages, we
-// won't know how to scale the rates. kkit sets the raw kf so this issue
-// is bypassed.
-void Reaction::setKf( const Conn* c, double value )
-{
-	Eref e = c->target();
-	unsigned int numSub = e.e->numTargets( substrateSlot.msg(), e.i );
-	if ( numSub <= 1 ) {
-		static_cast< Reaction* >( c->data() )->kf_ = value;
-	} else {
-		double volScale = getVolScale( e );
-		volScale = pow( volScale, static_cast< double >( numSub - 1 ) );
-		static_cast< Reaction* >( c->data() )->kf_ = value / volScale;
-	}
-}
-
-double Reaction::getKf( Eref e )
-{
-	unsigned int numSub = e.e->numTargets( substrateSlot.msg(), e.i );
-	if ( numSub <= 1 ) {
-		return static_cast< Reaction* >( e.data() )->kf_;
-	} else {
-		double volScale = getVolScale( e );
-		volScale = pow( volScale, static_cast< double >( numSub - 1 ) );
-		return static_cast< Reaction* >( e.data() )->kf_ * volScale;
-	}
-}
-
-void Reaction::setKb( const Conn* c, double value )
-{
-	Eref e = c->target();
-	unsigned int numPrd = e.e->numTargets( productSlot.msg(), e.i );
-	if ( numPrd <= 1 ) {
-		static_cast< Reaction* >( c->data() )->kb_ = value;
-	} else {
-		double volScale = getVolScale( e );
-		volScale = pow( volScale, static_cast< double >( numPrd - 1 ) );
-		static_cast< Reaction* >( c->data() )->kb_ = value / volScale;
-	}
-}
-
 double Reaction::getKb( Eref e )
 {
-	unsigned int numPrd = e.e->numTargets( productSlot.msg(), e.i );
-	if ( numPrd <= 1 ) {
-		return static_cast< Reaction* >( e.data() )->kb_;
-	} else {
-		double volScale = getVolScale( e );
-		volScale = pow( volScale, static_cast< double >( numPrd - 1 ) );
-		return static_cast< Reaction* >( e.data() )->kb_ * volScale;
-	}
-}
-
-/**
- * Ratio is ratio of new vol to old vol.
- * Kf, Kb have units of 1/(conc^(order-1) * sec )
- * new conc = old conc / ratio.
- * so kf = old_kf * ratio^(order-1)
- */
-void Reaction::rescaleRates( const Conn* c, double ratio )
-{
-	Eref e = c->target();
-	unsigned int numSub = e.e->numTargets( substrateSlot.msg(), e.i );
-	unsigned int numPrd = e.e->numTargets( productSlot.msg(), e.i );
-	if ( numSub > 1 ) {
-		double scale = pow( ratio, static_cast< double >( numSub - 1 ) );
-		static_cast< Reaction* >( c->data() )->kf_ /= scale;
-	}
-	if ( numPrd > 1 ) {
-		double scale = pow( ratio, static_cast< double >( numPrd - 1 ) );
-		static_cast< Reaction* >( c->data() )->kb_ /= scale;
-	}
+	return static_cast< Reaction* >( e.data() )->kb_;
 }
 
 ///////////////////////////////////////////////////

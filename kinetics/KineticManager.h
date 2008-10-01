@@ -64,8 +64,6 @@ class KineticManager
 		static double getRecommendedDt( Eref e );
 		static void setEulerError( const Conn* c, double value );
 		static double getEulerError( Eref e );
-		static void setVolume( const Conn* c, double value );
-		static double getVolume( Eref e );
 
 		// static string getMethodList( Eref e );
 		//
@@ -113,9 +111,6 @@ class KineticManager
 		string description_;
 		double recommendedDt_;
 		double eulerError_;
-		double volume_;
 };
-
-const Cinfo* initKineticManagerCinfo();
 
 #endif // _KINETIC_MANAGER_H

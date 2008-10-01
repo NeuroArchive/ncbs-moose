@@ -3,8 +3,6 @@ LOCAL_DIR := builtins
 LOCAL_SRCS := \
 	Interpol.cpp	\
 	Table.cpp	\
-        TimeTable.cpp   \
-        AscFile.cpp
 
 
 LOCAL_HEADERS := $(subst .cpp,.h,$(LOCAL_SRCS))

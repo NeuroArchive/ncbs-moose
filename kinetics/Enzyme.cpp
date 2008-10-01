@@ -12,8 +12,6 @@
 #include "Enzyme.h"
 #include "../element/Neutral.h"
 
-extern double getVolScale( Eref e ); // defined in KinCompt.cpp
-
 const Cinfo* initEnzymeCinfo()
 {
 	static Finfo* processShared[] =
@@ -96,9 +94,6 @@ const Cinfo* initEnzymeCinfo()
 		new DestFinfo( "intramol", 
 			Ftype1< double >::global(),
 			RFCAST( &Enzyme::intramolFunc ) ),
-		new DestFinfo( "rescaleRates", 
-			Ftype1< double >::global(),
-			RFCAST( &Enzyme::rescaleRates ) ),
 	///////////////////////////////////////////////////////
 	// Shared definitions
 	///////////////////////////////////////////////////////
@@ -144,7 +139,7 @@ static const Slot prdSlot =
 ///////////////////////////////////////////////////
 
 Enzyme::Enzyme()
-	: k1_(0.1), k2_(0.4), k3_(0.1),sk1_(1.0), Km_( 5.0 ),
+	: k1_(0.1), k2_(0.4), k3_(0.1),sk1_(1.0), 
 		procFunc_( &Enzyme::implicitProcFunc )
 {
 	;
@@ -185,61 +180,18 @@ double Enzyme::getK3( Eref e )
 
 double Enzyme::getKm( Eref e )
 {
-	return static_cast< Enzyme* >( e.data() )->innerGetKm( e );
+	return static_cast< Enzyme* >( e.data() )->Km_;
 }
 void Enzyme::setKm( const Conn* c, double value )
 {
-	static_cast< Enzyme* >( c->data() )->innerSetKm( c->target(), value );
+	static_cast< Enzyme* >( c->data() )->innerSetKm( value );
 }
-
-/**
- * Handles Km in concentration units, typically uM
- */
-double Enzyme::innerGetKm( Eref e )
+void Enzyme::innerSetKm( double value )
 {
-	if ( Km_ <= 0.0 )
-		return 0.0;
-	unsigned int numSub = e.e->numTargets( subSlot.msg(), e.i );
-	unsigned int numEnz = e.e->numTargets( enzSlot.msg(), e.i );
-	if ( numEnz != 1 && !innerGetMode() ) {
-		cout << "Error: Cannot get enzyme Km: Lacks enzyme complex.";
-		return 1.0;
+	if ( value > 0.0 ) {
+		Km_ = value;
+		k1_ = ( k2_ + k3_ ) / value;
 	}
-	if ( numSub < 1 ) {
-		cout << "Error: Cannot get enzyme Km: No substrate.";
-		return 1.0;
-	}
-	double volScale = getVolScale( e );
-	if ( numSub == 1 ) {
-		return Km_ / volScale;
-	} else {
-		double ns = numSub;
-		volScale = pow( volScale, ns );
-		return Km_ / volScale;
-	}
-}
-
-void Enzyme::innerSetKm( Eref e, double value )
-{
-	if ( value <= 0.0 ) {
-		cout << "Error: Cannot set enzyme Km to negative value: " << 
-			value << endl;
-		return;
-	}
-	unsigned int numSub = e.e->numTargets( subSlot.msg(), e.i );
-	unsigned int numEnz = e.e->numTargets( enzSlot.msg(), e.i );
-	if ( numEnz != 1 && !innerGetMode() ) {
-		cout << "Error: Cannot set enzyme Km: Lacks enzyme complex.";
-		return;
-	}
-	if ( numSub < 1 ) {
-		cout << "Error: Cannot set enzyme Km: No substrate.";
-		return;
-	}
-	double volScale = getVolScale( e );
-	volScale = pow( volScale, static_cast< double >( numSub ) );
-	Km_ = value * volScale;
-	k1_ = ( k2_ + k3_ ) / Km_;
 }
 
 
@@ -391,35 +343,6 @@ void Enzyme::scaleKcatFunc( const Conn* c, double k )
 	static_cast< Enzyme* >( c->data() )->pA_ *= k;
 }
 
-/**
- * Ratio is ratio of new vol to old vol.
- * Need to scale k1_ and hence Km_ according to numSub. k2 and k3
- * have units of time only.
- */
-void Enzyme::rescaleRates( const Conn* c, double ratio )
-{
-	Eref e = c->target();
-	static_cast< Enzyme* >( e.data() )->innerRescaleRates( e, ratio );
-}
-
-void Enzyme::innerRescaleRates( Eref e, double ratio )
-{
-	assert( ratio > 0.0 );
-	unsigned int numSub = e.e->numTargets( subSlot.msg(), e.i );
-	unsigned int numEnz = e.e->numTargets( enzSlot.msg(), e.i );
-	if ( numEnz != 1 && !innerGetMode() ) {
-		cout << "Error: Cannot set enzyme Km: Lacks enzyme complex.";
-		return;
-	}
-	if ( numSub < 1 ) {
-		cout << "Error: Cannot set enzyme Km: No substrate.";
-		return;
-	}
-	ratio = pow( ratio, static_cast< double >( numSub ) );
-	Km_ = Km_ * ratio;
-	k1_ = ( k2_ + k3_ ) / Km_;
-}
-
 ///////////////////////////////////////////////////////
 // Other func definitions
 ///////////////////////////////////////////////////////
@@ -485,7 +408,7 @@ void testEnzyme()
 
 	cout << "\nTesting Enzyme" << flush;
 
-	Element* n = Neutral::create( "KinCompt", "n", Element::root()->id(),
+	Element* n = Neutral::create( "Neutral", "n", Element::root()->id(),
 		Id::scratchId() );
 	Element* sub = Neutral::create( "Molecule", "sub", n->id(),
 		Id::scratchId() );
@@ -612,29 +535,6 @@ void testEnzyme()
 		Molecule::processFunc( &cenzMol, &p );
 	}
 	ASSERT( delta < 5.0e-6, "Testing molecule and enzyme" );
-
-	// Check volume rescaling.
-	Eref enzE( enz, 0 );
-	double k1 = Enzyme::getK1( enzE );
-	double k2 = Enzyme::getK2( enzE );
-	double k3 = Enzyme::getK3( enzE );
-	double Km = Enzyme::getKm( enzE );
-	double nenz = Molecule::getN( enzMol );
-	set< double >( n, "volume", 1e-15 );
-
-	double num = Enzyme::getK1( enzE ); // Should be same as k1 * 6e5.
-	ASSERT( fabs( 1.0 - num * 6.0e5 / k1 ) < 1.0e-6, "enz vol rescaling" );
-	num = Enzyme::getK2( enzE ); // Should be same as k2
-	ASSERT( fabs( num - k2 ) < 1.0e-6, "enz vol rescaling" );
-	num = Enzyme::getK3( enzE ); // Should be same as k3
-	ASSERT( fabs( num - k3 ) < 1.0e-6, "enz vol rescaling" );
-	num = Enzyme::getKm( enzE ); // Should be same as Km.
-	ASSERT( fabs( num - Km ) < 1.0e-6, "enz vol rescaling" );
-
-	num = Molecule::getN( enzMol ); // Should be same as nenz scaled by vol.
-	ASSERT( fabs( num - nenz * 6e5 ) < 1.0e-2, "enzmol num rescaling" );
-	num = Molecule::getConc( enzMol ); // Should be same as nenz.
-	ASSERT( fabs( num - nenz ) < 1.0e-6, "enzmol conc rescaling" );
 
 	// Get rid of all the compartments.
 	set( n, "destroy" );

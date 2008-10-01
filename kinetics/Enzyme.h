@@ -25,9 +25,8 @@ class Enzyme
 		static void setK3( const Conn* c, double value );
 		static double getK3( Eref e );
 		static double getKm( Eref e );
-		double innerGetKm( Eref e );
 		static void setKm( const Conn* c, double value );
-		void innerSetKm( Eref e, double value );
+		void innerSetKm( double value );
 		static double getKcat( Eref e );
 		static void setKcat( const Conn* c, double value );
 		void innerSetKcat( double value );
@@ -57,8 +56,6 @@ class Enzyme
 		static void scaleKmFunc( const Conn* c, double k );
 		void innerScaleKmFunc( double k );
 		static void scaleKcatFunc( const Conn* c, double k );
-		static void rescaleRates( const Conn* c, double ratio );
-		void innerRescaleRates( Eref e, double ratio );
 
 		///////////////////////////////////////////////////////
 		// Other func definitions

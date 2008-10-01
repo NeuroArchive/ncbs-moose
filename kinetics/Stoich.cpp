@@ -493,11 +493,9 @@ void Stoich::rebuildMatrix( Eref stoich, vector< Id >& ret )
 		} else if ( cn == "GslIntegrator" ||
 			cn == "Kintegrator" ||
 			cn == "KineticHub" ||
-			cn == "KinCompt" ||
 			cn == "Stoich" )
 		{
-			// Ignore these
-			;
+			// Ignore this too.
 		} else if ( !( *i )()->cinfo()->isA( molCinfo ) ) {
 			addRate( stoich, i->eref() );
 		}
@@ -675,8 +673,8 @@ void Stoich::addReac( Eref stoich, Eref e )
 	vector< const double* > prd;
 	class ZeroOrder* freac = 0;
 	class ZeroOrder* breac = 0;
-	double kf = Reaction::getRawKf( e ); // bypass the solver lookup stuff
-	double kb = Reaction::getRawKb( e );
+	double kf = Reaction::getKf( e ); // bypass the solver lookup stuff
+	double kb = Reaction::getKb( e );
 	/*
 	double kf;
 	double kb;

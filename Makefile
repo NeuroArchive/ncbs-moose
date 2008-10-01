@@ -87,8 +87,10 @@ endif
 ##########################################################################
 #
 # MAC OS X compilation, Debug mode:
-ifeq ($(PLATFORM),mac)
+ifeq ($(OSTYPE),Darwin)
 CFLAGS += -Wno-deprecated -force_cpusubtype_ALL -mmacosx-version-min=10.4
+pymoose: CFLAGS += -bundle -fno-common /usr/bin/python -flat_namespace -undefined suppress -I/Library/Frameworks/Python.framework/Versions/2.5/include/python2.5
+pymoose: LDFLAGS+= -bundle -fno-common -L/Library/Frameworks/Python.framework/Versions/2.5/lib/python2.5/config/
 endif
 # Use the options below for compiling on GCC4.1
 # GNU C++ 4.1 and newer might need -ffriend-injection
@@ -158,7 +160,7 @@ LIBS=-L/lib64 -L/usr/lib64 $(LIBS)
 endif
 endif
 
-# Here we automagically change compilers to deal with MPI.
+# Here we automatically change compilers to deal with MPI.
 ifneq (,$(findstring DUSE_MPI,$(CFLAGS)))
        CXX = mpicxx
        PARALLEL_DIR = parallel
@@ -169,7 +171,7 @@ endif
 
 LD = ld
 
-SUBDIR = genesis_parser basecode connections shell element maindir scheduling biophysics hsolve kinetics builtins $(PARALLEL_DIR) utility randnum robots 
+SUBDIR = genesis_parser basecode connections shell element maindir scheduling biophysics hsolve kinetics builtins $(PARALLEL_DIR) utility randnum 
 
 
 OBJLIBS =	\
@@ -186,7 +188,9 @@ OBJLIBS =	\
 	hsolve/hsolve.o \
 	kinetics/kinetics.o \
 	builtins/builtins.o \
-	robots/robots.o 
+# robots/robots.o \
+
+# example/example.o 
 
 export CFLAGS
 export LD

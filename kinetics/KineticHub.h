@@ -150,7 +150,6 @@ class KineticHub
 		vector< unsigned int > enzMap_;
 		vector< unsigned int > mmEnzMap_;
 		vector< unsigned int > molSumMap_;
-		vector< unsigned int > nSrcMap_;
 
 		/**
 		 * The next field manages exchange of molecules with other
