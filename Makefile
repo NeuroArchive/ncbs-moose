@@ -142,7 +142,7 @@ endif
 
 # To use GSL, pass USE_GSL=true ( anything on the right will do) in make command line
 ifdef USE_GSL
-LIBS+= -lgsl -lgslcblas
+LIBS+= -L/usr/lib -lgsl -lgslcblas
 CXXFLAGS+= -DUSE_GSL
 endif
 
@@ -181,32 +181,15 @@ endif
 
 LD = ld
 
-SUBDIR = basecode connections maindir genesis_parser shell element scheduling \
-	biophysics hsolve kinetics ksolve builtins utility \
-	randnum signeur device $(PARALLEL_DIR) $(MUSIC_DIR) 
+SUBDIR = basecode \
+	kinetics 
 
 # Used for 'make clean'
-CLEANSUBDIR = $(SUBDIR) parallel music pymoose
+CLEANSUBDIR = $(SUBDIR) 
 
 OBJLIBS =	\
 	basecode/basecode.o \
-	connections/connections.o \
-	maindir/maindir.o \
-	genesis_parser/SLI.o \
-	element/element.o \
-	shell/shell.o \
-	utility/utility.o \
-	randnum/randnum.o	\
-	scheduling/scheduling.o \
-	biophysics/biophysics.o \
-	hsolve/hsolve.o \
-	kinetics/kinetics.o \
-	ksolve/ksolve.o \
-	builtins/builtins.o \
-	signeur/signeur.o \
-	device/device.o \
-	$(PARALLEL_LIB) \
-	$(MUSIC_LIB)
+	kinetics/kinetics.o
 
 export CXX
 export CXXFLAGS
@@ -221,7 +204,7 @@ libmoose.so: libs
 	$(CXX) -G $(LIBS) -o libmoose.so
 	@echo "Created dynamic library"
 
-pymoose: CXXFLAGS += -DPYMOOSE -fPIC 
+pymoose: CXXFLAGS += -fPIC 
 pymoose: SUBDIR += pymoose
 pymoose: libs $(OBJLIBS) 
 	$(MAKE) -C $@

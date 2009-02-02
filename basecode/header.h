@@ -11,28 +11,6 @@
 #ifndef _HEADER_H
 #define _HEADER_H
 
-/**
- * This header file includes the essential files in the correct order.
- * moose.h has this header plus more of the basecode headers.
- * You should NEVER have to do includes within any of your headers,
- * and if you do you are likely to get the order wrong.
- * Instead your .cpp should include header.h, or possibly moose.h,
- * and then some file specific headers.
- */
-
-/// Here we set up an enhanced variant of assert, used in unit tests.
-#ifdef DO_UNIT_TESTS
-# define ASSERT( isOK, message ) \
-	if ( !(isOK) ) { \
-   cout << "\nERROR: Assert '" << #isOK << "' failed on line " << __LINE__ << "\nin file " << __FILE__ << ": " << message << endl; \
-    exit( 1 ); \
-} else { \
-	   	cout << "."; \
-}
-#else
-# define ASSERT( unused, message ) do {} while ( false )
-#endif
-
 #include <algorithm>
 #include <vector>
 #include <string>
@@ -50,38 +28,15 @@
 
 using namespace std;
 
+typedef unsigned int Slot;
+
 class Element;
-class Conn;
-class Finfo;
+class Eref;
 
-// This is here because parallel messaging needs a way to
-// access PostMaster buffer from within all the templated
-// Ftypes. Ugly.
-extern void* getParBuf( const Conn* c, unsigned int size );
-extern void* getAsyncParBuf( const Conn* c, unsigned int size );
-
-// Another ugly global, this one for accessing the ids.
-class Id;
-class IdManager;
-// extern IdManager* idManager();
-
-#include "Eref.h"
-#include "RecvFunc.h"
-#include "../connections/Conn.h"
-#include "../connections/ConnTainer.h"
-
-#include "Ftype.h"
-#include "FuncVec.h"
-#include "Slot.h"
-#include "Finfo.h"
-#include "Id.h"
-#include "Msg.h"
+#include "ProcInfo.h"
+#include "Data.h"
 #include "Element.h"
-
-#ifdef CRL_MPI
-	#define MAX_MPI_RECV_RECORD_SIZE 1500
-	#define VISLN_CHUNK_SIZE (MAX_MPI_RECV_RECORD_SIZE/10)
-	#define MAX_MPI_PROCESSES 1024
-#endif
+#include "Eref.h"
+#include "Send.h"
 
 #endif // _HEADER_H
