@@ -1,113 +1,198 @@
 /**********************************************************************
 ** This program is part of 'MOOSE', the
-** Messaging Object Oriented Simulation Environment,
-** also known as GENESIS 3 base code.
-**           copyright (C) 2003-2005 Upinder S. Bhalla. and NCBS
+** Messaging Object Oriented Simulation Environment.
+**           Copyright (C) 2003-2009 Upinder S. Bhalla. and NCBS
 ** It is made available under the terms of the
-** GNU General Public License version 2
+** GNU Lesser General Public License version 2.1
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 #ifndef _SRC_FINFO_H
 #define _SRC_FINFO_H
 
-/** 
- * Finfo for handling message sources
+/**
+ * This set of classes define Message Sources. Their main job is to supply 
+ * a type-safe send operation, and to provide typechecking for it.
  */
+
 class SrcFinfo: public Finfo
 {
-		public:
-#ifdef DO_UNIT_TESTS
-			friend void cinfoTest(); // wants to look at msg_
-#endif
-			SrcFinfo( const string& name, const Ftype *f, const string& doc="" )
-					: Finfo( name, f, doc ), msg_( 0 )
-			{;}
+	public:
+		SrcFinfo( const string& name, const string& doc, 
+			ConnId c );
 
-			~SrcFinfo()
-			{;}
+		~SrcFinfo() {;}
 
-			bool add(
-					Eref e, Eref destElm, const Finfo* destFinfo,
-					unsigned int connTainerOption
-			) const;
+		void registerOpFuncs(
+			map< string, FuncId >& fnames, vector< OpFunc* >& funcs );
 
-			bool respondToAdd(
-					Eref e, Eref src, const Ftype *srcType,
-					unsigned int& srcFuncId, unsigned int& returnFuncId,
-					int& destMsgId, unsigned int& destIndex
-			) const;
-			
-			/**
-			 * Returns index of Msg array. Always positive, that is always
-			 * a src.
-			 */
-			int msg() const {
-				return msg_;
-			}
+		unsigned int registerSrcFuncIndex( unsigned int current );
 
-			/**
-			 * Send a message with the arguments in the string.
-			 */
-			bool strSet( Eref e, const std::string &s )
-					const;
-			
-			/// strGet doesn't work for SrcFinfo
-			bool strGet( Eref e, std::string &s ) const {
-				return 0;
-			}
+		unsigned int registerConn( unsigned int current );
 
-			/// This Finfo does not support recvFuncs.
-			RecvFunc recvFunc() const {
-					return 0;
-			}
-			
-			void countMessages( unsigned int& num ) {
-				msg_ = num++;
-			}
+		ConnId getConnId() const {
+			return c_;
+		}
+		unsigned int getFuncIndex() const {
+			return funcIndex_;
+		}
 
-			const Finfo* match( 
-				const Element* e, const ConnTainer* c ) const;
+	private:
+		ConnId c_; /// Predefined ConnId for the outgoing data.
 
-			bool isTransient() const {
-					return 0;
-			}
+		/// Index into a table with FuncIds, on Elements
+		unsigned int funcIndex_; 
+};
 
-			/**
-			 * Returns true only if the other finfo is the same type
-			 * In addition it copies over the slot indexing.
-			 */
-			bool inherit( const Finfo* baseFinfo );
+/**
+ * SrcFinfo0 sets up calls without any arguments.
+ */
+class SrcFinfo0: public SrcFinfo
+{
+	public:
 
-			bool getSlot( const string& name, Slot& ret ) const;
+		SrcFinfo0( const string& name, const string& doc, ConnId c );
+		~SrcFinfo0() {;}
 
-			Finfo* copy() const {
-				return new SrcFinfo( *this );
-			}
+		// Will need to specialize for strings etc.
+		void send( Eref e ) const;
+		void sendTo( Eref e, Id target ) const;
 
-			void addFuncVec( const string& cname )
-			{;}
+	private:
+};
 
-			bool isDestOnly() const {
-				return 0;
-			}
 
-			/// Looks at the ftype.
-			unsigned int syncFuncId() const {
-				return ftype()->syncFuncId();
-			}
+template < class T > class SrcFinfo1: public SrcFinfo
+{
+	public:
+		~SrcFinfo1() {;}
 
-			/// Looks at the ftype.
-			unsigned int asyncFuncId() const {
-				return ftype()->asyncFuncId();
-			}
+		SrcFinfo1( const string& name, const string& doc, 
+			ConnId c )
+			: SrcFinfo( name, doc, c )
+			{ ; }
 
-			/// Always zero. This cannot be a dest.
-			unsigned int proxyFuncId() const {
-				return 0;
-			}
+		// Will need to specialize for strings etc.
+		void send( Eref e, const T& arg ) const
+		{
+			e.asend( getConnId(), getFuncIndex(), 
+				reinterpret_cast< const char* >( &arg ), sizeof( T ) );
+		}
 
-		private:
-			int msg_;
+		void sendTo( Eref e, Id target, const T& arg ) const
+		{
+			char temp[ sizeof( T ) + sizeof( unsigned int ) ];
+			*reinterpret_cast< T* >( temp ) = arg;
+			*reinterpret_cast< unsigned int* >( temp + sizeof( T ) ) = target.index();
+			// e.tsend( c_, funcIndex_, target, reinterpret_cast< const char* >( &arg ), sizeof( T ) );
+			e.tsend( getConnId(), getFuncIndex(), 
+				target, temp, sizeof( T ) );
+		}
+
+	private:
+};
+
+template <> class SrcFinfo1< string >: public SrcFinfo
+{
+	public:
+		~SrcFinfo1() {;}
+
+		SrcFinfo1( const string& name, const string& doc, 
+			ConnId c )
+			: SrcFinfo( name, doc, c )
+			{ ; }
+
+		// Will need to specialize for strings etc.
+		void send( Eref e, const string& arg ) const
+		{
+			e.asend( getConnId(), getFuncIndex(), 
+				arg.c_str() , arg.length() + 1 );
+		}
+
+		void sendTo( Eref e, Id target, const string& arg ) const
+		{
+			char* temp = new char[ arg.length() + 1 + sizeof( unsigned int ) ];
+			strcpy( temp, arg.c_str() );
+			*reinterpret_cast< unsigned int* >( temp + arg.length() + 1) = 
+				target.index();
+			// e.tsend( c_, funcIndex_, target, reinterpret_cast< const char* >( &arg ), arg.length() + 1 );
+			e.tsend( getConnId(), getFuncIndex(), 
+				target, temp, arg.length() + 1 );
+			delete[] temp;
+		}
+
+
+	private:
+};
+
+template < class T1, class T2 > class SrcFinfo2: public SrcFinfo
+{
+	public:
+		~SrcFinfo2() {;}
+
+		SrcFinfo2( const string& name, const string& doc, 
+			ConnId c )
+			: SrcFinfo( name, doc, c )
+			{ ; }
+
+		// Will need to specialize for strings etc.
+		void send( Eref e, const T1& arg1, const T2& arg2 ) {
+			char temp[ sizeof( T1 ) + sizeof( T2 ) ];
+			*reinterpret_cast< T1* >( temp ) = arg1;
+			*reinterpret_cast< T2* >( temp + sizeof( T1 ) ) = arg2;
+			e.asend( getConnId(), getFuncIndex(), temp,
+				sizeof( T1 ) + sizeof( T2 ) );
+		}
+
+		void sendTo( Eref e, Id target, const T1& arg1, const T2& arg2 ) {
+			char temp[ sizeof( T1 ) + sizeof( T2 ) + sizeof( unsigned int ) ];
+			*reinterpret_cast< T1* >( temp ) = arg1;
+			*reinterpret_cast< T2* >( temp + sizeof( T1 ) ) = arg2;
+			*reinterpret_cast< unsigned int* >( temp + sizeof( T1 ) + sizeof( T2 ) ) = target.index();
+			// e.tsend( c_, funcIndex_, target, reinterpret_cast< const char* >( &arg ), sizeof( T1 ) + sizeof( T2 ) );
+			e.tsend( getConnId(), getFuncIndex(),
+				target, temp, sizeof( T1 ) + sizeof( T2 ) );
+		}
+
+	private:
+};
+
+
+template < class T1, class T2, class T3 > class SrcFinfo3: public SrcFinfo
+{
+	public:
+		~SrcFinfo3() {;}
+
+		SrcFinfo3( const string& name, const string& doc, 
+			ConnId c )
+			: SrcFinfo( name, doc, c )
+			{ ; }
+
+		// Will need to specialize for strings etc.
+		void send( Eref e, const T1& arg1, const T2& arg2, const T3& arg3 ){
+			char temp[ sizeof( T1 ) + sizeof( T2 ) + sizeof( T3 ) ];
+			*reinterpret_cast< T1* >( temp ) = arg1;
+			*reinterpret_cast< T2* >( temp + sizeof( T1 ) ) = arg2;
+			*reinterpret_cast< T3* >( temp + sizeof( T1 ) + sizeof( T2 ) ) = arg3;
+			e.asend( getConnId(), getFuncIndex(), temp,
+				sizeof( T1 ) + sizeof( T2 ) + sizeof( T3 ) );
+		}
+
+		void sendTo( Eref e, Id target, const T1& arg1, const T2& arg2, 
+			const T3& arg3 ) {
+			char temp[ sizeof( T1 ) + sizeof( T2 ) + sizeof( T3 ) +
+				sizeof( unsigned int ) ];
+			*reinterpret_cast< T1* >( temp ) = arg1;
+			*reinterpret_cast< T2* >( temp + sizeof( T1 ) ) = arg2;
+			*reinterpret_cast< T3* >( temp + sizeof( T1 ) + sizeof( T2 ) ) = arg3;
+			*reinterpret_cast< unsigned int* >( temp + 
+				sizeof( T1 ) + sizeof( T2 ) + sizeof( T3 ) ) = 
+				target.index();
+			// e.tsend( c_, funcIndex_, target, reinterpret_cast< const char* >( &arg ), sizeof( T1 ) + sizeof( T2 ) + sizeof( T3 ) );
+			e.tsend( getConnId(), getFuncIndex(),
+				target, temp, sizeof( T1 ) + sizeof( T2 ) + sizeof( T3 ) );
+		}
+
+	private:
 };
 
 #endif // _SRC_FINFO_H

@@ -13,100 +13,58 @@
 #
 
 TARGET = basecode.o
-CXXFLAGS += -I.. -I../connections
+
+#  CXXFLAGS += -I.. -I../kinetics -I../biophysics
+
 OBJ = \
 	Element.o	\
 	Eref.o	\
-	Id.o	\
-	IdGenerator.o	\
-	IdManager.o	\
-	Fid.o	\
-	RecvFunc.o \
-	Ftype.o \
-	Msg.o \
-	SimpleElement.o	\
-	ArrayElement.o \
-	Copy.o \
-	Send.o \
+	Finfo.o	\
+	Cinfo.o	\
+	Msg.o	\
+	Conn.o \
 	SrcFinfo.o \
-	DestFinfo.o \
-	ValueFinfo.o \
-	LookupFinfo.o \
-	ThisFinfo.o \
-	DeletionMarkerFinfo.o \
-	GlobalMarkerFinfo.o \
-	Cinfo.o \
-	DynamicFinfo.o \
-	strconv.o \
-	SharedFtype.o \
-	SharedFinfo.o \
-	SolveFinfo.o \
-	setget.o \
-	filecheck.o \
-	ParallelDummy.o \
-	Class.o	\
-	FuncVec.o \
-	ExtFieldFinfo.o \
-	UnitTests.o \
-	TestBasecode.o \
+	Id.o \
+	testSync.o	\
+	testAsync.o	\
+	Neutral.o	\
+	Shell.o	\
+	Qinfo.o \
+	DataId.o \
+	Message.o \
+	SetGet.o \
+	SparseMatrix.o \
+	SparseMsg.o \
+	main.o	\
 
 HEADERS = \
 	header.h \
+	Cinfo.h \
+	Conn.h \
+	Conv.h \
+	Data.h \
+	DataId.h \
+	Dinfo.h \
+	Element.h \
 	Eref.h \
-	RecvFunc.h \
-	../connections/Conn.h \
-	../connections/ConnTainer.h \
-	Ftype.h \
-	Ftype0.h \
-	Ftype1.h \
-	Ftype2.h \
-	Ftype3.h \
-	Ftype4.h \
-	Ftype5.h \
-	Serializer.h \
-	FuncVec.h \
-	Slot.h \
 	Finfo.h \
 	Id.h \
-	IdGenerator.h \
-	IdManager.h \
 	Msg.h \
-	Element.h \
-	Class.h \
-#	AssignFinfo.h
-#	ArrayFinfo.o \
-
-#	ArrayWrapperElement.o	\
+	Neutral.h \
+	OpFunc.h \
+	EpFunc.h \
+	ProcInfo.h \
+	Qinfo.h \
+	SrcFinfo.h \
+	ValueFinfo.h \
+	Shell.h \
 
 default: $(TARGET)
 
 $(OBJ)	: $(HEADERS)
+testAsync.o:	SparseMatrix.h SetGet.h
+SparseMsg.o:	SparseMatrix.h
 #TestBasecode.o:	Shell.h ShellWrapper.h
-
-SrcFinfo.o:		SrcFinfo.h
-DestFinfo.o: 	DestFinfo.h
-ThisFinfo.o: 	ThisFinfo.h
-DynamicFinfo.o:	DynamicFinfo.h
-ValueFinfo.o:	ValueFinfo.h DynamicFinfo.h Send.h
-ExtFieldFinfo.o:	ExtFieldFinfo.h
-DerivedFtype.o:	DerivedFtype.h
-SharedFtype.o:	SharedFtype.h
-SharedFinfo.o:	SharedFinfo.h SharedFtype.h
-SolveFinfo.o:	ThisFinfo.h SolveFinfo.h
-Cinfo.o:		Cinfo.h
-UnitTests.o:	SimpleElement.h DerivedFtype.h SrcFinfo.h DestFinfo.h Cinfo.h DynamicFinfo.h ValueFinfo.h Send.h ValueFtype.h
-LookupFinfo.o:	LookupFinfo.h DynamicFinfo.h LookupFtype.h
-DeletionMarkerFinfo.o: DeletionMarkerFinfo.h
-GlobalMarkerFinfo.o: DeletionMarkerFinfo.h GlobalMarkerFinfo.h
-SimpleElement.o:	SimpleElement.h DeletionMarkerFinfo.h
-setget.o:		setget.h DerivedFtype.h
-strconv.o:		DerivedFtype.h
-filecheck.o: filecheck.h
-IdManager.o:	Id.h IdManager.h
-ArrayElement.o:	ArrayElement.h SimpleElement.h DeletionMarkerFinfo.h
-Class.o: Class.h Cinfo.h Cinfo.cpp
-FuncVec.o: RecvFunc.h Ftype.h FuncVec.h
-Ftype.o: Ftype.h
 
 .cpp.o:
 	$(CXX) $(CXXFLAGS) $< -c

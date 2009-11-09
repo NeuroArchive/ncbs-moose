@@ -26,75 +26,38 @@
 #     ADDITIONAL COMMANDLINE VARIABLES FOR MAKE
 #
 ######################################################################     
+# The variable BUILD determines if it should be optimized (release)
+# or a debug version (default).
 # make can be run with a command line parameter like below:
-# 		make clean
-# 		make BUILD=debug USE_SBML=0 USE_MPI=1
-# 
+# make clean BUILD=debug
+# make BUILD=debug
 # another option is to define BUILD as an environment variable:
-# 		export BUILD=debug
-# 		export USE_SBML=0
-# 		export USE_MPI=1
-# 		make clean
-# 		make
+# export BUILD=debug
+# make clean
+# make
 #
-# There are a few variables whose value you can set to control compilation.
-# Choose the libraries you want by setting the USE_* flags to 0 or 1 (to exclude
-# or include the library). The variables you can set are:
-# 
-# BUILD (default value: release) - If this variable is set to 'release' (default),
-# 		moose will be compiled in optimized mode. If it is set to 'debug', then 
-# 		debug symbols will be included and compiler optimizations will not be used.
+# There are some more variables which just need to be defined for 
+# controlling the compilation and the value does not matter. These are:
 #
-# USE_GSL (default value: 1) - use GNU Scientific Library for integration in
-# 		kinetic simulations.
-#		
-# USE_SBML (default value: 1) - compile with support for the Systems Biology
-# 		Markup Language (SBML). This allows you to read and write chemical 
-# 		kinetic models in the simulator-indpendent SBML format.
+# USE_GSL - use GNU Scientific Library for integration in kinetic simulations
 # 
-# USE_READLINE (default value: 1) - use the readline library which provides
-# 		command history and better command line editing capabilities
-#
-# USE_MPI (default value: 0) - compile with support for parallel computing through
-# 		MPICH library
+# USE_READLINE - use the readline library which provides command history and 
+# 		better command line editing capabilities
 # 
-# USE_MUSIC (default value: 0) - compile with MUSIC support. The MUSIC library 
-# 		allows runtime exchange of information between simulators.
-#
-# USE_CURSES (default value: 0) - To compile with curses support (terminal aware
-# 		printing)
-# 
-# GENERATE_WRAPPERS (default value: 0) - useful for python interface developers.
-# 		The binary created with this option looks for a directory named
-# 		'generated' in the working directory and creates a wrapper class
-# 		(one .h file and a .cpp file ) and partial code for the swig interface
-# 		file (pymoose.i). These files with some modification can be used for
+# GENERATE_WRAPPERS - useful for python interface developers. The binary created 
+# 		with this option looks for a directory named 'generated' in the
+# 		working directory and creates a wrapper class ( one .h file 
+# 		and a .cpp file ) and partial code for the swig interface file
+# 		(pymoose.i). These files with some modification can be used for
 # 		generating the python interface using swig.
 #
-
-# Default values for flags. The operator ?= assigns the given value only if the
-# variable is not already defined.
+# USE_MPI - compile with support for parallel computing through MPICH library
+#
 
 # BUILD (= debug, release)
-BUILD?=release
-USE_GSL?=1
-USE_SBML?=1
-USE_NEUROML?=0
-USE_READLINE?=1
-USE_MPI?=0
-USE_MUSIC?=0
-USE_CURSES?=0
-GENERATE_WRAPPERS?=0
-
-export BUILD
-export USE_GSL
-export USE_SBML
-export USE_NEUROML
-export USE_READLINE
-export USE_MPI
-export USE_MUSIC
-export USE_CURSES
-export GENERATE_WRAPPERS
+ifndef BUILD
+BUILD=debug
+endif
 
 # PLATFORM (= Linux, win32, Darwin)
 #If using mac uncomment the following lines
@@ -104,8 +67,9 @@ export GENERATE_WRAPPERS
 # Get the processor architecture - i686 or x86_64
 # All these should be taken care of in a script, not in the 
 # Makefile. But we are
-MACHINE?=i686 
-
+ifndef MACHINE
+MACHINE=i686 
+endif
 # We are assuming all non-win32 systems to be POSIX compliant
 # and thus have the command uname for getting Unix system name
 ifneq ($(OSTYPE),win32)
@@ -114,11 +78,19 @@ endif
 
 # Debug mode:
 ifeq ($(BUILD),debug)
-CXXFLAGS = -g -Wall -Wno-long-long -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER
+CXXFLAGS = -g -pthread -Wall -Wno-long-long -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER
 endif
 # Optimized mode:
 ifeq ($(BUILD),release)
-CXXFLAGS  = -O3 -Wall -Wno-long-long -pedantic -DNDEBUG -DUSE_GENESIS_PARSER 
+CXXFLAGS  = -O3 -Wall -Wno-long-long -pedantic -DNDEBUG -DUSE_GENESIS_PARSER  
+endif
+# Profiling mode:
+ifeq ($(BUILD),profile)
+CXXFLAGS  = -O3 -pg -Wall -Wno-long-long -pedantic -DNDEBUG -DUSE_GENESIS_PARSER  
+endif
+# Threading mode:
+ifeq ($(BUILD),thread)
+CXXFLAGS  = -O3 -pthread -Wall -Wno-long-long -pedantic -DNDEBUG -DUSE_GENESIS_PARSER  
 endif
 ##########################################################################
 #
@@ -140,8 +112,11 @@ endif
 
 # Libraries are defined below. For now we do not use threads.
 SUBLIBS = 
-#LIBS =	-lm -lpthread
-LIBS = 	-lm 
+LIBS =	-lm -lpthread
+#LIBS = 	-lm
+ifeq ($(BUILD),thread)
+LIBS += -lpthread
+endif
 ##########################################################################
 #
 # Developer options (Don't try these unless you are writing new code!)
@@ -152,13 +127,13 @@ LIBS = 	-lm
 # to get the generated code to work. 
 # Although this binary of MOOSE is verbose in its complaints, is completely harmless 
 # except for the overhead of  checks for the existence of a few files at startup.
-ifeq ($(GENERATE_WRAPPERS),1)
+ifdef GENERATE_WRAPPERS
 CXXFLAGS += -DGENERATE_WRAPPERS
 endif
 
 # For parallel (MPI) version:
-ifeq ($(USE_MUSIC),1)
-USE_MPI = 1 # Automatically enable MPI if USE_MUSIC is on (doesn't seem to work though.)
+ifdef USE_MUSIC
+USE_MPI = 1		# Automatically enable MPI if USE_MUSIC is on
 CXXFLAGS += -DUSE_MUSIC
 LIBS += -lmusic
 endif
@@ -167,7 +142,7 @@ endif
 # MPI-2 standard. Enabled by default because it use crops up
 # often enough. You won't need if if you are not using MPICH, or
 # if your version of MPICH has fixed the issue.
-ifeq ($(USE_MPI),1)
+ifdef USE_MPI
 # CXXFLAGS += -DUSE_MPI
 CXXFLAGS += -DUSE_MPI -DMPICH_IGNORE_CXX_SEEK
 endif
@@ -176,33 +151,20 @@ endif
 #CXXFLAGS = -g -Wall -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER -DUSE_READLINE
 
 
-# To use GSL, pass USE_GSL=1 in make command line
-ifeq ($(USE_GSL),1)
-LIBS+= -lgsl -lgslcblas
-CXXFLAGS+= -DUSE_GSL 
+# To use GSL, pass USE_GSL=true ( anything on the right will do) in make command line
+ifdef USE_GSL
+LIBS+= -L/usr/lib -lgsl -lgslcblas
+CXXFLAGS+= -DUSE_GSL
 endif
 
-# To use SBML, pass USE_SBML=1 in make command line
-ifeq ($(USE_SBML),1)
-LIBS+= -lsbml 
-CXXFLAGS+=-DUSE_SBML 
+# To compile with readline support pass USE_READLINE=true in make command line
+ifdef USE_READLINE
+LIBS+= -lreadline
+CXXFLAGS+= -DUSE_READLINE
 endif
 
-# To use NeuroML, pass USE_NeuroML=1 in make command line
-ifeq ($(USE_NEUROML),1)
-#LIBS+= -lxml2 -lneuroml
-LIBS+= -lneuroml -L/home/siji/TestLibNeuroML/v0.2/libneuroml
-CXXFLAGS+=-DUSE_NEUROML
-endif
-
-# To compile with readline support pass USE_READLINE=1 in make command line
-ifeq ($(USE_READLINE),1)
-LIBS+= -lreadline -lncurses
-CXXFLAGS+= -DUSE_READLINE 
-endif
-
-# To compile with curses support (terminal aware printing) pass USE_CURSES=1 in make command line
-ifeq ($(USE_CURSES),1)
+# To compile with curses support (terminal aware printing) pass USE_CURSES=true in make command line
+ifdef USE_CURSES
 LIBS += -lcurses
 CXXFLAGS+= -DUSE_CURSES
 endif
@@ -213,23 +175,13 @@ LIBS=-L/lib64 -L/usr/lib64 $(LIBS)
 endif
 endif
 
-ifeq ($(USE_SBML),1)
-	SBML_DIR = sbml_IO
-	SBML_LIB = sbml_IO/sbml_IO.o 
-endif
-
-ifeq ($(USE_NEUROML),1)
-	NEUROML_DIR = neuroML_IO
-	NEUROML_LIB = neuroML_IO/neuroML_IO.o 
-endif
-
-ifeq ($(USE_MUSIC),1)
+ifdef USE_MUSIC
 	MUSIC_DIR = music
 	MUSIC_LIB = music/music.o
 endif
 
 # Here we automagically change compilers to deal with MPI.
-ifeq ($(USE_MPI),1)
+ifdef USE_MPI
 	CXX = mpicxx
 	PARALLEL_DIR = parallel
 	PARALLEL_LIB = parallel/parallel.o
@@ -240,63 +192,46 @@ endif
 
 LD = ld
 
-SUBDIR = basecode connections maindir genesis_parser shell element scheduling \
-	biophysics hsolve kinetics ksolve builtins utility \
-	randnum signeur device $(SBML_DIR) $(NEUROML_DIR) $(PARALLEL_DIR) $(MUSIC_DIR) 
+SUBDIR = \
+	basecode \
+	biophysics\
+	randnum\
+
+
+#	kinetics \
 
 # Used for 'make clean'
-CLEANSUBDIR = $(SUBDIR) parallel music pymoose sbml_IO neuroML_IO
+CLEANSUBDIR = $(SUBDIR) 
 
 OBJLIBS =	\
 	basecode/basecode.o \
-	connections/connections.o \
-	maindir/maindir.o \
-	genesis_parser/SLI.o \
-	element/element.o \
-	shell/shell.o \
-	utility/utility.o \
-	randnum/randnum.o	\
-	scheduling/scheduling.o \
 	biophysics/biophysics.o \
-	hsolve/hsolve.o \
-	kinetics/kinetics.o \
-	ksolve/ksolve.o \
-	builtins/builtins.o \
-	signeur/signeur.o \
-	device/device.o \
-	$(SBML_LIB) \
-	$(NEUROML_LIB) \
-	$(PARALLEL_LIB) \
-	$(MUSIC_LIB)
+	randnum/randnum.o \
+
+#
+#	kinetics/kinetics.o \
+#
+#
 
 export CXX
 export CXXFLAGS
 export LD
 export LIBS
 
-moose: libs $(OBJLIBS) 
-	$(CXX) $(OBJLIBS) $(LIBS) -o moose 
+moose: libs $(OBJLIBS) $(PARALLEL_LIB)
+	$(CXX) $(CXXFLAGS) $(OBJLIBS) $(LIBS) -o moose
 	@echo "Moose compilation finished"
 
 libmoose.so: libs
 	$(CXX) -G $(LIBS) -o libmoose.so
 	@echo "Created dynamic library"
 
-pymoose: CXXFLAGS += -DPYMOOSE -fPIC 
+pymoose: CXXFLAGS += -fPIC 
 pymoose: SUBDIR += pymoose
 pymoose: libs $(OBJLIBS) 
 	$(MAKE) -C $@
 
 libs:
-	@echo "Compiling with flags:"
-	@echo "	BUILD:" $(BUILD)
-	@echo "	USE_GSL:" $(USE_GSL)
-	@echo "	USE_SBML:" $(USE_SBML)
-	@echo "	USE_NEUROML:" $(USE_NEUROML)
-	@echo "	USE_READLINE:" $(USE_READLINE)
-	@echo "	USE_MPI:" $(USE_MPI)
-	@echo "	USE_MUSIC:" $(USE_MUSIC)
-	@echo "	USE_CURSES:" $(USE_CURSES)
 	@(for i in $(SUBDIR); do $(MAKE) -C $$i; done)
 	@echo "All Libs compiled"
 
@@ -308,4 +243,3 @@ default: moose mpp
 clean:
 	@(for i in $(CLEANSUBDIR) ; do $(MAKE) -C $$i clean;  done)
 	-rm -rf moose mpp core.* DOCS/html *.so *.py *.pyc
-

@@ -1,221 +1,93 @@
 /**********************************************************************
 ** This program is part of 'MOOSE', the
 ** Messaging Object Oriented Simulation Environment.
-**           Copyright (C) 2003-2008 Upinder S. Bhalla. and NCBS
+**           Copyright (C) 2003-2009 Upinder S. Bhalla. and NCBS
 ** It is made available under the terms of the
 ** GNU Lesser General Public License version 2.1
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
 #include "header.h"
-#include "sstream"
-#include "Cinfo.h"
 
-Eref Eref::root()
+Eref::Eref( Element* e, DataId index )
+			: e_( e ), i_( index )
 {
-	return Eref( Element::root() );
+	;
 }
 
-void* Eref::data()
+ostream& operator <<( ostream& s, const Eref& e )
 {
-	return e->data( i );
+	s << e.e_ << "[" << e.i_ << "]";
+	return s;
 }
 
-bool Eref::operator<( const Eref& other ) const
+double Eref::sumBuf( SyncId slot )
 {
-	if ( e == other.e )
-		return ( i < other.i );
-
-	return ( e < other.e );
+	return e_->sumBuf( slot, i_.data() );
 }
 
-bool Eref::operator==( const Eref& other ) const
+double Eref::prdBuf( SyncId slot, double v )
 {
-	return ( e == other.e && i == other.i );
+	return e_->prdBuf( slot, i_.data(), v );
 }
 
-Id Eref::id()
+double Eref::oneBuf( SyncId slot )
 {
-	Id ret = e->id();
-	return ret.assignIndex( i );
+	return e_->oneBuf( slot, i_.data() );
 }
 
-bool Eref::add( int m1, Eref e2, int m2, unsigned int connTainerOption )
+double* Eref::getBufPtr( SyncId slot )
 {
-	assert( e != 0 && e2.e != 0 );
-	assert( validMsg( m1 ) );
-	assert( e2.validMsg( m2 ) );
-	const Finfo* srcF = e->findFinfo( m1 );
-	const Finfo* destF = e2.e->findFinfo( m2 );
-
-	if ( srcF && destF )
-		return srcF->add( *this, e2, destF, connTainerOption );
-	cout << "Eref::add: Error: Could not find Finfos " <<
-		srcF->name() << ", " << destF->name() << endl;
-	return 0;
+	return e_->getBufPtr( slot, i_.data() );
 }
 
-bool Eref::add( const string& f1, Eref e2, const string& f2,
-	unsigned int connTainerOption )
+char* Eref::data()
 {
-	assert( e2.e != 0 );
-	const Finfo* srcF = e->findFinfo( f1 );
-	const Finfo* destF = e2.e->findFinfo( f2 );
-	if ( !srcF ) {
-		cout << "Eref::add: Error: Could not find element.srcFinfo " <<
-			name() << "." << f1 << endl;
-		return 0;
-	}
-	if ( !destF ) {
-		cout << "Eref::add: Error: Could not find element.srcFinfo " <<
-			e2.name() << "." << f2 << endl;
-		return 0;
-	}
-	return srcF->add( *this, e2, destF, connTainerOption );
+	return e_->data( i_ );
 }
 
-bool Eref::add( const string& f1, Eref e2, const string& f2)
+char* Eref::data1()
 {
-	return add( f1, e2, f2, ConnTainer::Default );
-}
-
-bool Eref::drop( int msg, unsigned int doomed )
-{
-	if ( !validMsg( msg ) )
-		return 0;
-	if ( msg >= 0 ) {
-		return e->varMsg( msg )->drop( e, doomed );
-	} else {
-		cout << "Not sure what to do here, as the lookup is non-sequential\n";
-		vector< ConnTainer* >* ctv = e->getDest( msg );
-		if ( doomed >= ctv->size() )
-			return 0;
-	}
-	return 0;
+	return e_->data1( i_ );
 }
 
 /*
-bool Eref::drop( int msg, const ConnTainer* doomed )
+void Eref::sendSpike( Slot src, double t )
 {
-	if ( !validMsg( msg ) )
-		return 0;
-	if ( msg >= 0 ) {
-		varMsg( msg )->drop( this, doomed );
-		return 1;
-	} else {
-		cout << "Not sure what to do here in Eref::drop\n";
-		return 0;
-	}
+	// msg should do the iteration internally, passing just the
+	// double 
+	const vector< Msg* >& v = e_->msg( src );
+	for ( vector< Msg* >::const_iterator i = v.begin(); i != v.end(); ++i )
+		( *i )->addSpike( i_, t );
 }
 */
 
-bool Eref::dropAll( int msg )
+void Eref::ssend1( SyncId src, double v )
 {
-	if ( !validMsg( msg ) )
-		return 0;
-	if ( msg >= 0 ) {
-		e->varMsg( msg )->dropAll( e );
-		return 1;
-	} else {
-		vector< ConnTainer* >* ctv = e->getDest( msg );
-		vector< ConnTainer* >::iterator k;
-		for ( k = ctv->begin(); k != ctv->end(); k++ ) {
-			bool ret = Msg::innerDrop( ( *k )->e1(), ( *k )->msg1(), *k );
-			if ( ret )
-				delete ( *k );
-			else
-				cout << "Error: Eref::dropAll(): innerDrop failed\n";
-			*k = 0;
-		}
-		ctv->resize( 0 );
-		// I could erase the entry in the dest_ map too. Later.
-		return 1;
-	}
+	e_->ssend1( src, i_.data(), v );
 }
 
-bool Eref::dropAll( const string& finfo )
+void Eref::ssend2( SyncId src, double v1, double v2 )
 {
-	const Finfo* f = e->findFinfo( finfo );
-	if ( f ) {
-		return dropAll( f->msg() );
-	}
-	return 0;
+	e_->ssend2( src, i_.data(), v1, v2 );
+}
+
+void Eref::asend( ConnId conn, unsigned int funcIndex, const char* arg, 
+			unsigned int size ) const
+{
+	// e_->conn( conn ).asend( e_, Qinfo( func, i_, size ), arg );
+	Qinfo q( e_->getTargetFunc( funcIndex ), i_.data(), size );
+	e_->conn( conn ).asend( e_, q, arg );
 }
 
 /**
- * Returns number dropped. Check to confirm that all went.
- * Concern in doing this is that we don't want to mess up the iterators.
- * Also need to be sure that no one else is using the iterators.
+ * Need to sort out: do we use FuncId here (confusing) or funcIndex
+ * (when would it be set up ?)
  */
-bool Eref::dropVec( int msg, const vector< const ConnTainer* >& vec )
+void Eref::tsend( ConnId conn, FuncId func, Id target, const char* arg, 
+			unsigned int size ) const
 {
-	if ( vec.size() == 0 )
-		return 0;
-
-	if ( !validMsg( msg ) )
-		return 0;
-
-	if ( msg >= 0 ) {
-		Msg* m = e->varMsg( msg );
-		assert ( m != 0 );
-		vector< const ConnTainer* >::const_iterator i;
-		for ( i = vec.begin(); i != vec.end(); i++ ) {
-			bool ret = m->drop( ( *i )->e1(), *i );
-			assert( ret );
-		}
-		return 1;
-	} else {
-		vector< ConnTainer* >* ctv = e->getDest( msg );
-		assert ( ctv->size() >= vec.size() );
-		vector< const ConnTainer* >::const_iterator i;
-		for ( i = vec.begin(); i != vec.end(); i++ ) {
-			int otherMsg = ( *i )->msg1();
-			Element* otherElement = ( *i )->e1();
-			Msg* om = otherElement->varMsg( otherMsg );
-			assert( om );
-			bool ret = om->drop( otherElement, *i );
-			assert( ret );
-		}
-		return 1;
-	}
-	return 0;
-}
-
-bool Eref::validMsg( int msg ) const
-{
-	const Cinfo* c = e->cinfo();
-	if ( msg >= 0 ) {
-		if ( msg < static_cast< int >( c->numSrc() ) )
-			return 1; // It is a valid msgSrc.
-		return 0;
-	}
-	msg = -msg;
-	if ( msg < static_cast< int >( c->numSrc() ) )
-		return 0; // Should not have a msgDest less than the # of msgSrc.
-	if ( msg < static_cast< int >( c->numFinfos() ) )
-		return 1; // This is either a pure dest or a value field
-
-	return 0;
-}
-
-string Eref::name() const
-{
-	if ( i == Id::AnyIndex )
-		return ( e->name() + "[]" );
-	if ( e->elementType() == "Array" ) {
-		ostringstream s1;
-		s1 << e->name() << "[" << i << "]";
-		return s1.str();
-	}
-
-	return e->name();
-}
-
-string Eref::saneName(Id parent) const{
-	if (e->elementType()=="Array" && parent()->elementType() == "Simple"){
-		ostringstream s1;
-		s1 << e->name() << "[" << i << "]";
-		return s1.str();
-	}
-	return e->name();
+	// e_->conn( conn ).asend( e_, Qinfo( func, i_, size, 1 ), arg );
+	Qinfo q( func, i_.data(), size, 1 );
+	e_->conn( conn ).tsend( e_, target, q, arg );
 }

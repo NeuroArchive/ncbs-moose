@@ -1,311 +1,285 @@
 /**********************************************************************
 ** This program is part of 'MOOSE', the
-** Messaging Object Oriented Simulation Environment,
-** also known as GENESIS 3 base code.
-**           copyright (C) 2003-2006 Upinder S. Bhalla. and NCBS
+** Messaging Object Oriented Simulation Environment.
+**           Copyright (C) 2003-2009 Upinder S. Bhalla. and NCBS
 ** It is made available under the terms of the
 ** GNU Lesser General Public License version 2.1
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
+#include "header.h"
 
-// static Element* UNKNOWN_NODE = reinterpret_cast< Element* >( 1L );
-// const unsigned int BAD_ID = ~0;
-// const unsigned int MAX_ID = 1000000;
-// const unsigned int MIN_NODE = 1;
-// const unsigned int MAX_NODE = 65536; // Dream on.
-
-/**
- * The normal base element constructor needs an id for the element
- * as soon as it is made, and puts the element onto the elementList.
- * This function is called on all nodes, so it must handle cases where
- * there are gaps between the previous and current id assigned to this
- * node. Those gaps are referred to the master node by default.
- * This checks if an id is already in use.
- */
-Element::Element( Id id )
-	: id_( id )
-{
-	id.setElement( this );
-
-/*
-	assert( id < MAX_ID );
-	assert( id() == 0 );
-
-	unsigned int prevSize = elementList().size();
-	if ( id > prevSize ) {
-		elementList().resize( id + 1 );
-		for ( unsigned int i = prevSize; i < id; i++ )
-			elementList()[ i ] = UNKNOWN_NODE;
-	} else {
-		assert( elementList()[ id ] == 0 ) ; // Do not overwrite.
-	}
-	elementList()[ id ] = this;
-	*/
+Element::Element( const Cinfo* c, 
+	char* d, unsigned int numData, unsigned int dataSize, 
+		unsigned int numFuncIndex, unsigned int numConn )
+	: d_( d ), numData_( numData ), dataSize_( dataSize ), 
+	sendBuf_( 0 ), cinfo_( c ), c_( numConn )
+{ 
+	targetFunc_.resize( numFuncIndex, 0 );
 }
 
-/**
- * This variant is used for making dummy elements without messing
- * with the elementList. The id is hardcoded to zero here, so that
- * the destructor does not attempt to clear the location in the
- * ElementList. Note that the argument is just ignored.
- */
-Element::Element( bool ignoreId )
-{ ; }
+Element::Element( const Cinfo* c, const Element* other )
+	: 	d_( other->d_ ), 
+		numData_( other->numData_ ), 
+		dataSize_( other->dataSize_),
+		sendBuf_( 0 ), cinfo_( c ), c_( 0 )
+{
+	;
+}
 
-/**
- * The virtual destructor for Elements cleans up the entry on the
- * elementList. The special case of zero id (from above) is not
- * deleted.
- */
 Element::~Element()
 {
-	if ( !id_.zero() )
-		id_.setElement( 0 );
+	delete[] sendBuf_;
+	cinfo_->destroy( d_ );
+	for ( vector< Conn >::iterator i = c_.begin(); i != c_.end(); ++i )
+		i->clearConn(); // Get rid of Msgs on them.
+	for ( vector< Msg* >::iterator i = m_.begin(); i != m_.end(); ++i )
+		if ( *i ) // Dropped Msgs set this pointer to zero, so skip them.
+			delete *i;
 }
 
-bool Element::isTarget( const Element* tgt ) const
+void Element::process( const ProcInfo* p )
 {
-	unsigned int n = numMsg();
-	for ( unsigned int i = 0; i < n; ++i )
-		if ( msg( i )->isTarget( this, tgt ) )
-			return 1;
-	return 0;
+	char* data = d_;
+	for ( unsigned int i = 0; i < numData_; ++i ) {
+		reinterpret_cast< Data* >( data )->process( p, Eref( this, i ) );
+		data += dataSize_;
+	}
 }
 
-void Element::setId( Id id )
+
+double Element::sumBuf( SyncId slot, unsigned int i ) const
 {
-	id_ = id;
+	vector< unsigned int >::const_iterator offset = 
+		procBufRange_.begin() + slot + i * numRecvSlots_;
+	vector< double* >::const_iterator begin = 
+		procBuf_.begin() + *offset++;
+	vector< double* >::const_iterator end = 
+		procBuf_.begin() + *offset;
+	double ret = 0.0;
+	for ( vector< double* >::const_iterator i = begin; 
+		i != end; ++i )
+		ret += **i;
+	return ret;
+}
+
+double Element::prdBuf( SyncId slot, unsigned int i, double v )
+	const
+{
+	vector< unsigned int >::const_iterator offset = 
+		procBufRange_.begin() + slot + i * numRecvSlots_;
+	vector< double* >::const_iterator begin = 
+		procBuf_.begin() + *offset++;
+	vector< double* >::const_iterator end = 
+		procBuf_.begin() + *offset;
+	for ( vector< double* >::const_iterator i = begin;
+		i != end; ++i )
+		v *= **i;
+	return v;
+}
+
+double Element::oneBuf( SyncId slot, unsigned int i ) const
+{
+	// unsigned int offset = i * numData_ + slot;
+	unsigned int offset = slot + i * numRecvSlots_;
+	assert( offset + 1 < procBufRange_.size() );
+	return *procBuf_[ procBufRange_[ offset ] ];
+}
+
+double* Element::getBufPtr( SyncId slot, unsigned int i )
+{
+	// unsigned int offset = i * numData_ + slot;
+	unsigned int offset = slot + i * numRecvSlots_;
+	assert( offset + 1 < procBufRange_.size() );
+	return procBuf_[ procBufRange_[ offset ] ];
+}
+
+void Element::ssend1( SyncId slot, unsigned int i, double v )
+{
+	sendBuf_[ slot + i * numSendSlots_ ] = v;
+}
+
+void Element::ssend2( SyncId slot, unsigned int i, double v1, double v2 )
+{
+	double* sb = sendBuf_ + slot + i * numSendSlots_;
+	*sb++ = v1;
+	*sb = v2;
+}
+
+char* Element::data( DataId index )
+{
+	assert( index.data() < numData_ );
+	return d_ + index.data() * dataSize_;
+}
+
+char* Element::data1( DataId index )
+{
+	assert( index.data() < numData_ );
+	return d_ + index.data() * dataSize_;
+}
+
+unsigned int Element::numData() const
+{
+	return numData_;
+}
+
+unsigned int Element::numData1() const
+{
+	return numData_;
+}
+
+unsigned int Element::numData2( unsigned int index1 ) const
+{
+	return 1;
+}
+
+unsigned int Element::numDimensions() const
+{
+	return 1;
+}
+
+const Conn& Element::conn( ConnId c ) const {
+	assert( c < c_.size() );
+	return c_[c];
+}
+
+const Msg* Element::getMsg( MsgId mid ) const {
+	assert( mid < m_.size() );
+	return m_[ mid ];
 }
 
 /**
- * Here we work with a single big array of all ids. Off-node elements
- * are represented by their postmasters. When we hit a postmaster we
- * put the id into a special field on it. Note that this is horrendously
- * thread-unsafe.
- * \todo: I need to replace the off-node case with a wrapper Element
- * return. The object stored here will continue to be the postmaster,
- * and when this is detected it will put the postmaster ptr and the id
- * into the wrapper element. The wrapper's own id will be zero so it
- * can be safely deleted.
+ * Parses the buffer and executes the func in all specified Data
+ * objects on the Element.
+ * Returns new position on buffer.
+ * The buffer looks like this:
+ * uint FuncId, uint MsgId, Args
+ *
+ * The Msg does the iteration, and as it is a virtual base class
+ * it can do all sorts of optimizations depending on how the mapping looks.
+ *
  */
-/*
-Element* Element::element( unsigned int id )
+const char* Element::execFunc( const char* buf )
 {
-	if ( id < elementList().size() ) {
-		Element* ret = elementList()[ id ];
-		if ( ret == 0 )
-			return 0;
-		if ( ret == UNKNOWN_NODE )
-			// don't know how to handle this yet. It should trigger
-			// a request to the master node to update the elist.
-			// We then get into managing how many entries are unknown...
-			assert( 0 );
-		if ( ret->className() == "PostMaster" ) {
-			set< unsigned int >( ret, "targetId", id );
+	assert( buf != 0 );
+
+	Qinfo q = *( reinterpret_cast < const Qinfo * >( buf ) );
+
+	if ( q.useSendTo() ) {
+		// const char* temp = buf + sizeof( Qinfo );
+		unsigned int tgtIndex =
+			*reinterpret_cast< const unsigned int* >( 
+			buf + sizeof( Qinfo ) + q.size() - sizeof( unsigned int ) );
+		if ( tgtIndex < numData_ ) {
+			// checks for valid func
+			const OpFunc* func = cinfo_->getOpFunc( q.fid() );
+			func->op( Eref( this, tgtIndex ), buf );
+		} else {
+			cout << "Warning: Message to nonexistent Element index " << 
+				tgtIndex << " on " << this << endl;
 		}
-		return elementList()[ id ];
-	}
-	return 0;
-}
-*/
-
-/**
- * Returns the most recently created element.
- * It is a static function. Deprecated.
- */
-/*
-Element* Element::lastElement()
-{
-	assert ( elementList().size() > 0 );
-	return Element::element( elementList().size() - 1 );
-}
-*/
-
-/**
- * Function for accessing the element list in an initialization-sequence
- * independent manner
- */
-/*
-vector< Element* >& Element::elementList()
-{
-	static vector< Element* > elementList;
-
-	return elementList;
-}
-*/
-
-/**
- * Returns the next available id and allocates space for it.
- * Later can be refined to mop up freed ids. 
- * Should only be called on master node.
- */
-/*
-unsigned int Element::nextId()
-{
-	elementList().push_back( 0 );
-	return elementList().size() - 1;
-}
-*/
-
-/**
- * Returns the current high id. Used to find the most recently created
- * object. Should only be called on master node.
- */
-/*
-unsigned int Element::lastId()
-{
-	return elementList().size() - 1;
-}
-*/
-
-#if 0
-bool Element::add( int m1, Element* e2, int m2 )
-{
-	assert( e2 != 0 );
-	assert( validMsg( m1 ) );
-	assert( validMsg( m2 ) );
-	const Finfo* srcF = findFinfo( m1 );
-	const Finfo* destF = e2->findFinfo( m2 );
-
-	if ( srcF && destF )
-		return srcF->add( this, e2, destF );
-	cout << "Element::add: Error: Could not find Finfos " <<
-		srcF->name() << ", " << destF->name() << endl;
-	return 0;
-}
-
-bool Element::add( const string& f1, Element* e2, const string& f2 )
-{
-	assert( e2 != 0 );
-	const Finfo* srcF = findFinfo( f1 );
-	const Finfo* destF = e2->findFinfo( f2 );
-	if ( !srcF ) {
-		cout << "Element::add: Error: Could not find element.srcFinfo " <<
-			name() << "." << f1 << endl;
-		return 0;
-	}
-	if ( !destF ) {
-		cout << "Element::add: Error: Could not find element.srcFinfo " <<
-			e2->name() << "." << f2 << endl;
-		return 0;
-	}
-	return srcF->add( this, e2, destF );
-}
-
-bool Element::drop( int msg, unsigned int doomed )
-{
-	if ( !validMsg( msg ) )
-		return 0;
-	if ( msg >= 0 ) {
-		return varMsg( msg )->drop( this, doomed );
 	} else {
-		cout << "Not sure what to do here, as the lookup is non-sequential\n";
-		vector< ConnTainer* >* ctv = getDest( msg );
-		if ( doomed >= ctv->size() )
-			return 0;
+		const Msg* m = getMsg( q.mid() ); // Runtime check for Msg identity.
+		if ( m )
+			m->exec( this, buf );
 	}
-	return 0;
-}
 
-/*
-bool Element::drop( int msg, const ConnTainer* doomed )
-{
-	if ( !validMsg( msg ) )
-		return 0;
-	if ( msg >= 0 ) {
-		varMsg( msg )->drop( this, doomed );
-		return 1;
-	} else {
-		cout << "Not sure what to do here in Element::drop\n";
-		return 0;
-	}
-}
-*/
-
-bool Element::dropAll( int msg )
-{
-	if ( !validMsg( msg ) )
-		return 0;
-	if ( msg >= 0 ) {
-		varMsg( msg )->dropAll( this );
-		return 1;
-	} else {
-		vector< ConnTainer* >* ctv = getDest( msg );
-		vector< ConnTainer* >::iterator k;
-		for ( k = ctv->begin(); k != ctv->end(); k++ ) {
-			bool ret = Msg::innerDrop( ( *k )->e1(), ( *k )->msg1(), *k );
-			if ( ret )
-				delete ( *k );
-			else
-				cout << "Error: Element::dropAll(): innerDrop failed\n";
-			*k = 0;
-		}
-		ctv->resize( 0 );
-		// I could erase the entry in the dest_ map too. Later.
-		return 1;
-	}
-}
-
-bool Element::dropAll( const string& finfo )
-{
-	const Finfo* f = findFinfo( finfo );
-	if ( f ) {
-		return dropAll( f->msg() );
-	}
-	return 0;
+	return buf + sizeof( Qinfo) + q.size();;
 }
 
 /**
- * Returns number dropped. Check to confirm that all went.
- * Concern in doing this is that we don't want to mess up the iterators.
- * Also need to be sure that no one else is using the iterators.
+ * clearQ: goes through async function request queue and carries out
+ * operations on it. 
+ *
+ * Node decomposition of Element: Two stage process. First, the Queue
+ * request itself must reach all target nodes. This will have to be 
+ * managed by the Connection and set up with the Element when the
+ * Connection is created. Second, the Element must provide the Msg
+ * with range info. Msg will use efficiently to choose what to call.
+ *
+ * Thread decomposition of Element:	Incoming data is subdivided into
+ * per-thread buffers. It would be nice to clearQ these per-thread too.
+ * Need some way to shift stuff around for balancing. Must ensure that
+ * only one Msg deals with any given index.
+ *
  */
-bool Element::dropVec( int msg, const vector< const ConnTainer* >& vec )
+void Element::clearQ( )
 {
-	if ( vec.size() == 0 )
-		return 0;
-
-	if ( !validMsg( msg ) )
-		return 0;
-
-	if ( msg >= 0 ) {
-		Msg* m = varMsg( msg );
-		assert ( m != 0 );
-		vector< const ConnTainer* >::const_iterator i;
-		for ( i = vec.begin(); i != vec.end(); i++ ) {
-			bool ret = m->drop( ( *i )->e1(), *i );
-			assert( ret );
-		}
-		return 1;
-	} else {
-		vector< ConnTainer* >* ctv = getDest( msg );
-		assert ( ctv->size() >= vec.size() );
-		vector< const ConnTainer* >::const_iterator i;
-		for ( i = vec.begin(); i != vec.end(); i++ ) {
-			int otherMsg = ( *i )->msg1();
-			Element* otherElement = ( *i )->e1();
-			Msg* om = otherElement->varMsg( otherMsg );
-			assert( om );
-			bool ret = om->drop( otherElement, *i );
-			assert( ret );
-		}
-		return 1;
+	const char* buf = &(q_[0]);
+//	while ( buf && *reinterpret_cast< const FuncId* >(buf) != ENDFUNC )
+	while ( buf && buf < &q_.back() )
+	{
+		buf = execFunc( buf );
 	}
-	return 0;
+	q_.resize( 0 );
 }
 
-bool Element::validMsg( int msg ) const
+/**
+ * This function pushes a function event onto the queue.
+ * It should be extended to provide thread safety, which can be done
+ * if each thread has its own queue.
+ */
+void Element::addToQ( const Qinfo& qi, const char* arg )
 {
-	const Cinfo* c = cinfo();
-	if ( msg > 0 && msg < static_cast< int >( c->numSrc() ) )
-		return 1;
-	if ( msg < 0 && -msg < static_cast< int >( c->numSrc() ) )
-		return 0;
-	if ( msg < 0 && -msg < static_cast< int >( c->numFinfos() ) )
-		return 1;
-
-	return 0;
+	qi.addToQ( q_, arg );
 }
-#endif
+
+MsgId Element::addMsg( Msg* m )
+{
+	while ( m_.size() > 0 ) {
+		if ( m_.back() == 0 )
+			m_.pop_back();
+		else
+			break;
+	}
+	m_.push_back( m );
+	return m_.size() - 1;
+}
+
+/**
+ * Called from ~Msg.
+ */
+void Element::dropMsg( const Msg* m, MsgId mid )
+{
+	assert ( mid < m_.size() );
+	assert( m == m_[mid] );
+
+	m_[mid] = 0; // To clean up later, if at all. We cannot do a
+	// resize of m_ here because this function is called within an iterator
+	// through m_, in ~Element.
+
+	for ( vector< Conn >::iterator i = c_.begin(); i != c_.end(); ++i )
+		i->drop( m ); // Get rid of specific Msg, if present, on Conn
+}
+
+void Element::addMsgToConn( Msg* m, ConnId cid )
+{
+	if ( c_.size() < cid + 1 )
+		c_.resize( cid + 1 );
+	c_[cid].add( m );
+}
+
+void Element::clearConn( ConnId cid )
+{
+	assert( cid < c_.size() );
+	// if ( c_.size() > cid )
+		c_[cid].clearConn();
+}
+
+const Cinfo* Element::cinfo() const
+{
+	return cinfo_;
+}
+
+void Element::addTargetFunc( FuncId fid, unsigned int funcIndex )
+{
+	if ( targetFunc_.size() < funcIndex + 1 )
+		targetFunc_.resize( funcIndex + 1 );
+	targetFunc_[ funcIndex ] = fid;
+}
+
+FuncId Element::getTargetFunc( unsigned int funcIndex ) const
+{
+	assert ( targetFunc_.size() > funcIndex );
+	return targetFunc_[ funcIndex ];
+}
