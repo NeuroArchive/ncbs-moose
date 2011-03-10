@@ -1,268 +1,176 @@
 /**********************************************************************
 ** This program is part of 'MOOSE', the
-** Messaging Object Oriented Simulation Environment,
-** also known as GENESIS 3 base code.
-**           copyright (C) 2003-2006 Upinder S. Bhalla. and NCBS
+** Messaging Object Oriented Simulation Environment.
+**           Copyright (C) 2003-2010 Upinder S. Bhalla. and NCBS
 ** It is made available under the terms of the
 ** GNU Lesser General Public License version 2.1
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
+#ifndef _STOICH_H
+#define _STOICH_H
 
-#ifndef _Stoich_h
-#define _Stoich_h
 class Stoich
 {
-#ifdef DO_UNIT_TESTS
-	friend void testStoich();
-#endif
-	public:
+	public: 
 		Stoich();
-		virtual ~Stoich();
-		
-		///////////////////////////////////////////////////
-		// Field function definitions
-		///////////////////////////////////////////////////
-		static unsigned int getNmols( Eref e );
-		static unsigned int getNvarMols( Eref e );
-		static unsigned int getNsumTot( Eref e );
-		static unsigned int getNbuffered( Eref e );
-		static unsigned int getNreacs( Eref e );
-		static unsigned int getNenz( Eref e );
-		static unsigned int getNmmEnz( Eref e );
-		static unsigned int getNexternalRates( Eref e );
-		static void setUseOneWayReacs( const Conn* c, int value );
-		static bool getUseOneWayReacs( Eref e );
-		static string getPath( Eref e );
-		static void setPath( const Conn* c, string value );
-		static vector< Id > getPathVec( Eref e );
-		static void setPathVec( const Conn* c, vector< Id > value );
-		static unsigned int getRateVectorSize( Eref e );
+		~Stoich();
 
-		///////////////////////////////////////////////////
-		// Msg Dest function definitions
-		///////////////////////////////////////////////////
-		static void scanTicks( const Conn* c );
-		static void reinitFunc( const Conn* c );
-		static void integrateFunc( 
-			const Conn* c, vector< double >* v, double dt );
+		//////////////////////////////////////////////////////////////////
+		// Field assignment stuff
+		//////////////////////////////////////////////////////////////////
 
-		unsigned int nVarMols() const {
-			return nVarMols_;
-		}
-		unsigned int nReacs() const {
-			return nReacs_;
-		}
-		void clear( Eref stoich );
+		void setOneWay( bool v );
+		bool getOneWay() const;
+		unsigned int getNumVarMols() const;
 
-		// funcs to handle externally imposed changes in mol N
-		static void setMolN( const Conn* c, double y, unsigned int i );
-		// Virtual so that derived classes handle things like
-		// molecule dependencies.
-		virtual void innerSetMolN( 
-			const Conn* c, double y, unsigned int i );
+		void setPath( const Eref& e, const Qinfo* q, string v );
+		string getPath( const Eref& e, const Qinfo* q ) const;
 
-		static void rescaleVolume( const Conn* c, double ratio );
-		void innerRescaleVolume( double ratio );
+		//////////////////////////////////////////////////////////////////
+		// Dest funcs
+		//////////////////////////////////////////////////////////////////
 
-		static void setBuffer( const Conn* c, 
-			int mode, unsigned int mol );
-		void innerSetBuffer( int mode, unsigned int mol );
+		void process( const Eref& e, ProcPtr p );
+		void reinit( const Eref& e, ProcPtr p );
 
+		//////////////////////////////////////////////////////////////////
+		// Model traversal and building functions
+		//////////////////////////////////////////////////////////////////
+		void allocateObjMap( const vector< Id >& elist );
+		void allocateModel( const vector< Id >& elist );
+		void zombifyModel( const Eref& e, const vector< Id >& elist );
+		void zombifyChemCompt( Id compt );
+
+		unsigned int convertIdToReacIndex( Id id ) const;
+		unsigned int convertIdToMolIndex( Id id ) const;
+		unsigned int convertIdToFuncIndex( Id id ) const;
+
+		const double* S() const;
+		double* varS();
+		const double* Sinit() const;
+		double* getY();
+
+		//////////////////////////////////////////////////////////////////
+		// Compute functions
+		//////////////////////////////////////////////////////////////////
+		/**
+		 * Update the v_ vector for individual reaction velocities. Uses
+		 * hooks into the S_ vector for its arguments.
+		 */
+		void updateV( );
 
 		/**
- 		* Puts the data into a new entry in the flux vector, and creates
- 		* a stub child for handling the messages to and from the entry.
- 		*/
-		static void makeFlux( const Conn* c, 
-			string stubName, vector< unsigned int >molIndices, 
-			vector< double > fluxRates );
-		void innerMakeFlux( Eref e,
-			string stubName, vector< unsigned int >molIndices, 
-			vector< double > fluxRates );
+		 * Update all the function-computed molecule terms. These are not
+		 * integrated, but their values may be used by molecules that will
+		 * be integrated using the solver.
+		 * Uses hooks into the S_ vector for arguments other than t.
+		 */
+		void updateFuncs( double t );
 
-		static void startFromCurrentConcs( const Conn* c ); 
-		void innerStartFromCurrentConcs();
-		static void requestY( const Conn* c );
-
-		///////////////////////////////////////////////////
-		// Functions used by the GslIntegrator
-		///////////////////////////////////////////////////
+		void updateRates( vector< double>* yprime, double dt  );
 
 #ifdef USE_GSL
-		static int gslFunc( double t, const double* y, 
-			double* yprime, void* params);
-
+		static int gslFunc( double t, const double* y, double* yprime, void* s );
 		int innerGslFunc( double t, const double* y, double* yprime );
-
-		// Dangerous func, meant only for the GslIntegrator which is
-		// permitted to look at the insides of the Stoich class.
-		double* S() {
-			return &S_[0];
-		}
-		double* Sinit() {
-			return &Sinit_[0];
-		}
-		void runStats();
-		vector< double >& velocity() {
-			return v_;
-		}
-		int getStoichEntry( unsigned int i, unsigned int j ) {
-			return N_.get( i, j );
-		}
-		const KinSparseMatrix& N() const {
-			return N_;
-		} 
 #endif // USE_GSL
-		void updateV( );
-		/**
- 		 * Virtual function to make the data structures from the 
- 		 * object oriented specification of the signaling network.
- 		 */
-		virtual void rebuildMatrix( Eref stoich, vector< Id >& ret );
 
-		void localScanTicks( Eref stoich );
 
-		/**
-		 * Nasty function to return ptr to dynamicBuffers, used in 
-		 * GslIntegrator.
-		 */
-		const vector< unsigned int >* dynamicBuffers() const {
-			return &dynamicBuffers_;
-		}
-
+		//////////////////////////////////////////////////////////////////
+		static const Cinfo* initCinfo();
 	protected:
-		///////////////////////////////////////////////////
-		// Setup function definitions
-		///////////////////////////////////////////////////
-		virtual void localSetPath( Eref e, const string& value );
-		void localSetPathVec( Eref e, vector< Id >& value );
-
-		void setupMols(
-			Eref e,
-			vector< Eref >& varMolVec,
-			vector< Eref >& bufVec,
-			vector< Eref >& sumTotVec
-			);
-
-		void addSumTot( Eref e );
-
-		/**
-		 * Finds all target molecules of the specified msgField on 
-		 * Eref e. Puts the points into the vector ret, which is 
-		 * cleaned out first.
-		 * This function replaces findIncoming and findReactants.
-		 */
-		bool findTargets(
-			Eref e, const string& msgFieldName, 
-			vector< const double* >& ret );
-
-		void fillHalfStoich( const double* baseptr, 
-			vector< const double* >& reactant,
-		       	int sign, unsigned int reacNum );
-
-		void fillStoich( 
-			const double* baseptr, 
-			vector< const double* >& sub,
-			vector< const double* >& prd, 
-			unsigned int reacNum );
-
-		void addReac( Eref stoich, Eref e );
-		bool checkEnz( Eref e,
-				vector< const double* >& sub,
-				vector< const double* >& prd,
-				vector< const double* >& enz,
-				vector< const double* >& cplx,
-				double& k1, double& k2, double& k3,
-				bool isMM
-		);
-		void addEnz( Eref stoich, Eref e );
-		void addMmEnz( Eref stoich, Eref e );
-		void addTab( Eref stoich, Eref e );
-		void addRate( Eref stoich, Eref e );
-		void setupReacSystem( Eref stoich );
-
-		///////////////////////////////////////////////////
-		// These functions control the updates of state
-		// variables by calling the functions in the StoichMatrix.
-		///////////////////////////////////////////////////
-		void updateRates( vector< double>* yprime, double dt  );
-		void updateDynamicBuffers();
-		
-		///////////////////////////////////////////////////
-		// Internal fields.
-		///////////////////////////////////////////////////
-		unsigned int nMols_;
-		unsigned int nVarMols_;
-		unsigned int nSumTot_;
-		unsigned int nBuffered_;
-		unsigned int nReacs_;
-		unsigned int nEnz_;
-		unsigned int nMmEnz_;
-		unsigned int nExternalRates_;
-		bool useOneWayReacs_;
+		bool useOneWay_;
 		string path_;
-		vector< Id > pathVec_;
 
 		/**
-		 * S_ holds the state variables: n for all the molecules. This
-		 * includes the variable as well as the buffered and sumtotal
-		 * molecules.
+		 * This is the array of molecules. Of these, the first numVarMols_
+		 * are variables and are integrated using the ODE solver. 
+		 * The next numBufMols_ are fixed but can be changed by the script.
+		 * The next numFuncMols_ are computed using arbitrary functions of
+		 * any of the molecule levels, and the time.
+		 * The functions evaluate _before_ the ODE. 
+		 * The functions should not cascade as there is no guarantee of
+		 * execution order.
 		 */
-		vector< double > S_; 	
+		vector< double > S_;
+		vector< double > Sinit_;
 
 		/**
-		 * Sinit_ holds the initial values for all the molecules.
+		 * Lookup from each molecule to its parent compartment index
 		 */
-		vector< double > Sinit_; 	
+		vector< short > compartment_;
 
 		/**
-		 * v is the velocity of each reaction. Its size is numRates. 
+		 * Size of each compartment
 		 */
-		vector< double > v_;	
+		vector< double > compartmentSize_;
 
 		/**
-		 * This is the vector of the actual rate calculations
+		 * Number of subdivisions of compartment. Actually should be
+		 * dimensions.
 		 */
-		vector< RateTerm* > rates_; 
+		vector< short > compartmentVoxels_;
 
-		vector< SumTotal > sumTotals_;
+
+
+		/// v_ holds the rates of each reaction
+		vector< double > v_;
+
+		/// The RateTerms handle the update operations for reaction rate v_
+		vector< RateTerm* > rates_;
+
+		/// The FuncTerms handle mathematical ops on mol levels.
+		vector< FuncTerm* > funcs_;
+
+		/// N_ is the stoichiometry matrix.
+		KinSparseMatrix N_;
 
 		/**
-		 * Indices of molecules whose buffer state changes during
-		 * the simulation. The system goes through this list and
-		 * assigns any entries to their Sinit_. Only works if the
-		 * molecule starts out as non-buffered.
+		 * y_ is working memory, only the variable molecule levels. 
+		 * Should be possible to replace with S.
 		 */
-		vector< unsigned int > dynamicBuffers_;
+		vector< double > y_;
 
-		KinSparseMatrix N_; 
-		vector< int > path2mol_;
-		vector< int > mol2path_;
-		map< Eref, unsigned int > molMap_;
-#ifdef DO_UNIT_TESTS
-		map< Eref, unsigned int > reacMap_;
-#endif
-		static const double EPSILON;
-		///////////////////////////////////////////////////
-		// Fields used by the GslIntegrator
-		///////////////////////////////////////////////////
-		const double* lasty_;
-		unsigned int nVarMolsBytes_;
-		unsigned int nCopy_;
-		unsigned int nCall_;
+		/**
+		 * Maps Ids to objects in the S_, RateTerm, and FuncTerm vectors.
+		 * There will be holes in this map, but look up is very fast.
+		 * The calling Id must know what it wants to find: all it
+		 * gets back is an integer.
+		 * The alternative is to have multiple maps, but that is slower.
+		 * Assume no arrays. Each Mol/reac etc must be a unique
+		 * Element. Later we'll deal with diffusion.
+		 */
+		vector< unsigned int > objMap_;
+		/**
+		 * Minor efficiency: We will usually have a set of objects that are
+		 * nearly contiguous in the map. May as well start with the first of
+		 * them.
+		 */
+		unsigned int objMapStart_;
+		
+		/**
+		 * Number of variable molecules that the solver deals with.
+		 *
+		 */
+		unsigned int numVarMols_;
+		unsigned int numVarMolsBytes_;
+		/**
+		 * Number of buffered molecules
+		 */
+		unsigned int numBufMols_;
+		/**
+		 * Number of molecules whose values are computed by functions
+		 */
+		unsigned int numFuncMols_;
 
-		///////////////////////////////////////////////////
-		// Fields used for coupling between solvers: developmental
-		///////////////////////////////////////////////////
-		vector< InterSolverFlux* > flux_;
-		/*
-		vector< double* > fluxMol_;	// Pointers to diffusing S_ entries 
-		vector< double > fluxRates_;		// Flux scale factors
-		vector< double > prevFluxMol_; // Used for trapezoidal integ.
-		*/
-		// vector< unsigned int > fluxMap_; // Redundant 
+		/**
+		 * Number of reactions in the solver model. This includes 
+		 * conversion reactions A + B <---> C
+		 * enzyme reactions E + S <---> E.S ---> E + P
+		 * and MM enzyme reactions rate = E.S.kcat / ( Km + S )
+		 * The enzyme reactions count as two reaction steps.
+		 */
+		unsigned int numReac_;
 };
 
-extern const Cinfo* initStoichCinfo();
-#endif // _Stoich_h
+#endif	// _STOICH_H
