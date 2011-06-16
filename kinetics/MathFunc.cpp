@@ -2,112 +2,214 @@
 ** This program is part of 'MOOSE', the
 ** Messaging Object Oriented Simulation Environment,
 ** also known as GENESIS 3 base code.
-**           copyright (C) 2003-2006 Upinder S. Bhalla. and NCBS
+**           copyright (C) 2003-2010 Upinder S. Bhalla. and NCBS
 ** It is made available under the terms of the
 ** GNU Lesser General Public License version 2.1
 ** See the file COPYING.LIB for the full notice.
+** Written by Raamesh Deshpande 2007
+** Modified by Upi Bhalla 2010
 **********************************************************************/
 
-#include "moose.h"
+#include "header.h"
 #include "MathFunc.h"
 
-const Cinfo* initMathFuncCinfo()
-{
-	static Finfo* processShared[] =
-	{
-		new DestFinfo( "process", Ftype1< ProcInfo >::global(),
-			RFCAST( &MathFunc::processFunc ) ),
-		new DestFinfo( "reinit", Ftype1< ProcInfo >::global(),
-			RFCAST( &MathFunc::reinitFunc ) ),
-	};
+using namespace MathFuncNames;
 
-	static Finfo* mathFuncFinfos[] =
-	{
-	///////////////////////////////////////////////////////
-	// Field definitions
-	///////////////////////////////////////////////////////
-		new ValueFinfo( "mathML", 
-			ValueFtype1< string >::global(),
-			GFCAST( &MathFunc::getMathML ), 
-			RFCAST( &MathFunc::setMathMl ) 
-		),
-		new ValueFinfo( "function", // function is for functions of form f(x, y) = x + y
-			ValueFtype1< string >::global(),
-			GFCAST( &MathFunc::getFunction ), 
-			RFCAST( &MathFunc::setFunction )
-		),
-		new ValueFinfo( "result", //temporary
-			ValueFtype1< double >::global(),
-			GFCAST( &MathFunc::getR ), 
-			RFCAST( &MathFunc::setR)
-		),
 	///////////////////////////////////////////////////////
 	// MsgSrc definitions
 	///////////////////////////////////////////////////////
-		new SrcFinfo( "output", Ftype1< double >::global() ),
+		static SrcFinfo1< double > output( 
+			"output", 
+			"Sends out result of computation"
+		);
+
+const Cinfo* MathFunc::initCinfo()
+{
+
+	///////////////////////////////////////////////////////
+	// Field definitions
+	///////////////////////////////////////////////////////
+		static ValueFinfo< MathFunc, string > mathML( 
+			"mathML", 
+			"MathML version of expression to compute",
+			&MathFunc::setMathMl,
+			&MathFunc::getMathML
+		);
+		static ValueFinfo< MathFunc, string > func( 
+			"function", 
+			"function is for functions of form f(x, y) = x + y",
+			&MathFunc::setFunction,
+			&MathFunc::getFunction
+		);
+		static ReadOnlyValueFinfo< MathFunc, double > result( 
+			"result",
+			"result value",
+			&MathFunc::getR
+		);
+	///////////////////////////////////////////////////////
+	// MsgSrc definitions
+	///////////////////////////////////////////////////////
+		/*
+		static SrcFinfo1< double > output( 
+			"output", 
+			"Sends out result of computation"
+		);
+		*/
 	///////////////////////////////////////////////////////
 	// MsgDest definitions
 	///////////////////////////////////////////////////////
+		static DestFinfo process( "process", 
+			"Handle process call",
+			new ProcOpFunc< MathFunc >( &MathFunc::processFunc )
+		);
+
+		static DestFinfo reinit( "reinit", 
+			"Handle reinit call",
+			new ProcOpFunc< MathFunc >( &MathFunc::reinitFunc )
+		);
 	
-		new DestFinfo( "args",
-			Ftype1< double >::global(),
-			RFCAST( &MathFunc::argFunc )
-		),
+		/*
+		static DestFinfo args( "args",
+			"Handle args one at a time", 
+			new OpFunc1< MathFunc, double >( &MathFunc::argFunc )
+		);
+		*/
 	
-		new DestFinfo( "arg1",
-			Ftype1< double >::global(),
-			RFCAST( &MathFunc::arg1Func )
-		),
+		static DestFinfo arg1( "arg1",
+			"Handle arg1",
+			new OpFunc1< MathFunc, double >( &MathFunc::arg1Func )
+		);
 	
-		new DestFinfo( "arg2",
-			Ftype1< double >::global(),
-			RFCAST( &MathFunc::arg2Func )
-		),
+		static DestFinfo arg2( "arg2",
+			"Handle arg2",
+			new OpFunc1< MathFunc, double >( &MathFunc::arg2Func )
+		);
 	
-		new DestFinfo( "arg3",
-			Ftype1< double >::global(),
-			RFCAST( &MathFunc::arg3Func )
-		),
+		static DestFinfo arg3( "arg3",
+			"Handle arg3",
+			new OpFunc1< MathFunc, double >( &MathFunc::arg3Func )
+		);
 	
-		new DestFinfo( "arg4",
-			Ftype1< double >::global(),
-			RFCAST( &MathFunc::arg4Func )
-		),
+		static DestFinfo arg4( "arg4",
+			"Handle arg4",
+			new OpFunc1< MathFunc, double >( &MathFunc::arg4Func )
+		);
 	///////////////////////////////////////////////////////
 	// Shared definitions
 	///////////////////////////////////////////////////////
-		new SharedFinfo( "process", processShared, 
-			sizeof( processShared ) / sizeof( Finfo* ) ),
+		static Finfo* procShared[] = {
+			&process, &reinit
+		};
+		static SharedFinfo proc( "proc",
+			"Shared message for process and reinit",
+			procShared, 
+			sizeof( procShared ) / sizeof( const Finfo* ) );
+
+	static Finfo* mathFuncFinfos[] = {
+		&mathML,	// Value
+		&func,		// Value
+		&result,	// Value
+		&output,	// SrcFinfo
+//		&args, 		// DestFinfo
+		&arg1, 		// DestFinfo
+		&arg2, 		// DestFinfo
+		&arg3, 		// DestFinfo
+		&arg4, 		// DestFinfo
+		&proc, 		// SharedFinfo
 	};
 
+	/*
 	static string doc[] =
 	{
 		"Name", "MathFunc",
 		"Author", "Raamesh Deshpande, 2007, NCBS",
 		"Description", "MathFunc: Object for parsing function definitions and executing them in a simulation.",
 	};	
+	*/
 	static Cinfo mathFuncCinfo(
-		doc,
-		sizeof( doc ) / sizeof( string ),		
-		initNeutralCinfo(),
+		"MathFunc",
+		Neutral::initCinfo(),
 		mathFuncFinfos,
 		sizeof( mathFuncFinfos )/sizeof(Finfo *),
-		ValueFtype1< MathFunc >::global()
+		new Dinfo< MathFunc >()
 	);
 
 	return &mathFuncCinfo;
 }
 
-static const Cinfo* mathFuncCinfo = initMathFuncCinfo();
+///////////////////////////////////////////////////////////////////////
+// Class Definition stuff.
+///////////////////////////////////////////////////////////////////////
 
-static const Slot outputSlot = initMathFuncCinfo()->getSlot( "output" );
+static const Cinfo* mathFuncCinfo = MathFunc::initCinfo();
 
-void MathFunc::processFunc( const Conn* c, ProcInfo info )
+MathFunc::MathFunc()
 {
-	static_cast< MathFunc* >( c->data() )->process( c->target(), info );
+  expect_ = EXPRESSION;
+  fn_ = "";
+  mmlstring_ = "";
+  
+  status_ = BLANK;
+  
+  /*used for infix to prefix function*/
+  precedence_[MINUS] = 1;
+  precedence_[PLUS] = 0;
+  precedence_[TIMES] = 2; 
+  precedence_[DIVIDE] = 3;
+  precedence_[POWER] = 4;
+  precedence_[SIN] = 5;
+  precedence_[COS] = 5;
+  precedence_[TAN] = 5;
+  precedence_[ARCSIN] = 5;
+  precedence_[ARCCOS] = 5;
+  precedence_[ARCTAN] = 5;
+  precedence_[SQRT] = 5;
+  precedence_[SUM] = 5;
+  precedence_[VARIANCE] = 5;
+  precedence_[MEAN] = 5;
+  precedence_[SDEV] = 5;
+  precedence_[PRODUCT] = 5;
+  precedence_[RPAREN] = -1;
 }
 
-void MathFunc::process ( Eref e, ProcInfo info){
+
+//////////////////////////////////////////////////////////////////
+// MOOSE field function definitions.
+//////////////////////////////////////////////////////////////////
+
+void MathFunc::setMathMl( string value )
+{
+  mmlstring_ = value;
+  status_ = MMLSTRING;
+}
+
+string MathFunc::getMathML() const
+{
+	return mmlstring_;
+}
+
+void MathFunc::setFunction(string value)
+{
+  fn_ = value;
+  status_ = FNSTRING;
+}
+
+string MathFunc::getFunction() const
+{
+  return fn_; 
+}
+
+double MathFunc::getR() const
+{
+  return result_;
+}
+
+///////////////////////////////////////////////////////////////////////
+// Process DestFinfos
+///////////////////////////////////////////////////////////////////////
+
+void MathFunc::processFunc( const Eref& e, ProcPtr info)
+{
   /*if the mml function function has not been initialized then don't care about anything*/
   if (status_ == BLANK || status_ == ERROR) 
     return;
@@ -136,131 +238,97 @@ void MathFunc::process ( Eref e, ProcInfo info){
     return;
   }
   //cout << result_ << endl;
-  send1< double >( e, outputSlot, result_ );
+  // send1< double >( e, outputSlot, result_ );
+  output.send( e, info, result_ );
   v.clear();
 }
 
-void MathFunc::reinitFunc( const Conn* c, ProcInfo info )
+double MathFunc::op( const vector< double >& args )
 {
-	static_cast< MathFunc* >( c->data() )->reinitFuncLocal( 
-					c->target() );
-}
-
-void MathFunc::reinitFuncLocal( Eref e ) 
-{
-  cout << "reiniting..." << endl;
+	v = args;
+  if (status_ == BLANK || status_ == ERROR) {
+  	cout << "Error: MathFunc::op: status == BLANK or ERROR\n";
+    return 0.0;
+  }
+  
+  if (status_ == MMLSTRING)
+    executeFunction();
+  else if (status_ == FNSTRING)
+    infixToPrefix();
+  else 
+    assert(0);/*control should never reach here.*/
+  
+  
+  /*If the execute function or the infix to prefix has not worked properly then ERROR is set in status_*/
+  if (status_ == ERROR){
+    cout << "Error!" << endl;
+    return 0.0;
+  }
+  
+  /* if the argument is the vector or there are enough arguments to satify the function then continue else return*/
+  if (!(vector_name_ != "" || v_.size () <= v.size())) {
+  	cout << "Error: MathFunc::op: insufficient arguments " <<
+		v_.size() << ", " << v.size() << "\n";
+    return 0.0;
+  }
+  result_ = getResult();
+  if (status_ == ERROR){
+    result_ = 0;
+    cout << "Error!" << endl;
+    return 0.0;
+  }
   v.clear();
-  status_ = BLANK;
+  return result_;
+}
+
+void MathFunc::reinitFunc( const Eref& e, ProcPtr info ) 
+{
+  // cout << "reiniting..." << endl;
+  	v.clear();
+  	status_ = BLANK;
+  	if ( mmlstring_ != "" )
+  		status_ = MMLSTRING;
+  	else if ( fn_ != "" )
+  		status_ = FNSTRING;
 }
 
 //////////////////////////////////////////////////////////////////
-// MOOSE function definitions.
+// Other DestFinfo definitions
 //////////////////////////////////////////////////////////////////
 
-void MathFunc::setMathMl( const Conn* c, string value )
+
+void MathFunc::arg1Func( double d )
 {
-	static_cast< MathFunc* >( c->data() )->innerSetMMLString( value );
+	if ( v.size() < 1 ) 
+		v.resize( 1 );
+	v[0] = d;
 }
 
-string MathFunc::getMathML( Eref e )
+void MathFunc::arg2Func( double d )
 {
-	return static_cast< MathFunc* >( e.data() )->mmlstring_;
+	if ( v.size() < 2 ) 
+		v.resize( 2 );
+	v[1] = d;
 }
 
-double MathFunc::getR( Eref e )
+void MathFunc::arg3Func( double d )
 {
-  return static_cast< MathFunc* >( e.data() )->result_;
+	if ( v.size() < 3 ) 
+		v.resize( 3 );
+	v[2] = d;
 }
 
-void MathFunc::setR(const Conn* c, double ss)
+void MathFunc::arg4Func( double d )
 {
-  ;
-}
-
-string MathFunc::getFunction( Eref e )
-{
-  return static_cast< MathFunc* >( e.data() )->fn_; 
-}
-
-void MathFunc::setFunction(const Conn* c, string functionstring){
-  static_cast< MathFunc* >( c->data() )->
-  	innerSetFunctionString(functionstring);
+	if ( v.size() < 4 ) 
+		v.resize( 4 );
+	v[3] = d;
 }
 
 //////////////////////////////////////////////////////////////////
-// Object definition.
+// Utility and parsing funcs
 //////////////////////////////////////////////////////////////////
 
-void MathFunc::innerSetMMLString(string value){
-  mmlstring_ = value;
-  status_ = MMLSTRING;
-}
-
-void MathFunc::innerSetFunctionString(string value){
-  fn_ = value;
-  status_ = FNSTRING;
-}
-
-void MathFunc::argFunc(const Conn* c, double d){
-  MathFunc *m = static_cast< MathFunc* >( c->data() );
-  m->v.push_back(&d);
-}
-
-void MathFunc::arg1Func(const Conn* c, double d){
-  MathFunc *m = static_cast< MathFunc* >( c->data() );
-  double *d1 = new double;
-  *d1 = d;
-  //if (m->v.size() == 0) m->v.push_back(&d);
-  while (m->v.size() != 2) m->v.push_back(&d);
-  m->v[0] = d1;
-}
-
-void MathFunc::arg2Func(const Conn* c, double d){
-  MathFunc *m = static_cast< MathFunc* >( c->data() );
-  double *d2 = new double;  *d2 = d;
-  while (m->v.size() != 2) m->v.push_back(&d);
-  m->v[1] = d2;
-}
-
-void MathFunc::arg3Func(const Conn* c, double d){
-  MathFunc *m = static_cast< MathFunc* >( c->data() );
-  double *d3 = new double;  *d3 = d;
-  while (m->v.size() != 3) m->v.push_back(&d);
-  m->v[2] = d3;
-}
-
-void MathFunc::arg4Func(const Conn* c, double d){
-  MathFunc *m = static_cast< MathFunc* >( c->data() );
-  double *d4 = new double;  *d4 = d;
-  while (m->v.size() != 4) m->v.push_back(&d);
-  m->v[3] = d4;
-}
-
-MathFunc::MathFunc(){
-  expect_ = EXPRESSION;
-  
-  status_ = BLANK;
-  
-  /*used for infix to prefix function*/
-  precedence_[MINUS] = 1;
-  precedence_[PLUS] = 0;
-  precedence_[TIMES] = 2; 
-  precedence_[DIVIDE] = 3;
-  precedence_[POWER] = 4;
-  precedence_[SIN] = 5;
-  precedence_[COS] = 5;
-  precedence_[TAN] = 5;
-  precedence_[ARCSIN] = 5;
-  precedence_[ARCCOS] = 5;
-  precedence_[ARCTAN] = 5;
-  precedence_[SQRT] = 5;
-  precedence_[SUM] = 5;
-  precedence_[VARIANCE] = 5;
-  precedence_[MEAN] = 5;
-  precedence_[SDEV] = 5;
-  precedence_[PRODUCT] = 5;
-  precedence_[RPAREN] = -1;
-}
 
 void MathFunc::error(int lineno, string errormsg){
   cout << "Error detected at line number " << lineno << ": " << errormsg << endl;
@@ -363,7 +431,7 @@ int whatToken(string token, int &expect){
       return CI; 
     }
     if (token == "<ci type=\"function\">") {expect = FUNCTION; return CIF;}
-    if (token == "<ci type=\"vector\">") {expect = VECTOR; return CIV;}
+    if (token == "<ci type=\"vector\">") {expect = MathFuncNames::VECTOR; return CIV;}
     else cout << "Unknown ci: " << token << endl;
     return CIF;
   }
@@ -402,9 +470,13 @@ int whatToken(string token, int &expect){
   if (expect == FUNCTION)	{expect = CIOVER; return FUNCTION;}
   if (expect == VARIABLE)	{expect = CIOVER; return VARIABLE;}
   if (expect == NUMBER)		{expect = CNOVER; return NUMBER;}
-  if (expect == VECTOR)		{expect = CIOVER; return VECTOR;}
+  if (expect == MathFuncNames::VECTOR)		{expect = CIOVER; return MathFuncNames::VECTOR;}
   return ERROR;
 }
+
+//////////////////////////////////////////////////////////////////
+// Evalutaion funcs
+//////////////////////////////////////////////////////////////////
 
 double trigEval(int trigFunc, double angle){
   switch(trigFunc){
@@ -539,8 +611,8 @@ void MathFunc::evaluate(int pos, int arity){
   function_.insert(function_.begin() + pos, 1, 0);
 }
 
-void MathFunc::executeFunction(){ //now this filename is the whole file string...hoho
-  //ifstream mmlfile (filename.c_str());
+void MathFunc::executeFunction()
+{
   clear();
   string mmlfile = mmlstring_;
   status_ = MMLSTRING;
@@ -588,7 +660,7 @@ void MathFunc::executeFunction(){ //now this filename is the whole file string..
         break;
       case VARIABLE:
         {
-        if (token == vector_name_) {stack_.push_back(VECTOR); function_.push_back(3); break;}
+        if (token == vector_name_) {stack_.push_back(MathFuncNames::VECTOR); function_.push_back(3); break;}
         int pos = -1;
         for (size_t i = 0; i < vname_.size(); i++){
           if (token == vname_[i]) {pos = i; break;} 
@@ -598,16 +670,12 @@ void MathFunc::executeFunction(){ //now this filename is the whole file string..
           function_.push_back(2);
           break;
         }
-        map<string,double *>::iterator iter = symtable_.find(token);
+        map<string,double>::iterator iter = symtable_.find(token);
         if( iter == symtable_.end() ) { 
-          //if (v.size() == 0) {error (lineno, string("number of arguments not matching with that in the source code!")) ; break;}
-          double *a;
-          a  = new double; 
-          v_.push_back(a);
-          //cout << v_.back()<< endl;//work out this one....
-          symtable_[token] = a; 
+		  symtable_[token] = 0.0;
+		  iter = symtable_.find( token );
+		  v_.push_back( &( iter->second ) );
           vname_.push_back(token);
-          //v.erase(v.begin());
           break;
         }
         else {
@@ -634,7 +702,7 @@ void MathFunc::executeFunction(){ //now this filename is the whole file string..
         stack_.push_back(APPLYOVER);
         function_.push_back(1);
         break;
-      case VECTOR:
+      case MathFuncNames::VECTOR:
         //vname_.push_back(token);
         vector_name_ = token;
         break;
@@ -652,13 +720,13 @@ void MathFunc::executeFunction(){ //now this filename is the whole file string..
 double MathFunc::getResult(){
   if (status_ == ERROR || status_ == BLANK){error("function not initialized properly"); return 0; } 
   for (size_t k = 0; k < v_.size(); k++)
-    *v_[k] = *v[k];
+    *v_[k] = v[k];
   for (size_t k = v_.size(); k < v.size(); k++)
-    v_.push_back(v[k]);
+    v_.push_back(&v[k]);
   for (size_t k = 0; k < stack_.size(); k++)
     if(function_[k] == 2){
        string str = vname_[(int)stack_[k]];
-       stack_[k] = (*symtable_[str]);
+       stack_[k] = symtable_[str];
        function_[k] = 0;
      }
   assert(v.size()==v_.size());
@@ -755,7 +823,7 @@ double MathFunc::getResult(){
     }
   }
   if (stack_.size() != 1) status_ = ERROR;
-  else status_ = BLANK;
+  // else status_ = BLANK;
   return stack_[0];
 }
 
@@ -782,7 +850,7 @@ int getTokenType(string &token){
   if (token == "product") return PRODUCT;
   if (token == "sdev") return SDEV;
   if (token == "variance") return VARIANCE;
-  if (((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z' )) && token[token.size()- 1] == '_') return VECTOR;
+  if (((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z' )) && token[token.size()- 1] == '_') return MathFuncNames::VECTOR;
   if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z' )) return VARIABLE;
   if (ch >= '0' && ch <= '9') return NUMBER;
   if (ch == '.' && token.size() >= 2 ){
@@ -903,11 +971,11 @@ bool MathFunc::storeArgNames(string args){
     }
     
     /*not a vector therefore variable*/
-    map<string,double *>::iterator iter = symtable_.find(variable);
+    map<string,double>::iterator iter = symtable_.find(variable);
     if (iter == symtable_.end()){
-      double *d = new double;
-      symtable_[variable] = d;
-      v_.push_back(d);
+		symtable_[variable] = 0.0;
+		iter = symtable_.find( variable );
+		v_.push_back( &( iter->second ) );
     }
     vname_.push_back(variable);
   }
@@ -916,7 +984,7 @@ bool MathFunc::storeArgNames(string args){
 
 bool MathFunc::testStoreArgNames(){
   string args = "x, y, z, k, helloWorld123";
-  map<string,double *>::iterator iter;
+  map<string,double>::iterator iter;
   vector <string> vname_temp = vname_;
   vname_.clear();
   storeArgNames(args);
@@ -1004,9 +1072,9 @@ void MathFunc::infixToPrefix(){
     
     /*depending upon the token type*/
     switch(token_type){
-      case VECTOR:
+      case MathFuncNames::VECTOR:
         if (token == vector_name_){
-            stack_.push_back(VECTOR);
+            stack_.push_back(MathFuncNames::VECTOR);
             function_.push_back(3);
         }
         break;
@@ -1129,91 +1197,4 @@ void MathFunc::clear(){
   v_.clear();
   expect_ = NOTHING;
 }
-
-
-#ifdef DO_UNIT_TESTS
-#include "../element/Neutral.h"
-#include "../utility/utility.h"
-#include "Reaction.h"
-
-void testMathFunc(){
-	cout << "\nTesting MathFunc" << flush ;
-	double tolerance = 1.0;
-	
-	/*infix function*/
-	Element* n = Neutral::create( "Neutral", "n", Element::root()->id(),
-		Id::scratchId() );
-	Element* m = Neutral::create( "MathFunc", "m", n->id(),
-		Id::scratchId() );
-	ASSERT( m != 0, "creating mathfunc" );
-	ProcInfoBase p;
-	SetConn c( m, 0 );
-	double d = 0;
-	set< string >( m, "function", "f(x, y, z) = x + y*z" );
-	set< double >( m, "arg1", 1);
-	set< double >( m, "arg2", 2 );
-	set< double >( m, "arg3", 3 );
-	MathFunc::processFunc( &c, &p);
-	ASSERT(get<double>(m, "result", d), "Getting result");
-	ASSERT (
-		isClose< double >( d, 7.0, tolerance ),
-		"Testing f(x, y, z) = x + y*z"
-	);
-	
-	/*mml function*/
-	
-	set< string >( m, "mathML", "<eq/> <apply><ci type=\"function\"> f </ci> <ci> x </ci> <ci> y </ci></apply><apply><plus/>  <ci>x</ci>  <apply><times/><ci>y</ci>  <cn>57</cn> </apply></apply> " );
-	set< double >( m, "arg1", 1);
-	set< double >( m, "arg2", 2 );
-	MathFunc::processFunc( &c, &p);
-	ASSERT(get<double>(m, "result", d), "Getting result");
-	ASSERT (
-		isClose< double >( d, 115.0, tolerance ),
-		"Testing mmlstring"
-	);
-	
-	/*A formula from Tyson paper*/
-	set< string >( m, "function", "f(PP1T, CycE, CycA, CycB) = PP1T/(1 + 0.02*(2.33*(CycE+ CycA) + 1.2E1*CycB))");
-	set< double >( m, "arg1", 1);
-	set< double >( m, "arg2", 2);
-	set< double >( m, "arg3", 3);
-	set< double >( m, "arg4", 4);
-	MathFunc::processFunc( &c, &p);
-	ASSERT(get<double>(m, "result", d), "Getting result");
-	ASSERT (
-		isClose< double >( d, 1/(1+0.02*(2.33*(2 + 3)+1.2E1*4)), tolerance ),
-		"Testing Tyson infix function"
-	);
-	
-	
-	set< string >( m, "function", "f(ERG, DRG) = 0.5*(0.1*ERG + ((0.2*(DRG/0.3)^2)/(1 + (DRG/0.3)^2)))");
-	set< double >( m, "arg1", 1);
-	set< double >( m, "arg2", 2);
-	MathFunc::processFunc( &c, &p);
-	ASSERT(get<double>(m, "result", d), "Getting result");
-	ASSERT (
-		isClose< double >( d, 0.5*(0.1*1 + (0.2*(2/0.3)*(2/0.3))/(1 + (2/0.3)*(2/0.3))), tolerance ),
-		"Testing Tyson infix function"
-	);
-	
-	/*Another formula form Tyson paper*/
-	/*f(ERG, DRG) = 0.5(0.1*ERG + (0.2*(DRG/0.3)^2)/(1 + (DRG/0.3)^2))*/
-	set< string >( m, "mathML", "<eq/> <apply> <ci type=\"function\"> f </ci> <ci> ERG </ci> <ci> DRG </ci> </apply> <apply><times/> <cn>0.5</cn> <apply><plus/> <apply><times/> <cn>0.1</cn> <ci>ERG<ci> </apply> <apply><divide/> <apply><times/> <cn>0.2</cn> <apply><power/> <apply><divide/> <ci>DRG</ci> <cn>0.3</cn> </apply> <cn>2</cn> </apply> </apply> <apply><plus/> <cn>1</cn> <apply><power/> <apply><divide/> <ci>DRG</ci> <cn>0.3</cn> </apply> <cn>2</cn> </apply> </apply> </apply> </apply> </apply>" );
-	set< double >( m, "arg1", 1);
-	set< double >( m, "arg2", 2);
-	MathFunc::processFunc( &c, &p);
-	ASSERT(get<double>(m, "result", d), "Getting result");
-	//cout << d << endl;
-	//cout << 0.5*(0.1*1 + (0.2*(2/0.3)*(2/0.3))/(1 + (2/0.3)*(2/0.3))) << endl;
-	ASSERT (
-		isClose< double >( d, 0.5*(0.1*1 + (0.2*(2/0.3)*(2/0.3))/(1 + (2/0.3)*(2/0.3))), tolerance ),
-		"Testing Tyson mml function"
-	);
-	
-	set( n, "destroy" );
-}
-
-
-#endif
-
 

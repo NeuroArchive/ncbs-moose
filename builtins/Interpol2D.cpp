@@ -1,7 +1,7 @@
 /**********************************************************************
 ** This program is part of 'MOOSE', the
 ** Messaging Object Oriented Simulation Environment.
-**           Copyright (C) 2003-2007 Upinder S. Bhalla. and NCBS
+**           Copyright (C) 2003-2011 Upinder S. Bhalla. and NCBS
 ** It is made available under the terms of the
 ** GNU Lesser General Public License version 2.1
 ** See the file COPYING.LIB for the full notice.
@@ -9,64 +9,98 @@
 
 #include <fstream>
 #include <sstream>
-#include "moose.h"
-#include "Interpol.h"
+#include "header.h"
 #include "Interpol2D.h"
 
-const Cinfo* initInterpol2DCinfo()
+const unsigned int Interpol2D::MAX_DIVS = 100000;
+
+static SrcFinfo1< double > trig( "trig",
+	"respond to a request for a value lookup" );
+
+const Cinfo* Interpol2D::initCinfo()
 {
-	static Finfo* lookupReturnShared[] =
-	{
-		new DestFinfo( "lookup", Ftype2< double, double >::global(),
-						RFCAST( &Interpol2D::lookupReturn ) ),
-		new SrcFinfo( "trig", Ftype1< double >::global() ),
-	};
-	
-	static Finfo* interpol2DFinfos[] =
-	{
-	///////////////////////////////////////////////////////
-	// Field definitions
-	///////////////////////////////////////////////////////
-		new ValueFinfo( "ymin", ValueFtype1< double >::global(),
-			GFCAST( &Interpol2D::getYmin ),
-			RFCAST( &Interpol2D::setYmin )
-		),
-		new ValueFinfo( "ymax", ValueFtype1< double >::global(),
-			GFCAST( &Interpol2D::getYmax ),
-			RFCAST( &Interpol2D::setYmax )
-		),
-		new ValueFinfo( "ydivs", ValueFtype1< int >::global(),
-			GFCAST( &Interpol2D::getYdivs ),
-			RFCAST( &Interpol2D::setYdivs )
-		),
-		new ValueFinfo( "dy", ValueFtype1< double >::global(),
-			GFCAST( &Interpol2D::getDy ),
-			RFCAST( &Interpol2D::setDy )
-		),
-		new LookupFinfo( "table",
-			LookupFtype< double, vector< unsigned int > >::global(),
-			GFCAST( &Interpol2D::getTable2D ),
-			RFCAST( &Interpol2D::setTable2D )
-		),		
-		new LookupFinfo( "table2D",
-			LookupFtype< double, vector< unsigned int > >::global(),
-			GFCAST( &Interpol2D::getTable2D ),
-			RFCAST( &Interpol2D::setTable2D )
-		),
-		new ValueFinfo( "tableVector2D",
-			ValueFtype1< vector< vector< double > > >::global(),
-			GFCAST( &Interpol2D::getTableVector2D ),
-			RFCAST( &Interpol2D::setTableVector2D )
-		),
 	///////////////////////////////////////////////////////
 	// Shared message definitions
 	///////////////////////////////////////////////////////
-		new SharedFinfo(
-			"lookupReturn2D",
-			lookupReturnShared, sizeof( lookupReturnShared ) / sizeof( Finfo * ),
-			"This is a shared message for doing lookups on the table. "
-			"Receives 2 doubles: x, y. "
-			"Sends back a double with the looked-up z value." ),
+
+	static DestFinfo lookup( "lookup", 
+		"Looks up table value based on indices v1 and v2, and sends"
+		"value back using the 'trig' message",
+		new EpFunc2< Interpol2D, double, double >( &Interpol2D::lookupReturn )
+	);
+	static Finfo* lookupReturnShared[] =
+	{
+		&trig, &lookup
+	};
+
+	static SharedFinfo lookupReturn2D( "lookupReturn2D",
+		"This is a shared message for doing lookups on the table. "
+		"Receives 2 doubles: x, y. "
+		"Sends back a double with the looked-up z value.",
+		lookupReturnShared, sizeof( lookupReturnShared ) / sizeof( Finfo * )
+	);
+	
+	///////////////////////////////////////////////////////
+	// Field definitions
+	///////////////////////////////////////////////////////
+	static ValueFinfo< Interpol2D, double > xmin( "xmin",
+		"Minimum value for x axis of lookup table",
+			&Interpol2D::setXmin,
+			&Interpol2D::getXmin
+		);
+	static ValueFinfo< Interpol2D, double > xmax( "xmax",
+		"Maximum value for x axis of lookup table",
+			&Interpol2D::setXmax,
+			&Interpol2D::getXmax
+		);
+	static ValueFinfo< Interpol2D, unsigned int > xdivs( "xdivs",
+		"# of divisions on x axis of lookup table",
+			&Interpol2D::setXdivs,
+			&Interpol2D::getXdivs
+		);
+	static ValueFinfo< Interpol2D, double > dx( "dx",
+		"Increment on x axis of lookup table",
+			&Interpol2D::setDx,
+			&Interpol2D::getDx
+		);
+	static ValueFinfo< Interpol2D, double > ymin( "ymin",
+		"Minimum value for y axis of lookup table",
+			&Interpol2D::setYmin,
+			&Interpol2D::getYmin
+		);
+	static ValueFinfo< Interpol2D, double > ymax( "ymax",
+		"Maximum value for y axis of lookup table",
+			&Interpol2D::setYmax,
+			&Interpol2D::getYmax
+		);
+	static ValueFinfo< Interpol2D, unsigned int > ydivs( "ydivs",
+		"# of divisions on y axis of lookup table",
+			&Interpol2D::setYdivs,
+			&Interpol2D::getYdivs
+		);
+	static ValueFinfo< Interpol2D, double > dy( "dy",
+		"Increment on y axis of lookup table",
+			&Interpol2D::setDy,
+			&Interpol2D::getDy
+		);
+	static LookupValueFinfo< Interpol2D, vector< unsigned int >, double > 
+		table( "table",
+		"Lookup an entry on the table",
+			&Interpol2D::setTableValue,
+			&Interpol2D::getTableValue
+		);		
+	static LookupValueFinfo< Interpol2D, vector< unsigned int >, double > 
+		table2D( "table2D",
+		"Lookup an entry on the table",
+			&Interpol2D::setTableValue,
+			&Interpol2D::getTableValue
+		);
+	static ValueFinfo< Interpol2D, vector< vector< double > > >
+		tableVector2D( "tableVector2D",
+		"Get the entire table.",
+			&Interpol2D::setTableVector,
+			&Interpol2D::getTableVector
+		);
 		
 	///////////////////////////////////////////////////////
 	// MsgSrc definitions
@@ -75,6 +109,22 @@ const Cinfo* initInterpol2DCinfo()
 	///////////////////////////////////////////////////////
 	// MsgDest definitions
 	///////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////
+	static Finfo* interpol2DFinfos[] =
+	{
+		&lookupReturn2D,	// Shared
+		&xmin,				// Value
+		&xmax,				// Value
+		&xdivs,				// Value
+		&dx,				// Value
+		&ymin,				// Value
+		&ymax,				// Value
+		&ydivs,				// Value
+		&dy,				// Value
+		&table,				// Lookup
+		&table2D,			// Lookup
+		&tableVector2D,		// Value
+
 	};
 
 	static string doc[] =
@@ -88,90 +138,292 @@ const Cinfo* initInterpol2DCinfo()
 	};
 	
 	static Cinfo interpol2DCinfo(
-		doc,
-		sizeof( doc ) / sizeof( string ),	
-		initInterpolCinfo(),
-		interpol2DFinfos,
-		sizeof( interpol2DFinfos ) / sizeof( Finfo * ),
-		ValueFtype1< Interpol2D >::global()
+		"Niraj Dudani NCBS",
+		Neutral::initCinfo(),
+		interpol2DFinfos, sizeof( interpol2DFinfos ) / sizeof( Finfo * ),
+		new Dinfo< Interpol2D >()
 	);
 
 	return &interpol2DCinfo;
 }
 
-static const Cinfo* interpol2DCinfo = initInterpol2DCinfo();
+static const Cinfo* interpol2DCinfo = Interpol2D::initCinfo();
 
-static const Slot lookupReturnSlot = 
-	initInterpol2DCinfo()->getSlot( "lookupReturn2D.trig" );
+// static const Slot lookupReturnSlot = initInterpol2DCinfo()->getSlot( "lookupReturn2D.trig" );
+////////////////////////////////////////////////////////////////////
+// Constructors
+////////////////////////////////////////////////////////////////////
+
+Interpol2D::Interpol2D()
+	: 	xmin_( 0.0 ), xmax_( 1.0 ), invDx_( 1.0 ),
+		ymin_( 0.0 ), ymax_( 1.0 ), invDy_( 1.0 ),
+		sy_( 1.0 )
+{
+	table_.resize( 2 );
+	table_[ 0 ].resize( 2, 0.0 );
+	table_[ 1 ].resize( 2, 0.0 );
+}
+
+Interpol2D::Interpol2D(
+	unsigned int xdivs, double xmin, double xmax,
+	unsigned int ydivs, double ymin, double ymax )
+	: 	xmin_( xmin ), xmax_( xmax ),
+		ymin_( ymin ), ymax_( ymax ),
+		sy_( 1.0 )
+{
+	resize( xdivs+1, ydivs+1 );
+
+	if ( !doubleEq( xmax_, xmin ) )
+		invDx_ = xdivs / ( xmax_ - xmin_);
+	else
+		invDx_ = 1.0;
+	
+	if ( !doubleEq( ymax_, ymin ) )
+		invDy_ = ydivs / ( ymax_ - ymin_);
+	else
+		invDy_ = 1.0;
+}
 
 ////////////////////////////////////////////////////////////////////
 // Here we set up Interpol2D value fields
 ////////////////////////////////////////////////////////////////////
 
-void Interpol2D::setYmin( const Conn* c, double ymin ) 
+/**
+ * Resizes 2-D vector. If either argument is zero, it remains unchanged
+ */
+void Interpol2D::resize( unsigned int xsize, unsigned int ysize, double init )
 {
-	static_cast< Interpol2D* >( c->data() )->localSetYmin( ymin );
+	unsigned int oldx = table_.size();
+	unsigned int oldy = 0;
+	if ( oldx > 0 )
+		oldy = table_[0].size();
+	if ( xsize == 0 ) xsize = oldx;
+	if ( ysize == 0 ) ysize = oldy;
+
+	if ( xsize != oldx ) {
+		table_.resize( xsize );
+		if ( xsize > oldx ) {
+			for ( unsigned int i = oldx; i < xsize; ++i )
+				table_[i].resize( ysize, init );
+		}
+	}
+
+	if ( ysize != oldy ) {
+		for ( unsigned int i = 0; i < xsize; ++i )
+			table_[i].resize( ysize, init );
+	}
+	invDx_ = xdivs() / ( xmax_ - xmin_ );
+	invDy_ = ydivs() / ( ymax_ - ymin_ );
 }
 
-double Interpol2D::getYmin( Eref e )
-{
-	return static_cast< Interpol2D* >( e.data() )->ymin_;
+///////////////////////////////////////////////////////////////
+// X dimension access funcs
+///////////////////////////////////////////////////////////////
+
+void Interpol2D::setXmin( double value ) {
+	if ( !doubleApprox( xmax_, value ) ) {
+		xmin_ = value;
+		invDx_ = xdivs() / ( xmax_ - xmin_ );
+	} else {
+		cerr << "Error: Interpol2D::setXmin: Xmin ~= Xmax : Assignment failed\n";
+	}
 }
 
-void Interpol2D::setYmax( const Conn* c, double ymax ) 
+double Interpol2D::getXmin() const
 {
-	static_cast< Interpol2D* >( c->data() )->localSetYmax( ymax );
+	return xmin_;
 }
 
-double Interpol2D::getYmax( Eref e )
-{
-	return static_cast< Interpol2D* >( e.data() )->ymax_;
+void Interpol2D::setXmax( double value ) {
+	if ( !doubleApprox( xmin_, value ) ) {
+		xmax_ = value;
+		invDx_ = xdivs() / ( xmax_ - xmin_ );
+	} else {
+		cerr << "Error: Interpol2D::setXmax: Xmin ~= Xmax : Assignment failed\n";
+	}
 }
 
-void Interpol2D::setYdivs( const Conn* c, int ydivs ) 
+double Interpol2D::getXmax() const
 {
-	static_cast< Interpol2D* >( c->data() )->localSetYdivs( ydivs );
+	return xmax_;
 }
 
-int Interpol2D::getYdivs( Eref e )
+void Interpol2D::setXdivs( unsigned int value )
 {
-	return static_cast< Interpol2D* >( e.data() )->localGetYdivs( );
+		resize( value + 1, 0 );
 }
 
-void Interpol2D::setDy( const Conn* c, double dy ) 
-{
-	static_cast< Interpol2D* >( c->data() )->localSetDy( dy );
+unsigned int Interpol2D::getXdivs( ) const {
+	if ( table_.empty() )
+		return 0;
+	return table_.size() - 1;
 }
 
-double Interpol2D::getDy( Eref e )
-{
-	return static_cast< Interpol2D* >( e.data() )->localGetDy( );
+void Interpol2D::setDx( double value ) {
+	if ( !doubleEq( value, 0.0 ) ) {
+		unsigned int xdivs = static_cast< unsigned int >( 
+			0.5 + fabs( xmax_ - xmin_ ) / value );
+		if ( xdivs < 1 || xdivs > MAX_DIVS ) {
+			cerr <<
+				"Error: Interpol2D::localSetDx Out of range:" <<
+				xdivs + 1 << " entries in table.\n";
+				return;
+		}
+		resize( xdivs + 1, 0 );
+	}
 }
 
-void Interpol2D::setTable2D(
-	const Conn* c,
-	double val,
-	const vector< unsigned int >& i )
-{
-	static_cast< Interpol2D* >( c->data() )->setTableValue( val, i );
+double Interpol2D::getDx() const {
+	if ( xdivs() == 0 )
+		return 0.0;
+	else
+		return ( xmax_ - xmin_ ) / xdivs();
 }
 
-double Interpol2D::getTable2D(
-	Eref e,
-	const vector< unsigned int >& i )
-{
-	return static_cast< Interpol2D* >( e.data() )->getTableValue( i );
+///////////////////////////////////////////////////////////////
+// Y dimension access funcs
+///////////////////////////////////////////////////////////////
+
+void Interpol2D::setYmin( double value ) {
+	if ( !doubleApprox( ymax_, value ) ) {
+		ymin_ = value;
+		invDy_ = ydivs() / ( ymax_ - ymin_ );
+	} else {
+		cerr << "Error: Interpol2D::setYmin: Ymin ~= Ymax : Assignment failed\n";
+	}
 }
 
-void Interpol2D::setTableVector2D( const Conn* c, vector< vector< double > > value ) 
+double Interpol2D::getYmin() const
 {
-	static_cast< Interpol2D* >( c->data() )->localSetTableVector( value );
+	return ymin_;
 }
 
-vector< vector< double > > Interpol2D::getTableVector2D( Eref e )
-{
-	return static_cast< Interpol2D* >( e.data() )->table_;
+void Interpol2D::setYmax( double value ) {
+	if ( !doubleApprox( ymin_, value ) ) {
+		ymax_ = value;
+		invDy_ = ydivs() / ( ymax_ - ymin_ );
+	} else {
+		cerr << "Error: Interpol2D::setYmax: Ymin ~= Ymax : Assignment failed\n";
+	}
 }
+
+double Interpol2D::getYmax() const
+{
+	return ymax_;
+}
+
+void Interpol2D::setYdivs( unsigned int value ) {
+	resize( 0, value + 1 );
+}
+
+unsigned int Interpol2D::getYdivs( ) const {
+	if ( table_.size() > 0 )
+		if ( table_[0].size() > 0 )
+			return table_[0].size() - 1;
+	return 0;
+}
+
+/**
+ * \todo Later do interpolation etc to preserve contents.
+ * \todo Later also check that it is OK for xmax_ < xmin_
+ */
+void Interpol2D::setDy( double value ) {
+	if ( !doubleEq( value, 0.0 ) ) {
+		unsigned int ydivs = static_cast< unsigned int >( 
+			0.5 + fabs( ymax_ - ymin_ ) / value );
+		if ( ydivs < 1 || ydivs > MAX_DIVS ) {
+			cerr <<
+				"Error: Interpol2D::localSetDy Out of range:" <<
+				ydivs + 1 << " entries in table.\n";
+				return;
+		}
+		
+		setYdivs( ydivs );
+		invDy_ = ydivs / ( ymax_ - ymin_ );
+	}
+}
+
+double Interpol2D::getDy() const {
+	if ( ydivs() == 0 )
+		return 0.0;
+	else
+		return ( ymax_ - ymin_ ) / ydivs();
+}
+
+double Interpol2D::getSy() const 
+{
+	return sy_;
+}
+
+void Interpol2D::setSy( double value ) {
+	if ( !doubleEq( value, 0.0 ) ) {
+		double ratio = value / sy_;
+		vector< vector< double > >::iterator i;
+		vector< double >::iterator j;
+		for ( i = table_.begin(); i != table_.end(); i++ )
+			for ( j = i->begin(); j != i->end(); j++ )
+				*j *= ratio;
+		sy_ = value;
+	} else {
+		cerr << "Error: Interpol2D::localSetSy: sy too small:" <<
+			value << "\n";
+	}
+}
+
+vector< vector< double > > Interpol2D::getTableVector() const
+{
+	return table_;
+}
+
+void Interpol2D::setTableValue( vector< unsigned int > index, double value )
+{
+	assert( index.size() == 2 );
+	unsigned int i0 = index[ 0 ];
+	unsigned int i1 = index[ 1 ];
+	
+	if ( i0 < table_.size() && i1 < table_[ 0 ].size() )
+		table_[ i0 ][ i1 ] = value;
+	else
+		cerr << "Error: Interpol2D::setTableValue: Index out of bounds!\n";
+}
+
+double Interpol2D::getTableValue( vector< unsigned int > index ) const
+{
+	assert( index.size() == 2 );
+	unsigned int i0 = index[ 0 ];
+	unsigned int i1 = index[ 1 ];
+	
+	if ( i0 < table_.size() && i1 < table_[ 0 ].size() )
+		return table_[ i0 ][ i1 ];
+	else {
+		cerr << "Error: Interpol2D::getTableValue: Index out of bounds!\n";
+		return 0.0;
+	}
+}
+
+// This sets the whole thing up: values, xdivs, dx and so on. Only xmin
+// and xmax are unknown to the input vector.
+void Interpol2D::setTableVector( vector< vector< double > > value ) 
+{
+	table_ = value;
+	invDx_ = ( table_.size() + 1) / ( xmax_ - xmin_ );
+	invDy_ = ydivs() / ( ymax_ - ymin_ );
+}
+
+unsigned int Interpol2D::xdivs() const
+{
+	if ( table_.empty() )
+		return 0;
+	return table_.size() - 1;
+}
+
+unsigned int Interpol2D::ydivs() const
+{
+	if ( table_.empty() || table_[0].empty() )
+		return 0;
+	return table_[0].size() - 1;
+}
+
 
 ////////////////////////////////////////////////////////////////////
 // Here we set up Interpol2D Destination functions
@@ -182,36 +434,17 @@ vector< vector< double > > Interpol2D::getTableVector2D( Eref e )
  * table. It sends a return message to the
  * originating object with the looked up value.
  */
-void Interpol2D::lookupReturn( const Conn* c, double v1, double v2 )
+void Interpol2D::lookupReturn( const Eref& e, const Qinfo*q, 
+	double v1, double v2 )
 {
-	double ret =
-			static_cast< Interpol2D* >( c->data() )->innerLookup( v1, v2 );
-	sendBack1< double >( c, lookupReturnSlot, ret );
+	double ret = innerLookup( v1, v2 );
+	trig.send( e, q->getProcInfo(), ret );
 }
 
 ////////////////////////////////////////////////////////////////////
 // Here we set up private Interpol2D class functions.
 ////////////////////////////////////////////////////////////////////
 
-Interpol2D::Interpol2D( 
-	unsigned long xdivs, double xmin, double xmax,
-	unsigned long ydivs, double ymin, double ymax )
-		: Interpol( xdivs, xmin, xmax ),
-		  ymin_( ymin ), ymax_( ymax )
-{
-	resize( xdivs + 1, ydivs + 1 );
-	mode_ = 1; // Mode 1 is linear interpolation. 0 is indexing.
-	
-	if ( fabs( xmax_ - xmin_ ) > EPSILON )
-		invDx_ = xdivs / ( xmax_ - xmin_);
-	else
-		invDx_ = 1.0;
-	
-	if ( fabs( ymax_ - ymin_ ) > EPSILON )
-		invDy_ = ydivs / ( ymax_ - ymin_);
-	else
-		invDy_ = 1.0;
-}
 
 double Interpol2D::indexWithoutCheck( double x, double y ) const
 {
@@ -296,7 +529,7 @@ double Interpol2D::innerLookup( double x, double y ) const
 		isOutOfBounds = true;
 	}
 	
-	if ( mode_ == 0 || isOutOfBounds )
+	if ( isOutOfBounds )
 		return indexWithoutCheck( x, y );
 	else 
 		return interpolateWithoutCheck( x, y );
@@ -309,7 +542,6 @@ bool Interpol2D::operator==( const Interpol2D& other ) const
 		xmax_ == other.xmax_ &&
 		ymin_ == other.ymin_ &&
 		ymax_ == other.ymax_ &&
-		mode_ == other.mode_ &&
 		table_ == other.table_ );
 }
 
@@ -332,181 +564,9 @@ bool Interpol2D::operator<( const Interpol2D& other ) const
 	
 	return 0;
 }
-
-void Interpol2D::localSetXdivs( int value ) {
-	if ( value > 0 ) {
-		this->resize( value + 1, ydivs() + 1 );
-		invDx_ = value / ( xmax_ - xmin_ );
-		return;
-	}
-	
-	cerr << "Error: Interpol2D::localSetXdivs: # of divs should be >= 1.\n";
-}
-
-int Interpol2D::localGetXdivs( ) const {
-	return xdivs();
-}
-
-void Interpol2D::localSetYmin( double value ) {
-	if ( fabs( ymax_ - value) > EPSILON ) {
-		ymin_ = value;
-		invDy_ = ydivs() / ( ymax_ - ymin_ );
-	} else {
-		cerr << "Error: Interpol2D::localSetYmin: Ymin ~= Ymax : Assignment failed\n";
-	}
-}
-
-void Interpol2D::localSetYmax( double value ) {
-	if ( fabs( value - ymin_ ) > EPSILON ) {
-		ymax_ = value;
-		invDy_ = ydivs() / ( ymax_ - ymin_ );
-	} else {
-		cerr << "Error: Interpol2D::localSetYmax: Ymin ~= Ymax : Assignment failed\n";
-	}
-}
-
-void Interpol2D::localSetYdivs( int value ) {
-	if ( value > 0 ) {
-		this->resize( xdivs() + 1, value + 1 );
-		invDy_ = value / ( ymax_ - ymin_ );
-		return;
-	}
-	
-	cerr << "Error: Interpol2D::localSetYdivs: # of divs should be >= 1.\n";
-}
-
-int Interpol2D::localGetYdivs( ) const {
-	return ydivs();
-}
-
-/**
- * \todo Later do interpolation etc to preserve contents.
- * \todo Later also check that it is OK for xmax_ < xmin_
- */
-void Interpol2D::localSetDy( double value ) {
-	if ( fabs( value ) - EPSILON > 0 ) {
-		unsigned int ydivs = static_cast< unsigned int >( 
-			0.5 + fabs( ymax_ - ymin_ ) / value );
-		if ( ydivs < 1 || ydivs > MAX_DIVS ) {
-			cerr <<
-				"Error: Interpol2D::localSetDy Out of range:" <<
-				ydivs + 1 << " entries in table.\n";
-				return;
-		}
-		
-		localSetYdivs( ydivs );
-		invDy_ = ydivs / ( ymax_ - ymin_ );
-	}
-}
-
-double Interpol2D::localGetDy() const {
-	if ( ydivs() == 0 )
-		return 0.0;
-	else
-		return ( ymax_ - ymin_ ) / ydivs();
-}
-
-void Interpol2D::localSetSy( double value ) {
-	if ( fabs( value ) - EPSILON > 0 ) {
-		double ratio = value / sy_;
-		vector< vector< double > >::iterator i;
-		vector< double >::iterator j;
-		for ( i = table_.begin(); i != table_.end(); i++ )
-			for ( j = i->begin(); j != i->end(); j++ )
-				*j *= ratio;
-		sy_ = value;
-	} else {
-		cerr << "Error: Interpol2D::localSetSy: sy too small:" <<
-			value << "\n";
-	}
-}
-
-void Interpol2D::setTableValue(
-	double value,
-	const vector< unsigned int >& index )
-{
-	assert( index.size() == 2 );
-	unsigned int i0 = index[ 0 ];
-	unsigned int i1 = index[ 1 ];
-	
-	if ( i0 < table_.size() && i1 < table_[ 0 ].size() )
-		table_[ i0 ][ i1 ] = value;
-	else
-		cerr << "Error: Interpol2D::setTableValue: Index out of bounds!\n";
-}
-
-double Interpol2D::getTableValue(
-	const vector< unsigned int >& index )
-{
-	assert( index.size() == 2 );
-	unsigned int i0 = index[ 0 ];
-	unsigned int i1 = index[ 1 ];
-	
-	if ( i0 < table_.size() && i1 < table_[ 0 ].size() )
-		return table_[ i0 ][ i1 ];
-	else {
-		cerr << "Error: Interpol2D::getTableValue: Index out of bounds!\n";
-		return 0.0;
-	}
-}
-
 // This sets the whole thing up: values, xdivs, dx and so on. Only xmin
 // and xmax are unknown to the input vector.
-void Interpol2D::localSetTableVector( const vector< vector< double > >& value ) 
-{
-	int xsize = value.size();
-	
-	if ( xsize == 1 ) {
-		cerr <<
-			"Error: Interpol2D::localSetTableVector: Too few entries. "
-			"Need at least 2x2 table. Not changing anything.\n";
-		return;
-	}
-	
-	if ( xsize == 0 ) {
-		table_.resize( 0 );
-		invDy_ = 1.0;
-		invDx_ = 1.0;
-		return;
-	}
-	
-	unsigned int ysize = value[ 0 ].size();
-	vector< vector< double > >::const_iterator i;
-	for ( i = value.begin() + 1; i != value.end(); i++ )
-		if ( i->size() != ysize ) {
-			ysize = ~0u;
-			break;
-		}
-	
-	if ( ysize == ~0u ) {
-		cerr <<
-			"Error: Interpol2D::localSetTableVector: All rows should have a "
-			"uniform width. Not changing anything.\n";
-		return;
-	}
-	
-	if ( ysize == 1 ) {
-		cerr <<
-			"Error: Interpol2D::localSetTableVector: Too few entries. "
-			"Need at least 2x2 table. Not changing anything.\n";
-		return;
-	}
-	
-	if ( ysize == 0 ) {
-		table_.resize( 0 );
-		invDy_ = 1.0;
-		invDx_ = 1.0;
-		return;
-	}
-	
-	table_ = value;
-	invDx_ = xdivs() / ( xmax_ - xmin_ );
-	invDy_ = ydivs() / ( ymax_ - ymin_ );
-}
-
-// This sets the whole thing up: values, xdivs, dx and so on. Only xmin
-// and xmax are unknown to the input vector.
-void Interpol2D::localAppendTableVector(
+void Interpol2D::appendTableVector(
 	const vector< vector< double > >& value ) 
 {
 	if ( value.empty() )
@@ -538,19 +598,7 @@ void Interpol2D::localAppendTableVector(
 	invDx_ = xdivs() / ( xmax_ - xmin_ );
 }
 
-void Interpol2D::resize( unsigned int xsize, unsigned int ysize, double init ) {
-	vector< vector< double > >::iterator i;
-	table_.resize( xsize );
-	for ( i = table_.begin(); i != table_.end(); i++ )
-		i->resize( ysize, init );
-	
-	invDx_ = xdivs() / ( xmax_ - xmin_ );
-	invDy_ = ydivs() / ( ymax_ - ymin_ );
-}
-
-void Interpol2D::innerPrint(
-	const string& fname,
-	bool appendFlag ) const
+void Interpol2D::print( const string& fname, bool appendFlag ) const
 {
 	std::ofstream fout;
 	if ( appendFlag )
@@ -569,7 +617,7 @@ void Interpol2D::innerPrint(
 	fout.close();
 }
 
-void Interpol2D::innerLoad( const string& fname, unsigned int skiplines )
+void Interpol2D::load( const string& fname, unsigned int skiplines )
 {
 	// Checking if xdivs/ydivs are different from default values. If they are,
 	// then issue a warning.

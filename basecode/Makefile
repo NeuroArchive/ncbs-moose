@@ -13,103 +13,97 @@
 #
 
 TARGET = basecode.o
-CXXFLAGS += -I.. -I../connections
+
+#  CXXFLAGS += -I.. -I../kinetics -I../biophysics
+
 OBJ = \
 	Element.o	\
+	DataHandler.o \
+	AnyDimGlobalHandler.o \
+	ZeroDimGlobalHandler.o \
+	OneDimGlobalHandler.o \
+	DataHandlerWrapper.o \
+	AnyDimHandler.o \
+	ZeroDimHandler.o \
+	OneDimHandler.o \
+	FieldDataHandlerBase.o \
+	MsgDataHandler.o \
 	Eref.o	\
-	Id.o	\
-	IdGenerator.o	\
-	IdManager.o	\
-	Fid.o	\
-	RecvFunc.o \
-	Ftype.o \
-	Msg.o \
-	SimpleElement.o	\
-	ArrayElement.o \
-	Copy.o \
-	Send.o \
+	Finfo.o	\
+	DestFinfo.o	\
+	Cinfo.o	\
 	SrcFinfo.o \
-	DestFinfo.o \
 	ValueFinfo.o \
-	LookupFinfo.o \
-	ThisFinfo.o \
-	DeletionMarkerFinfo.o \
-	GlobalMarkerFinfo.o \
-	Cinfo.o \
-	DynamicFinfo.o \
-	strconv.o \
-	SharedFtype.o \
 	SharedFinfo.o \
-	SolveFinfo.o \
-	setget.o \
-	filecheck.o \
-	ParallelDummy.o \
-	Class.o	\
-	FuncVec.o \
-	ExtFieldFinfo.o \
-	UnitTests.o \
-	TestBasecode.o \
+	FieldElementFinfo.o \
+	Id.o \
+	ObjId.o \
+	Qinfo.o \
+	Qvec.o \
+	DataId.o \
+	SetGet.o \
+	OpFunc.o \
+	SparseMatrix.o \
+	PrepackedBuffer.o \
+	FuncBarrier.o \
+	doubleEq.o \
+	ReduceBase.o \
+	main.o	\
+	testAsync.o	\
 
 HEADERS = \
 	header.h \
-	Eref.h \
-	RecvFunc.h \
-	../connections/Conn.h \
-	../connections/ConnTainer.h \
-	Ftype.h \
-	Ftype0.h \
-	Ftype1.h \
-	Ftype2.h \
-	Ftype3.h \
-	Ftype4.h \
-	Ftype5.h \
-	Serializer.h \
-	FuncVec.h \
-	Slot.h \
-	Finfo.h \
-	Id.h \
-	IdGenerator.h \
-	IdManager.h \
-	Msg.h \
+	Cinfo.h \
+	PrepackedBuffer.h \
+	Conv.h \
+	DataId.h \
+	Dinfo.h \
+	DataDimensions.h \
+	DataHandler.h \
+	AnyDimHandler.h \
+	ZeroDimHandler.h \
+	OneDimHandler.h \
+	AnyDimGlobalHandler.h \
+	ZeroDimGlobalHandler.h \
+	OneDimGlobalHandler.h \
+	FieldDataHandlerBase.h \
+	FieldDataHandler.h \
+	MsgDataHandler.h \
 	Element.h \
-	Class.h \
-#	AssignFinfo.h
-#	ArrayFinfo.o \
-
-#	ArrayWrapperElement.o	\
+	Eref.h \
+	Finfo.h \
+	DestFinfo.h \
+	Id.h \
+	ObjId.h \
+	../msg/Msg.h \
+	OpFunc.h \
+	EpFunc.h \
+	ProcInfo.h \
+	Qinfo.h \
+	Qvec.h \
+	SrcFinfo.h \
+	ValueFinfo.h \
+	LookupValueFinfo.h \
+	SharedFinfo.h \
+	FieldElementFinfo.h \
+	MsgFuncBinding.h \
+	ReduceBase.h \
+	ReduceFinfo.h \
 
 default: $(TARGET)
 
 $(OBJ)	: $(HEADERS)
+Element.o:	DataHandlerWrapper.h
+testAsync.o:	SparseMatrix.h SetGet.h ../scheduling/Clock.h ../scheduling/Tick.h ../scheduling/TickPtr.h ../scheduling/TickMgr.h ../biophysics/IntFire.h ../biophysics/SynBase.h
+SparseMsg.o:	SparseMatrix.h
+SetGet.o:	SetGet.h ../shell/Neutral.h
+DataHandlerWrapper.o: DataHandlerWrapper.h
+FuncBarrier.o:	FuncBarrier.h
+Cinfo.o: ../shell/Shell.h
 #TestBasecode.o:	Shell.h ShellWrapper.h
 
-SrcFinfo.o:		SrcFinfo.h
-DestFinfo.o: 	DestFinfo.h
-ThisFinfo.o: 	ThisFinfo.h
-DynamicFinfo.o:	DynamicFinfo.h
-ValueFinfo.o:	ValueFinfo.h DynamicFinfo.h Send.h
-ExtFieldFinfo.o:	ExtFieldFinfo.h
-DerivedFtype.o:	DerivedFtype.h
-SharedFtype.o:	SharedFtype.h
-SharedFinfo.o:	SharedFinfo.h SharedFtype.h
-SolveFinfo.o:	ThisFinfo.h SolveFinfo.h
-Cinfo.o:		Cinfo.h
-UnitTests.o:	SimpleElement.h DerivedFtype.h SrcFinfo.h DestFinfo.h Cinfo.h DynamicFinfo.h ValueFinfo.h Send.h ValueFtype.h
-LookupFinfo.o:	LookupFinfo.h DynamicFinfo.h LookupFtype.h
-DeletionMarkerFinfo.o: DeletionMarkerFinfo.h
-GlobalMarkerFinfo.o: DeletionMarkerFinfo.h GlobalMarkerFinfo.h
-SimpleElement.o:	SimpleElement.h DeletionMarkerFinfo.h
-setget.o:		setget.h DerivedFtype.h
-strconv.o:		DerivedFtype.h
-filecheck.o: filecheck.h
-IdManager.o:	Id.h IdManager.h
-ArrayElement.o:	ArrayElement.h SimpleElement.h DeletionMarkerFinfo.h
-Class.o: Class.h Cinfo.h Cinfo.cpp
-FuncVec.o: RecvFunc.h Ftype.h FuncVec.h
-Ftype.o: Ftype.h
-
 .cpp.o:
-	$(CXX) $(CXXFLAGS) $< -c
+	$(CXX) $(CXXFLAGS) -I../msg $< -c
 
 $(TARGET):		$(OBJ) $(HEADERS)
 	$(LD) -r -o $(TARGET) $(OBJ)

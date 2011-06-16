@@ -7,50 +7,92 @@
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
-#include <math.h>
-
+#include "header.h"
+#include "../randnum/randnum.h"
 #include "Compartment.h"
 
 using namespace moose;
 const double Compartment::EPSILON = 1.0e-15;
 
+static SrcFinfo1< double >* VmOut() {
+	static SrcFinfo1< double > VmOut( "VmOut", 
+		"Sends out Vm value of compartment on each timestep" );
+	return &VmOut;
+}
+
+// Here we send out Vm, but to a different subset of targets. So we
+// have to define a new SrcFinfo even though the contents of the msg
+// are still only Vm.
+
+static SrcFinfo1< double >* axialOut() {
+	static SrcFinfo1< double > axialOut( "axialOut", 
+		"Sends out Vm value of compartment to adjacent compartments,"
+		"on each timestep" );
+	return &axialOut;
+}
+
+static SrcFinfo2< double, double >* raxialOut()
+{
+	static SrcFinfo2< double, double > raxialOut( "raxialOut", 
+		"Sends out Raxial information on each timestep, "
+		"fields are Ra and Vm" );
+	return &raxialOut;
+}
+
 /**
- * The initCompartmentCinfo() function sets up the Compartment class.
+ * The initCinfo() function sets up the Compartment class.
  * This function uses the common trick of having an internal
  * static value which is created the first time the function is called.
  * There are several static arrays set up here. The ones which
  * use SharedFinfos are for shared messages where multiple kinds
  * of information go along the same connection.
  */
-const Cinfo* initCompartmentCinfo()
+const Cinfo* Compartment::initCinfo()
 {
+	///////////////////////////////////////////////////////////////////
+	// Shared messages
+	///////////////////////////////////////////////////////////////////
+	static DestFinfo process( "process", 
+		"Handles 'process' call",
+		new ProcOpFunc< Compartment >( &Compartment::process ) );
+
+	static DestFinfo reinit( "reinit", 
+		"Handles 'reinit' call",
+		new ProcOpFunc< Compartment >( &Compartment::reinit ) );
 	
 	static Finfo* processShared[] =
 	{
-		new DestFinfo( "process", Ftype1< ProcInfo >::global(),
-				RFCAST( &Compartment::processFunc ) ),
-		new DestFinfo( "reinit", Ftype1< ProcInfo >::global(),
-				RFCAST( &Compartment::reinitFunc ) ),
+		&process, &reinit
 	};
-	static Finfo* process =	new SharedFinfo( "process", processShared, 
-			sizeof( processShared ) / sizeof( Finfo* ),
-			"This is a shared message to receive Process messages "
-			"from the scheduler objects. The first entry is a MsgDest "
-			"for the Process operation. It has a single argument, "
-			"ProcInfo, which holds lots of information about current "
-			"time, thread, dt and so on. The second entry is a MsgDest "
-			"for the Reinit operation. It also uses ProcInfo. " );
+
+	static SharedFinfo proc( "proc",
+		"This is a shared message to receive Process messages "
+		"from the scheduler objects. The Process should be called "
+		"_second_ in each clock tick, after the Init message."
+		"The first entry in the shared msg is a MsgDest "
+		"for the Process operation. It has a single argument, "
+		"ProcInfo, which holds lots of information about current "
+		"time, thread, dt and so on. The second entry is a MsgDest "
+		"for the Reinit operation. It also uses ProcInfo. ",
+		processShared, sizeof( processShared ) / sizeof( Finfo* )
+	);
+	///////////////////////////////////////////////////////////////////
 	
-	 static Finfo* initShared[] =
+	static DestFinfo initProc( "initProc", 
+		"Handles Process call for the 'init' phase of the Compartment "
+		"calculations. These occur as a separate Tick cycle from the "
+		"regular proc cycle, and should be called before the proc msg.",
+		new ProcOpFunc< Compartment >( &Compartment::initProc ) );
+	static DestFinfo initReinit( "initReinit", 
+		"Handles Reinit call for the 'init' phase of the Compartment "
+		"calculations.",
+		new ProcOpFunc< Compartment >( &Compartment::initReinit ) );
+	static Finfo* initShared[] =
 	{
-		new DestFinfo( "init", Ftype1< ProcInfo >::global(),
-				RFCAST( &Compartment::initFunc ) ),
-		new DestFinfo( "initReinit", Ftype1< ProcInfo >::global(),
-				RFCAST( &Compartment::initReinitFunc ) ),
+		&initProc, &initReinit
 	};
-	static Finfo* init = new SharedFinfo( "init", initShared,
-			sizeof( initShared ) / sizeof( Finfo* ),
+
+	static SharedFinfo init( "init", 
 			"This is a shared message to receive Init messages from "
 			"the scheduler objects. Its job is to separate the "
 			"compartmental calculations from the message passing. "
@@ -61,115 +103,41 @@ const Cinfo* initCompartmentCinfo()
 			"single argument, ProcInfo, which holds lots of "
 			"information about current time, thread, dt and so on. "
 			"The second entry is a dummy MsgDest for the Reinit "
-			"operation. It also uses ProcInfo. " );
+			"operation. It also uses ProcInfo. ",
+		initShared, sizeof( initShared ) / sizeof( Finfo* )
+	);
+
+	///////////////////////////////////////////////////////////////////
+
+	static DestFinfo handleChannel( "handleChannel", 
+		"Handles conductance and Reversal potential arguments from Channel",
+		new OpFunc2< Compartment, double, double >( &Compartment::handleChannel ) );
+	// VmOut is declared above as it needs to be in scope for later funcs.
 
 	static Finfo* channelShared[] =
 	{
-		new DestFinfo( "channel", Ftype2< double, double >::global(),
-				RFCAST( &Compartment::channelFunc ) ),
-		new SrcFinfo( "Vm", Ftype1< double >::global() ),
+		&handleChannel, VmOut()
 	};
+	static SharedFinfo channel( "channel", 
+			"This is a shared message from a compartment to channels. "
+			"The first entry is a MsgDest for the info coming from "
+			"the channel. It expects Gk and Ek from the channel "
+			"as args. The second entry is a MsgSrc sending Vm ",
+		channelShared, sizeof( channelShared ) / sizeof( Finfo* )
+	);
+	///////////////////////////////////////////////////////////////////
+	// axialOut declared above as it is needed in file scope
+	static DestFinfo handleRaxial( "handleRaxial", 
+		"Handles Raxial info: arguments are Ra and Vm.",
+		new OpFunc2< Compartment, double, double >( 
+			&Compartment::handleRaxial )
+	);
 
 	static Finfo* axialShared[] =
 	{
-		new SrcFinfo( "axialSrc", Ftype1< double >::global() ),
-		new DestFinfo( "handleRaxial", Ftype2< double, double >::global(),
-				RFCAST( &Compartment::raxialFunc ) ),
+		axialOut(), &handleRaxial
 	};
-
-	static Finfo* raxialShared[] =
-	{
-		new DestFinfo( "handleAxial", Ftype1< double >::global(),
-				RFCAST( &Compartment::axialFunc ) ),
-		new SrcFinfo( "raxialSrc", Ftype2< double, double >::global() )
-	};
-	
-	static Finfo* compartmentFinfos[] = 
-	{
-		new ValueFinfo( "Vm", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getVm ),
-			reinterpret_cast< RecvFunc >( &Compartment::setVm )
-		),
-		new ValueFinfo( "Cm", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getCm ),
-			reinterpret_cast< RecvFunc >( &Compartment::setCm )
-		),
-		new ValueFinfo( "Em", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getEm ),
-			reinterpret_cast< RecvFunc >( &Compartment::setEm )
-		),
-		new ValueFinfo( "Im", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getIm ),
-			&dummyFunc
-		),
-		new ValueFinfo( "inject", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getInject ),
-			reinterpret_cast< RecvFunc >( &Compartment::setInject )
-		),
-		new ValueFinfo( "initVm", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getInitVm ),
-			reinterpret_cast< RecvFunc >( &Compartment::setInitVm )
-		),
-		new ValueFinfo( "Rm", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getRm ),
-			reinterpret_cast< RecvFunc >( &Compartment::setRm )
-		),
-		new ValueFinfo( "Ra", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getRa ),
-			reinterpret_cast< RecvFunc >( &Compartment::setRa )
-		),
-		new ValueFinfo( "diameter", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getDiameter ),
-			reinterpret_cast< RecvFunc >( &Compartment::setDiameter )
-		),
-		new ValueFinfo( "length", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getLength ),
-			reinterpret_cast< RecvFunc >( &Compartment::setLength )
-		),
-		new ValueFinfo( "x0", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getX0 ),
-			reinterpret_cast< RecvFunc >( &Compartment::setX0 )
-		),
-		new ValueFinfo( "y0", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getY0 ),
-			reinterpret_cast< RecvFunc >( &Compartment::setY0 )
-		),
-		new ValueFinfo( "z0", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getZ0 ),
-			reinterpret_cast< RecvFunc >( &Compartment::setZ0 )
-		),
-		new ValueFinfo( "x", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getX ),
-			reinterpret_cast< RecvFunc >( &Compartment::setX )
-		),
-		new ValueFinfo( "y", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getY ),
-			reinterpret_cast< RecvFunc >( &Compartment::setY )
-		),
-		new ValueFinfo( "z", ValueFtype1< double >::global(),
-			reinterpret_cast< GetFunc >( &Compartment::getZ ),
-			reinterpret_cast< RecvFunc >( &Compartment::setZ )
-		),
-
-	///////////////////////////////////////////////////////
-	// MsgSrc definitions
-	///////////////////////////////////////////////////////
-		// Sends out the membrane potential. Used for SpikeGen.
-		new SrcFinfo( "VmSrc", Ftype1< double >::global() ),
-
-	//////////////////////////////////////////////////////////////////
-	// SharedFinfo definitions
-	//////////////////////////////////////////////////////////////////
-		process,
-		init,
-		/*
-		new SharedFinfo( "process", processShared, 
-			sizeof( processShared ) / sizeof( Finfo* ) ),
-		new SharedFinfo( "init", initShared,
-			sizeof( initShared ) / sizeof( Finfo* ) ),
-		*/
-		new SharedFinfo( "axial", axialShared,
-			sizeof( axialShared ) / sizeof( Finfo* ),
+	static SharedFinfo axial( "axial", 
 			"This is a shared message between asymmetric compartments. "
 			"axial messages (this kind) connect up to raxial "
 			"messages (defined below). The soma should use raxial "
@@ -183,49 +151,164 @@ const Cinfo* initCompartmentCinfo()
 			"of the target compartment. The second entry is a MsgDest "
 			"for the info coming from the other compt. It expects "
 			"Ra and Vm from the other compt as args. Note that the "
-			"message is named after the source type. " ),
-		new SharedFinfo( "raxial", raxialShared,
-			sizeof( raxialShared ) / sizeof( Finfo* ),
+			"message is named after the source type. ",
+		axialShared, sizeof( axialShared ) / sizeof( Finfo* )
+	);
+
+	///////////////////////////////////////////////////////////////////
+	static DestFinfo handleAxial( "handleAxial", 
+		"Handles Axial information. Argument is just Vm.",
+		new OpFunc1< Compartment, double >( &Compartment::handleAxial ) );
+	// rxialOut declared above as it is needed in file scope
+	static Finfo* raxialShared[] =
+	{
+		&handleAxial, raxialOut()
+	};
+	static SharedFinfo raxial( "raxial", 
 			"This is a raxial shared message between asymmetric "
 			"compartments. The first entry is a MsgDest for the info "
 			"coming from the other compt. It expects Vm from the "
 			"other compt as an arg. The second is a MsgSrc sending "
-			"Ra and Vm to the raxialFunc of the target compartment. " ),
-		new SharedFinfo( "channel", channelShared,
-			sizeof( channelShared ) / sizeof( Finfo* ),
-			"This is a shared message from a compartment to channels. "
-			"The first entry is a MsgDest for the info coming from "
-			"the channel. It expects Gk and Ek from the channel "
-			"as args. The second entry is a MsgSrc sending Vm " ),
-		/*
-		new SharedFinfo( "process", processTypes, 2 ),
-		new SharedFinfo( "init", initTypes, 2 ),
-		new SharedFinfo( "channel", channelTypes, 2 ),
-		new SharedFinfo( "axial", axialTypes, 2 ),
-		new SharedFinfo( "raxial", raxialTypes, 2 ),
-		*/
+			"Ra and Vm to the raxialFunc of the target compartment. ",
+			raxialShared, sizeof( raxialShared ) / sizeof( Finfo* )
+	);
+	///////////////////////////////////////////////////////////////////
+	// Value Finfos.
+	///////////////////////////////////////////////////////////////////
 
+		static ValueFinfo< Compartment, double > Vm( "Vm", 
+			"membrane potential",
+			&Compartment::setVm,
+			&Compartment::getVm
+		);
+		static ValueFinfo< Compartment, double > Cm( "Cm", 
+			"Membrane capacitance",
+			 &Compartment::setCm,
+			&Compartment::getCm
+		);
+		static ValueFinfo< Compartment, double > Em( "Em", 
+			"Resting membrane potential",
+			 &Compartment::setEm,
+			&Compartment::getEm
+		);
+		static ReadOnlyValueFinfo< Compartment, double > Im( "Im", 
+			"Current going through membrane",
+			&Compartment::getIm
+		);
+		static ValueFinfo< Compartment, double > inject( "inject", 
+			"Current injection to deliver into compartment",
+			&Compartment::setInject,
+			&Compartment::getInject
+		);
+		static ValueFinfo< Compartment, double > initVm( "initVm", 
+			"Initial value for membrane potential",
+			&Compartment::setInitVm,
+			&Compartment::getInitVm
+		);
+		static ValueFinfo< Compartment, double > Rm( "Rm", 
+			"Membrane resistance",
+			&Compartment::setRm,
+			&Compartment::getRm
+		);
+		static ValueFinfo< Compartment, double > Ra( "Ra", 
+			"Axial resistance of compartment",
+			&Compartment::setRa,
+			&Compartment::getRa
+		);
+		static ValueFinfo< Compartment, double > diameter( "diameter", 
+			"Diameter of compartment",
+			&Compartment::setDiameter,
+			&Compartment::getDiameter
+		);
+		static ValueFinfo< Compartment, double > length( "length", 
+			"Length of compartment",
+			&Compartment::setLength,
+			&Compartment::getLength
+		);
+		static ValueFinfo< Compartment, double > x0( "x0", 
+			"X coordinate of start of compartment",
+			&Compartment::setX0,
+			&Compartment::getX0
+		);
+		static ValueFinfo< Compartment, double > y0( "y0", 
+			"Y coordinate of start of compartment",
+			&Compartment::setY0,
+			&Compartment::getY0
+		);
+		static ValueFinfo< Compartment, double > z0( "z0", 
+			"Z coordinate of start of compartment",
+			&Compartment::setZ0,
+			&Compartment::getZ0
+		);
+		static ValueFinfo< Compartment, double > x( "x",
+			"x coordinate of end of compartment",
+			&Compartment::setX,
+			&Compartment::getX
+		);
+		static ValueFinfo< Compartment, double > y( "y",
+			"y coordinate of end of compartment",
+			&Compartment::setY,
+			&Compartment::getY
+		);
+		static ValueFinfo< Compartment, double > z( "z", 
+			"z coordinate of end of compartment",
+			&Compartment::setZ,
+			&Compartment::getZ
+		);
+	
 	//////////////////////////////////////////////////////////////////
 	// DestFinfo definitions
 	//////////////////////////////////////////////////////////////////
-		new DestFinfo( "injectMsg", Ftype1< double >::global(),
-			RFCAST( &Compartment::injectMsgFunc ), 
+		static DestFinfo injectMsg( "injectMsg", 
 			"The injectMsg corresponds to the INJECT message in the "
-			"GENESIS compartment. It does different things from the "
-			"inject field, and perhaps should just be merged in. In "
-			"particular, it needs to be updated every dt to have an effect. " ),
+			"GENESIS compartment. Unlike the 'inject' field, any value "
+			"assigned by handleInject applies only for a single timestep."
+			"So it needs to be updated every dt for a steady (or varying)"
+			"injection current",
+			new OpFunc1< Compartment,  double >( &Compartment::injectMsg )
+		);
 		
-		new DestFinfo( "randInject", Ftype2< double, double >::global(),
-			RFCAST( &Compartment::randInjectFunc ),
-			"Arguments to randInject are probability and current." ),
-		new DestFinfo( "cable", Ftype0::global(),&dummyFunc,
-			"message from compartment to its cable" ),
-			
-	};
+		static DestFinfo randInject( "randInject",
+			"Sends a random injection current to the compartment. Must be"
+			"updated each timestep."
+			"Arguments to randInject are probability and current.",
+			new EpFunc2< Compartment, double, double > (
+				&Compartment::randInject ) );
 
-	// This sets up two clocks: first a process clock at stage 0, tick 0,
-	// then an init clock at stage 0, tick 1.
-	static SchedInfo schedInfo[] = { { process, 0, 0 }, { init, 0, 1 } };
+		static DestFinfo cable( "cable", 
+			"Message for organizing compartments into groups, called"
+			"cables. Doesn't do anything.",
+			new OpFunc0< Compartment >( &Compartment::cable )
+		);
+	///////////////////////////////////////////////////////////////////
+	static Finfo* compartmentFinfos[] = 
+	{
+		&Vm,				// Value
+		&Cm,				// Value
+		&Em,				// Value
+		&Im,				// ReadOnlyValue
+		&inject,			// Value
+		&initVm,			// Value
+		&Rm,				// Value
+		&Ra,				// Value
+		&diameter,			// Value
+		&length,			// Value
+		&x0,				// Value
+		&y0,				// Value
+		&z0,				// Value
+		&x,					// Value
+		&y,					// Value
+		&z,					// Value
+		&injectMsg,			// DestFinfo
+		&randInject,		// DestFinfo
+		&injectMsg,			// DestFinfo
+		&cable,				// DestFinfo
+		&proc,				// SharedFinfo
+		&init,				// SharedFinfo
+		&channel,			// SharedFinfo
+		&axial,				// SharedFinfo
+		&raxial				// SharedFinfo
+	};
 
 	static string doc[] =
 	{
@@ -234,28 +317,17 @@ const Cinfo* initCompartmentCinfo()
 		"Description", "Compartment object, for branching neuron models.",
 	};	
 	static Cinfo compartmentCinfo(
-				doc,
-				sizeof( doc ) / sizeof( string ),
-				initNeutralCinfo(),
+				"Compartment",
+				Neutral::initCinfo(),
 				compartmentFinfos,
 				sizeof( compartmentFinfos ) / sizeof( Finfo* ),
-				ValueFtype1< Compartment >::global(),
-				schedInfo, 2
+				new Dinfo< Compartment >()
 	);
 
 	return &compartmentCinfo;
 }
 
-static const Cinfo* compartmentCinfo = initCompartmentCinfo();
-
-static const Slot channelSlot =
-	initCompartmentCinfo()->getSlot( "channel.Vm" );
-static const Slot axialSlot =
-	initCompartmentCinfo()->getSlot( "axial.axialSrc" );
-static const Slot raxialSlot =
-	initCompartmentCinfo()->getSlot( "raxial.raxialSrc" );
-static const Slot VmSlot =
-	initCompartmentCinfo()->getSlot( "VmSrc" );
+static const Cinfo* compartmentCinfo = Compartment::initCinfo();
 
 //////////////////////////////////////////////////////////////////
 // Here we put the Compartment class functions.
@@ -285,12 +357,17 @@ Compartment::Compartment()
 	length_ = 0.0;
 }
 
-bool Compartment::rangeWarning( const Conn* c, const string& field, double value )
+Compartment::~Compartment()
+{
+	;
+}
+
+bool Compartment::rangeWarning( const string& field, double value )
 {
 	if ( value < Compartment::EPSILON ) {
 		cout << "Warning: Ignored attempt to set " << field <<
 				" of compartment " <<
-				c->target().e->name() << 
+				// c->target().e->name() << 
 				" to less than " << EPSILON << endl;
 		return 1;
 	}
@@ -298,420 +375,396 @@ bool Compartment::rangeWarning( const Conn* c, const string& field, double value
 }
 
 // Value Field access function definitions.
-void Compartment::setVm( const Conn* c, double Vm )
+void Compartment::setVm( double Vm )
 {
-	static_cast< Compartment* >( c->data() )->Vm_ = Vm;
+	Vm_ = Vm;
 }
 
-double Compartment::getVm( Eref e )
+double Compartment::getVm() const
 {
-	return static_cast< Compartment* >( e.data() )->Vm_;
+	return Vm_;
 }
 
-void Compartment::setEm( const Conn* c, double Em )
+void Compartment::setEm( double Em )
 {
-	static_cast< Compartment* >( c->data() )->Em_ = Em;
+	Em_ = Em;
 }
 
-double Compartment::getEm( Eref e )
+double Compartment::getEm() const
 {
-	return static_cast< Compartment* >( e.data() )->Em_;
+	return Em_;
 }
 
-void Compartment::setCm( const Conn* c, double Cm )
+void Compartment::setCm( double Cm )
 {
-	if ( rangeWarning( c, "Cm", Cm ) ) return;
-	static_cast< Compartment* >( c->data() )->Cm_ = Cm;
+	if ( rangeWarning( "Cm", Cm ) ) return;
+	Cm_ = Cm;
 }
 
-double Compartment::getCm( Eref e )
+double Compartment::getCm() const
 {
-	return static_cast< const Compartment* >( e.data() )->Cm_;
+	return Cm_;
 }
 
-void Compartment::setRm( const Conn* c, double Rm )
+void Compartment::setRm( double Rm )
 {
-	if ( rangeWarning( c, "Rm", Rm ) ) return;
-	static_cast< Compartment* >( c->data() )->Rm_ = Rm;
-	static_cast< Compartment* >( c->data() )->invRm_ =
-			1.0/Rm;
+	if ( rangeWarning( "Rm", Rm ) ) return;
+	Rm_ = Rm;
+	invRm_ = 1.0/Rm;
 }
 
-double Compartment::getRm( Eref e )
+double Compartment::getRm() const
 {
-	return static_cast< Compartment* >( e.data() )->Rm_;
+	return Rm_;
 }
 
-void Compartment::setRa( const Conn* c, double Ra )
+void Compartment::setRa( double Ra )
 {
-	if ( rangeWarning( c, "Ra", Ra ) ) return;
-	static_cast< Compartment* >( c->data() )->Ra_ = Ra;
+	if ( rangeWarning( "Ra", Ra ) ) return;
+	Ra_ = Ra;
 }
 
-double Compartment::getRa( Eref e )
+double Compartment::getRa() const
 {
-	return static_cast< Compartment* >( e.data() )->Ra_;
+	return Ra_;
 }
 
-void Compartment::setIm( const Conn* c, double Im )
+void Compartment::setIm( double Im )
 {
-	static_cast< Compartment* >( c->data() )->Im_ = Im;
+	Im_ = Im;
 }
 
-double Compartment::getIm( Eref e )
+double Compartment::getIm() const
 {
-	return static_cast< Compartment* >( e.data() )->Im_;
+	return Im_;
 }
 
-void Compartment::setInject( const Conn* c, double Inject )
+void Compartment::setInject( double Inject )
 {
-	static_cast< Compartment* >( c->data() )->Inject_ =
-			Inject;
+	Inject_ = Inject;
 }
 
-double Compartment::getInject( Eref e )
+double Compartment::getInject() const
 {
-	return static_cast< Compartment* >( e.data() )->Inject_;
+	return Inject_;
 }
 
-void Compartment::setInitVm( const Conn* c, double initVm )
+void Compartment::setInitVm( double initVm )
 {
-	static_cast< Compartment* >( c->data() )->initVm_ =
-			initVm;
+	initVm_ = initVm;
 }
 
-double Compartment::getInitVm( Eref e )
+double Compartment::getInitVm() const
 {
-	return static_cast< Compartment* >( e.data() )->initVm_;
+	return initVm_;
 }
 
-void Compartment::setDiameter( const Conn* c, double value )
+void Compartment::setDiameter( double value )
 {
-	static_cast< Compartment* >( c->data() )->
-			diameter_ = value;
+	diameter_ = value;
 }
 
-double Compartment::getDiameter( Eref e )
+double Compartment::getDiameter() const
 {
-	return static_cast< Compartment* >( e.data() )->diameter_;
+	return diameter_;
 }
 
-void Compartment::setLength( const Conn* c, double value )
+void Compartment::setLength( double value )
 {
-	static_cast< Compartment* >( c->data() )->length_ =
-			value;
+	length_ = value;
 }
 
-double Compartment::getLength( Eref e )
+double Compartment::getLength() const
 {
-	return static_cast< Compartment* >( e.data() )->length_;
+	return length_;
 }
 
-void Compartment::setX0( const Conn* c, double value )
+void Compartment::setX0( double value )
 {
-	static_cast< Compartment* >( c->data() )->x0_ =
-			value;
+	x0_ = value;
 }
 
-double Compartment::getX0( Eref e )
+double Compartment::getX0() const
 {
-	return static_cast< Compartment* >( e.data() )->x0_;
+	return x0_;
 }
 
-void Compartment::setY0( const Conn* c, double value )
+void Compartment::setY0( double value )
 {
-	static_cast< Compartment* >( c->data() )->y0_ =
-			value;
+	y0_ = value;
 }
 
-double Compartment::getY0( Eref e )
+double Compartment::getY0() const
 {
-	return static_cast< Compartment* >( e.data() )->y0_;
+	return y0_;
 }
 
-void Compartment::setZ0( const Conn* c, double value )
+void Compartment::setZ0( double value )
 {
-	static_cast< Compartment* >( c->data() )->z0_ =
-			value;
+	z0_ = value;
 }
 
-double Compartment::getZ0( Eref e )
+double Compartment::getZ0() const
 {
-	return static_cast< Compartment* >( e.data() )->z0_;
+	return z0_;
 }
 
-void Compartment::setX( const Conn* c, double value )
+void Compartment::setX( double value )
 {
-	static_cast< Compartment* >( c->data() )->x_ =
-			value;
+	x_ = value;
 }
 
-double Compartment::getX( Eref e )
+double Compartment::getX() const
 {
-	return static_cast< Compartment* >( e.data() )->x_;
+	return x_;
 }
 
-void Compartment::setY( const Conn* c, double value )
+void Compartment::setY( double value )
 {
-	static_cast< Compartment* >( c->data() )->y_ =
-			value;
+	y_ = value;
 }
 
-double Compartment::getY( Eref e )
+double Compartment::getY() const
 {
-	return static_cast< Compartment* >( e.data() )->y_;
+	return y_;
 }
 
-void Compartment::setZ( const Conn* c, double value )
+void Compartment::setZ( double value )
 {
-	static_cast< Compartment* >( c->data() )->z_ =
-			value;
+	z_ = value;
 }
 
-double Compartment::getZ( Eref e )
+double Compartment::getZ() const
 {
-	return static_cast< Compartment* >( e.data() )->z_;
+	return z_;
 }
 
 //////////////////////////////////////////////////////////////////
 // Compartment::Dest function definitions.
 //////////////////////////////////////////////////////////////////
 
-void Compartment::innerProcessFunc( Eref e, ProcInfo p )
+void Compartment::process( const Eref& e, ProcPtr p )
 {
 	A_ += Inject_ + sumInject_ + Em_ * invRm_; 
 	if ( B_ > EPSILON ) {
-		double x = exp( -B_ * p->dt_ / Cm_ );
+		double x = exp( -B_ * p->dt / Cm_ );
 		Vm_ = Vm_ * x + ( A_ / B_ )  * ( 1.0 - x );
 	} else {
-		Vm_ += ( A_ - Vm_ * B_ ) * p->dt_ / Cm_;
+		Vm_ += ( A_ - Vm_ * B_ ) * p->dt / Cm_;
 	}
 	A_ = 0.0;
 	B_ = invRm_; 
 	Im_ = 0.0;
 	sumInject_ = 0.0;
-	// Send out the channel messages
-	send1< double >( e, channelSlot, Vm_ );
-	// Send out the message to any SpikeGens.
-	send1< double >( e, VmSlot, Vm_ );
-	// Send out the axial messages
-	// send1< double >( e, axialSlot, Vm_ );
-	// Send out the raxial messages
-	// send2< double >( e, raxialSlot, Ra_, Vm_ );
+	// Send out Vm to channels, SpikeGens, etc.
+	VmOut()->send( e, p, Vm_ );
+
+	// The axial/raxial messages go out in the 'init' phase.
 }
 
-void Compartment::processFunc( const Conn* c, ProcInfo p )
+void Compartment::reinit(  const Eref& e, ProcPtr p )
 {
-	static_cast< Compartment* >( c->data() )->
-		innerProcessFunc( c->target(), p );
+	this->innerReinit( e, p );
 }
 
-void Compartment::innerReinitFunc(  Eref e, ProcInfo p )
+void Compartment::innerReinit(  const Eref& e, ProcPtr p )
 {
-#ifndef NDEBUG
-   // cout << "Compartment::innerReinitFunc:: " << e.id().path() << endl;
-#endif
 	Vm_ = initVm_;
 	A_ = 0.0;
 	B_ = invRm_;
 	Im_ = 0.0;
 	sumInject_ = 0.0;
-	// Send the Vm over to the channels at reset.
-	send1< double >( e, channelSlot, Vm_ );
-	// Send the Vm over to the SpikeGen
-	send1< double >( e, VmSlot, Vm_ );
+	
+	// Send out the resting Vm to channels, SpikeGens, etc.
+	VmOut()->send( e, p, Vm_ );
 }
 
-void Compartment::reinitFunc( const Conn* c, ProcInfo p )
+void Compartment::initProc( const Eref& e, ProcPtr p )
 {
-	// cout << "Compt reinit: " << c->target().name() << endl << flush;
-	static_cast< Compartment* >( c->data() )->
-		innerReinitFunc( c->target(), p );
+	// Separate variants for regular and SymCompartment
+	this->innerInitProc( e, p ); 
 }
 
-void Compartment::initFunc( const Conn* c, ProcInfo p )
-{
-	static_cast< Compartment* >( c->data() )->
-		innerInitFunc( c->target(), p );
-}
-
-void Compartment::innerInitFunc( Eref e, ProcInfo p )
+void Compartment::innerInitProc( const Eref& e, ProcPtr p )
 {
 	// Send out the axial messages
-	send1< double >( e, axialSlot, Vm_ );
+	axialOut()->send( e, p, Vm_ );
+
 	// Send out the raxial messages
-	send2< double >( e, raxialSlot, Ra_, Vm_ );
+	raxialOut()->send( e, p, Ra_, Vm_ );
 }
 
-void Compartment::initReinitFunc( const Conn* c, ProcInfo p )
+void Compartment::initReinit( const Eref& e, ProcPtr p )
 {
-	static_cast< Compartment* >( c->data() )->
-		innerInitReinitFunc( c->target(), p );
+	this->innerInitReinit( e, p );
 }
 
-void Compartment::innerInitReinitFunc( Eref e, ProcInfo p )
+void Compartment::innerInitReinit( const Eref& e, ProcPtr p )
 {
 	; // Nothing happens here
 }
 
-void Compartment::channelFunc( const Conn* c, double Gk, double Ek)
+void Compartment::handleChannel( double Gk, double Ek)
 {
-	Compartment* compt = static_cast< Compartment* >( c->data() );
-	compt->A_ += Gk * Ek;
-	compt->B_ += Gk;
+	A_ += Gk * Ek;
+	B_ += Gk;
 }
 
-void Compartment::innerRaxialFunc( double Ra, double Vm)
+void Compartment::handleRaxial( double Ra, double Vm)
 {
 	A_ += Vm / Ra;
 	B_ += 1.0 / Ra;
 	Im_ += ( Vm - Vm_ ) / Ra;
 }
 
-void Compartment::raxialFunc( const Conn* c, double Ra, double Vm)
-{
-	static_cast< Compartment* >( c->data() )->
-			innerRaxialFunc( Ra, Vm );
-}
-
-
-void Compartment::innerAxialFunc( double Vm)
+void Compartment::handleAxial( double Vm)
 {
 	A_ += Vm / Ra_;
 	B_ += 1.0 / Ra_;
 	Im_ += ( Vm - Vm_ ) / Ra_;
 }
 
-void Compartment::axialFunc( const Conn* c, double Vm)
+void Compartment::injectMsg( double current)
 {
-	static_cast< Compartment* >( c->data() )->
-			innerAxialFunc( Vm );
+	sumInject_ += current;
+	Im_ += current;
 }
 
-void Compartment::injectMsgFunc( const Conn* c, double I)
+void Compartment::randInject( const Eref& e, const Qinfo*q,
+	double prob, double current)
 {
-	Compartment* compt = static_cast< Compartment* >(
-					c->data() );
-	compt->sumInject_ += I;
-	compt->Im_ += I;
-}
-
-void Compartment::randInjectFunc( const Conn* c, double prob, double I)
-{
-		/*
-	if ( mtrand() < prob * dt_ ) {
-		Compartment* compt = static_cast< Compartment* >(
-					c.targetElement()->data() );
-		compt->sumInject_ += i;
-		compt->Im_ += i;
+	if ( mtrand() < prob * q->getProcInfo()->dt ) {
+		sumInject_ += current;
+		Im_ += current;
 	}
-	*/
+}
+
+void Compartment::cable()
+{
+	;
 }
 
 /////////////////////////////////////////////////////////////////////
 
 #ifdef DO_UNIT_TESTS
-// Comment out this define if it takes too long (about 5 seconds on
-// a modest machine, but could be much longer with valgrind)
-// #define DO_SPATIAL_TESTS
-#include "../element/Neutral.h"
 
 void testCompartment()
 {
-	cout << "\nTesting Compartment" << flush;
-
-	Element* n = Neutral::create( "Neutral", "n", Element::root()->id(), 
-		Id::scratchId() );
-	Element* c0 = Neutral::create( "Compartment", "c0", n->id(), 
-		Id::scratchId() );
-	ASSERT( c0 != 0, "creating compartment" );
-	ProcInfoBase p;
-	SetConn c( c0, 0 );
-	p.dt_ = 0.002;
-	Compartment::setInject( &c, 1.0 );
-	Compartment::setRm( &c, 1.0 );
-	Compartment::setRa( &c, 0.0025 );
-	Compartment::setCm( &c, 1.0 );
-	Compartment::setEm( &c, 0.0 );
-	Compartment::setVm( &c, 0.0 );
+	const Cinfo* comptCinfo = Compartment::initCinfo();
+	Id comptId = Id::nextId();
+	vector< unsigned int > dims( 1, 1 );
+	Element* n = new Element( comptId, comptCinfo, "compt", dims, 1 );
+	assert( n != 0 );
+	Eref compter( n, 0 );
+	Compartment* c = reinterpret_cast< Compartment* >( compter.data() );
+	ProcInfo p;
+	p.dt = 0.002;
+	c->setInject( 1.0 );
+	c->setRm( 1.0 );
+	c->setRa( 0.0025 );
+	c->setCm( 1.0 );
+	c->setEm( 0.0 );
+	c->setVm( 0.0 );
 
 	// First, test charging curve for a single compartment
 	// We want our charging curve to be a nice simple exponential
 	// Vm = 1.0 - 1.0 * exp( - t / 1.0 );
 	double delta = 0.0;
 	double Vm = 0.0;
-	double x = 0.0;
 	double tau = 1.0;
 	double Vmax = 1.0;
-	for ( p.currTime_ = 0.0; p.currTime_ < 2.0; p.currTime_ += p.dt_ ) 
+	for ( p.currTime = 0.0; p.currTime < 2.0; p.currTime += p.dt ) 
 	{
-		Vm = Compartment::getVm( c0 );
-		x = Vmax - Vmax * exp( -p.currTime_ / tau );
+		Vm = c->getVm();
+		double x = Vmax - Vmax * exp( -p.currTime / tau );
 		delta += ( Vm - x ) * ( Vm - x );
-		Compartment::processFunc( &c, &p );
+		c->process( compter, &p );
 	}
-	ASSERT( delta < 1.0e-6, "Testing compartment time" );
+	assert( delta < 1.0e-6 );
 
-	// Second, test the spatial spread of charge.
-	// We make the cable long enough to get another nice exponential.
-	// Vm = Vm0 * exp( -x/lambda)
-	// lambda = sqrt( Rm/Ra ) where these are the actual values, not
-	// the values per unit length.
-	// So here lambda = 20, so that each compt is lambda/20
+	comptId.destroy();
+	cout << "." << flush;
+}
+
+// Comment out this define if it takes too long (about 5 seconds on
+// a modest machine, but could be much longer with valgrind)
+#define DO_SPATIAL_TESTS
+/**
+ * Function to test the spatial spread of charge.
+ * We make the cable long enough to get another nice exponential.
+ * Vm = Vm0 * exp( -x/lambda)
+ * lambda = sqrt( Rm/Ra ) where these are the actual values, not
+ * the values per unit length.
+ * So here lambda = 20, so that each compt is lambda/20
+ */
+#include "../shell/Shell.h"
+void testCompartmentProcess()
+{
+	Shell* shell = reinterpret_cast< Shell* >( Id().eref().data() );
+	unsigned int size = 100;
+	vector< unsigned int > dims( 1, size );
+
 	double Rm = 1.0;
-	double Ra = 0.0025;
-	unsigned int i;
-	Element* compts[100];
-	compts[0] = c0;
-	// const Finfo* axial = c0->findFinfo( "axial" );
-	// const Finfo* raxial = c0->findFinfo( "raxial" );
-	Compartment::setVm( &c, 0.0 );
-	Compartment::setInject( &c, 20.5 );
-	bool ret;
-	for (i = 1; i < 100; i++ ) {
-		char name[20];
-		sprintf( name, "c%d", i );
-		compts[i] = Neutral::create( "Compartment", name, n->id(), 
-			Id::scratchId() );
-		SetConn temp( compts[i], 0 );
-		Compartment::setInject( &temp, 0.0 );
-		Compartment::setRm( &temp, Rm );
-		Compartment::setRa( &temp, Ra );
-		Compartment::setCm( &temp, 1.0 );
-		Compartment::setEm( &temp, 0.0 );
-		Compartment::setVm( &temp, 0.0 );
-
-		ret = Eref( compts[i - 1] ).add( "raxial", compts[i], "axial" ); 
-		// ret = raxial->add( compts[i - 1], compts[i], axial ); 
-		assert( ret );
-	}
-	ASSERT( 1, "messaging in compartments" );
-	ASSERT( n->numTargets( "childSrc" ) == 100, "Check children" );
-
-#ifdef DO_SPATIAL_TESTS
+	double Ra = 0.01;
+	double Cm = 1.0;
+	double dt = 0.01;
+	double runtime = 10;
 	double lambda = sqrt( Rm / Ra );
 
-	for ( p.currTime_ = 0.0; p.currTime_ < 10.0; p.currTime_ += p.dt_ ) 
-	{
-		for (i = 0; i < 100; i++ ) {
-			Conn temp( compts[i], 0 );
-			Compartment::processFunc( temp, &p );
-			Compartment::initFunc( temp, &p );
-		}
-	}
+	Id cid = shell->doCreate( "Compartment", Id(), "compt", dims );
+	assert( cid != Id() );
+	assert( cid()->dataHandler()->totalEntries() == size );
 
-	delta = 0.0;
+	bool ret = Field< double >::setRepeat( cid, "initVm", 0.0 );
+	assert( ret );
+	Field< double >::setRepeat( cid, "inject", 0 );
+	// Only apply current injection in first compartment
+	Field< double >::set( ObjId( cid, 0 ), "inject", 1.0 ); 
+	Field< double >::setRepeat( cid, "Rm", Rm );
+	Field< double >::setRepeat( cid, "Ra", Ra );
+	Field< double >::setRepeat( cid, "Cm", Cm );
+	Field< double >::setRepeat( cid, "Em", 0 );
+	Field< double >::setRepeat( cid, "Vm", 0 );
+
+	// The diagonal message has a default stride of 1, so it connects
+	// successive compartments.
+	// Note that the src and dest elements here are identical, so we cannot
+	// use a shared message. The messaging system will get confused about
+	// direction to send data. So we split up the shared message that we
+	// might have used, below, into two individual messages.
+	// MsgId mid = shell->doAddMsg( "Diagonal", ObjId( cid ), "raxial", ObjId( cid ), "axial" );
+	MsgId mid = shell->doAddMsg( "Diagonal", ObjId( cid ), "axialOut", ObjId( cid ), "handleAxial" );
+	assert( mid != Msg::badMsg );
+	// mid = shell->doAddMsg( "Diagonal", ObjId( cid ), "handleRaxial", ObjId( cid ), "raxialOut" );
+	mid = shell->doAddMsg( "Diagonal", ObjId( cid ), "raxialOut", ObjId( cid ), "handleRaxial" );
+	assert( mid != Msg::badMsg );
+	ObjId managerId = Msg::getMsg( mid )->manager().objId();
+	// Make the raxial data go from high to lower index compartments.
+	Field< int >::set( managerId, "stride", -1 );
+
+#ifdef DO_SPATIAL_TESTS
+	shell->doSetClock( 0, dt );
+	shell->doSetClock( 1, dt );
+	shell->doUseClock( "/compt", "init", 0 );
+	shell->doUseClock( "/compt", "process", 1 );
+
+	shell->doReinit();
+	shell->doStart( runtime );
+
+	double Vmax = Field< double >::get( ObjId( cid, 0 ), "Vm" );
+
+	double delta = 0.0;
 	// We measure only the first 50 compartments as later we 
 	// run into end effects because it is not an infinite cable
-	for (i = 0; i < 50; i++ ) {
-		Vm = Compartment::getVm( compts[i] );
-		x = Vmax * exp( - static_cast< double >( i ) / lambda );
+	for ( unsigned int i = 0; i < 50; i++ ) {
+		double Vm = Field< double >::get( ObjId( cid, i ), "Vm" );
+		double x = Vmax * exp( - static_cast< double >( i ) / lambda );
 		delta += ( Vm - x ) * ( Vm - x );
+	 	// cout << i << " (x, Vm) = ( " << x << ", " << Vm << " )\n";
 	}
-	// Error here is larger because it isn't an infinite cable.
-	ASSERT( delta < 1.0e-5, "Testing compartment space" );
-#endif
-	// Get rid of all the compartments.
-	set( n, "destroy" );
+	assert( delta < 1.0e-5 );
+#endif // DO_SPATIAL_TESTS
+	shell->doDelete( cid );
+	cout << "." << flush;
 }
-#endif
+#endif // DO_UNIT_TESTS

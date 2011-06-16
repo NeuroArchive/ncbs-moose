@@ -5,34 +5,17 @@ CXXFLAGS += -I..
 TARGET = utility.o
 
 OBJ = \
-	ArgParser.o	\
-	PathUtility.o	\
-	NumUtil.o	\
-	StringUtil.o	\
-	Property.o	\
-	SparseMatrix.o	\
-	Helpless.o	\
-	help.o		\
+	strutil.o	\
+	types.o 	\
+	setupenv.o	\
+
 
 HEADERS = \
-	ArgParser.h	\
-	PathUtility.h	\
-	NumUtil.h	\
-	Property.h	\
-	StringUtil.h	\
-	utility.h	\
-	SparseMatrix.h
+	strutil.h \
 
 default: $(TARGET)
 
-#$(OBJ): $(HEADERS)
-
-ArgParser.o : ArgParser.h
-PathUtility.o : PathUtility.h
-NumUtil.o: NumUtil.h
-StringUtil.o : StringUtil.h
-Property.o : Property.h
-SparseMatrix.o : SparseMatrix.h
+strutil.o: strutil.h
 
 .cpp.o:
 	$(CXX) $(CXXFLAGS) -I.. $< -c
