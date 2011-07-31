@@ -10,23 +10,34 @@
 TARGET = ksolve.o
 
 OBJ = \
-	KinSparseMatrix.o	\
-	KineticHub.o	\
+	Port.o	\
 	Stoich.o	\
-	GssaStoich.o	\
-	InterSolverFlux.o	\
-	Kintegrator.o	\
-	KineticManager.o	\
-	TestKsolve.o	\
+	KinSparseMatrix.o	\
+	ZombiePool.o \
+	ZombieBufPool.o \
+	ZombieFuncPool.o \
+	ZombieReac.o \
+	ZombieEnz.o \
+	ZombieMMenz.o \
+	ZombieSumFunc.o \
+	RateTerm.o \
+	FuncTerm.o \
+	testKsolve.o	\
+
+	
+	#KineticHub.o	\
+	#Tab.o	\
 
 HEADERS = \
 	../basecode/header.h \
-	../connections/Conn.h \
-	../basecode/Element.h \
-	../kinetics/Molecule.h \
-	../kinetics/Reaction.h \
-	../kinetics/Enzyme.h \
-	../randnum/randnum.h \
+	../basecode/SparseMatrix.h \
+	../basecode/ElementValueFinfo.h \
+	Port.h \
+	Stoich.h \
+	RateTerm.h \
+	FuncTerm.h \
+	KinSparseMatrix.h \
+	../kinetics/Pool.h \
 
 
 # The GSL library (GNU Scientific Library) provides a range of
@@ -36,36 +47,44 @@ HEADERS = \
 # use it. Should be fine for academic use.
 # Optional: Comment out the following three items if not using GSL
 ifeq ($(USE_GSL),1)
-GSL_OBJ = GslIntegrator.o SteadyState.o StateScanner.o
+GSL_OBJ = \
+	GslIntegrator.o
+
 #GSL_LIBS = -L/usr/lib -lgsl -lgslcblas
-GSL_FLAGS = -DUSE_GSL
+#GSL_FLAGS = -DUSE_GSL
 endif
 
 default: $(TARGET)
 
 $(OBJ)	: $(HEADERS)
-KinSparseMatrix.o:	KinSparseMatrix.h
-KineticHub.o:	RateTerm.h KineticHub.h
-Stoich.o:	RateTerm.h Stoich.h KinSparseMatrix.h InterSolverFlux.h Makefile 
-GssaStoich.o:	RateTerm.h Stoich.h KinSparseMatrix.h GssaStoich.h InterSolverFlux.h Makefile
-InterSolverFlux.o:	InterSolverFlux.h
-Kintegrator.o:	Kintegrator.h
-KineticManager.o:	KineticManager.h ../kinetics/KinCompt.h
-TestKsolve.o:	KineticManager.h RateTerm.h Stoich.h KinSparseMatrix.h KineticHub.h Makefile
+Stoich.o:	ZombiePool.h ZombieReac.h ZombieBufPool.h ZombieEnz.h ZombieMMenz.h ../kinetics/Pool.h ../kinetics/Reac.h ../kinetics/BufPool.h ../kinetics/FuncPool.h ../kinetics/Enz.h ../kinetics/MMenz.h ../mesh/Boundary.h ../mesh/ChemMesh.h
+KinSparseMatrix.o:	KinSparseMatrix.h ../basecode/SparseMatrix.h
+ZombiePool.o:	ZombiePool.h
+ZombieBufPool.o:	ZombiePool.h ZombieBufPool.h
+ZombieFuncPool.o:	ZombiePool.h ZombieFuncPool.h ZombieSumFunc.h
+ZombieReac.o:	../kinetics/Reac.h ZombieReac.h
+ZombieEnz.o:	ZombieEnz.h
+ZombieMMenz.o:	ZombieMMenz.h
+ZombieSumFunc.o:	../kinetics/SumFunc.h ZombieSumFunc.h
+testKsolve.o:	../kinetics/ReadKkit.h ../shell/Shell.h
+RateTerm.o:		RateTerm.h
+FuncTerm.o:		FuncTerm.h
+
+#KineticHub.o:	KineticHub.h
 
 ifeq ($(USE_GSL),1)
 #Optional: Comment out the following two items if not using GSL.
 $(GSL_OBJ) : $(HEADERS)
-GslIntegrator.o:	GslIntegrator.h Stoich.h RateTerm.h KinSparseMatrix.h 
-SteadyState.o:	SteadyState.h RateTerm.h KinSparseMatrix.h 
-StateScanner.o:	StateScanner.h
+GslIntegrator.o:	GslIntegrator.h Stoich.h RateTerm.h KinSparseMatrix.h ../basecode/SparseMatrix.h
+#SteadyState.o:	SteadyState.h RateTerm.h KinSparseMatrix.h 
+#StateScanner.o:	StateScanner.h
 endif # !USE_GSL
 
 .cpp.o:
-	$(CXX) $(CXXFLAGS) $(GSL_FLAGS) -I.. -I../basecode -I../kinetics -I../randnum $< -c
+	$(CXX) $(CXXFLAGS) $(GSL_FLAGS) $(SMOLDYN_FLAGS) -I.. -I../basecode -I../msg -I../kinetics -I../mesh $< -c
 
-$(TARGET):		$(OBJ) $(GSL_OBJ) $(HEADERS)
-	$(LD) -r -o $(TARGET) $(OBJ) $(GSL_OBJ) $(GSL_LIBS) 
+$(TARGET):		$(OBJ) $(GSL_OBJ) $(SMOLDYN_OBJ) $(HEADERS)
+	$(LD) -r -o $(TARGET) $(OBJ) $(GSL_OBJ) $(GSL_LIBS) $(SMOLDYN_OBJ) $(SMOLDYN_LIB_PATH) $(SMOLDYN_LIBS) 
 
 clean:
 	-rm -f *.o $(TARGET) core core.*

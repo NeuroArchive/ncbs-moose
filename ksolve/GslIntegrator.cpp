@@ -7,131 +7,93 @@
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
+#include "StoichHeaders.h"
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_odeiv.h>
-#include "RateTerm.h"
-#include "KinSparseMatrix.h"
-#include "InterSolverFlux.h"
-#include "Stoich.h"
 #include "GslIntegrator.h"
 
-const Cinfo* initGslIntegratorCinfo()
+const Cinfo* GslIntegrator::initCinfo()
 {
-	static Finfo* processShared[] =
-	{
-		new DestFinfo( "process",
-			Ftype1< ProcInfo >::global(),
-			RFCAST( &GslIntegrator::processFunc )),
-		new DestFinfo( "reinit",
-			Ftype1< ProcInfo >::global(),
-			RFCAST( &GslIntegrator::reinitFunc )),
-	};
-	static Finfo* process = new SharedFinfo( "process", processShared,
-		sizeof( processShared ) / sizeof( Finfo* ) );
-
-	static Finfo* gslShared[] =
-	{
-		new SrcFinfo( "reinitSrc", Ftype0::global() ),
-		new DestFinfo( "assignStoich",
-			Ftype1< void* >::global(),
-			RFCAST( &GslIntegrator::assignStoichFunc )
-			),
-		new DestFinfo( "setMolN",
-			Ftype2< double, unsigned int >::global(),
-			RFCAST( &GslIntegrator::setMolN )
-			),
-		new SrcFinfo( "requestYsrc", Ftype0::global() ),
-		new DestFinfo( "assignY",
-			Ftype1< double* >::global(),
-			RFCAST( &GslIntegrator::assignY )
-			),
-	};
-
-	static Finfo* gslIntegratorFinfos[] =
-	{
 		///////////////////////////////////////////////////////
 		// Field definitions
 		///////////////////////////////////////////////////////
-		new ValueFinfo( "isInitiatilized", 
-			ValueFtype1< bool >::global(),
-			GFCAST( &GslIntegrator::getIsInitialized ), 
-			&dummyFunc
-		),
-		new ValueFinfo( "method", 
-			ValueFtype1< string >::global(),
-			GFCAST( &GslIntegrator::getMethod ), 
-			RFCAST( &GslIntegrator::setMethod )
-		),
-		new ValueFinfo( "relativeAccuracy", 
-			ValueFtype1< double >::global(),
-			GFCAST( &GslIntegrator::getRelativeAccuracy ), 
-			RFCAST( &GslIntegrator::setRelativeAccuracy )
-		),
-		new ValueFinfo( "absoluteAccuracy", 
-			ValueFtype1< double >::global(),
-			GFCAST( &GslIntegrator::getAbsoluteAccuracy ), 
-			RFCAST( &GslIntegrator::setAbsoluteAccuracy )
-		),
-		new ValueFinfo( "internalDt", 
-			ValueFtype1< double >::global(),
-			GFCAST( &GslIntegrator::getInternalDt ), 
-			RFCAST( &GslIntegrator::setInternalDt )
-		),
+		static ReadOnlyValueFinfo< GslIntegrator, bool > isInitialized( 
+			"isInitialized", 
+			"True if the Stoich message has come in to set parms",
+			&GslIntegrator::getIsInitialized
+		);
+		static ValueFinfo< GslIntegrator, string > method( "method", 
+			"Numerical method to use.",
+			&GslIntegrator::setMethod,
+			&GslIntegrator::getMethod 
+		);
+		static ValueFinfo< GslIntegrator, double > relativeAccuracy( 
+			"relativeAccuracy", 
+			"Accuracy criterion",
+			&GslIntegrator::setRelativeAccuracy,
+			&GslIntegrator::getRelativeAccuracy
+		);
+		static ValueFinfo< GslIntegrator, double > absoluteAccuracy( 
+			"absoluteAccuracy", 
+			"Another accuracy criterion",
+			&GslIntegrator::setAbsoluteAccuracy,
+			&GslIntegrator::getAbsoluteAccuracy
+		);
+		static ValueFinfo< GslIntegrator, double > internalDt( 
+			"internalDt", 
+			"internal timestep to use.",
+			&GslIntegrator::setInternalDt,
+			&GslIntegrator::getInternalDt
+		);
 
 		///////////////////////////////////////////////////////
 		// DestFinfo definitions
 		///////////////////////////////////////////////////////
-		new DestFinfo( "assignStoich",
-			Ftype1< void* >::global(),
-			RFCAST( &GslIntegrator::assignStoichFunc )
-			),
+		static DestFinfo stoich( "stoich",
+			"Handle data from Stoich",
+			new OpFunc1< GslIntegrator, Id >( &GslIntegrator::stoich )
+		);
+
+		static DestFinfo process( "process",
+			"Handles process call",
+			new ProcOpFunc< GslIntegrator >( &GslIntegrator::process ) );
+		static DestFinfo reinit( "reinit",
+			"Handles reinit call",
+			new ProcOpFunc< GslIntegrator >( &GslIntegrator::reinit ) );
 		///////////////////////////////////////////////////////
 		// Shared definitions
 		///////////////////////////////////////////////////////
-		new SharedFinfo( "gsl", gslShared, 
-				sizeof( gslShared )/ sizeof( Finfo* ),
-					"This is connected to the Stoich object." ),
-		process,
-	};
+		static Finfo* procShared[] = {
+			&process, &reinit
+		};
+		static SharedFinfo proc( "proc",
+			"Shared message for process and reinit",
+			procShared, sizeof( procShared ) / sizeof( const Finfo* )
+		);
 
-	static SchedInfo schedInfo[] = { { process, 0, 0 } };
-
-	static string doc[] =
+	static Finfo* gslIntegratorFinfos[] =
 	{
-		"Name", "GslIntegrator",
-		"Author", "Upinder S. Bhalla, June 2006, NCBS",
-		"Description", "GslIntegrator: Integrator class for using the GSL ODE functions to do numerical "
-				"integration in the Kinetic Solver set.This is currently set up to work only with "
-				"the Stoich class, which represents biochemical networks.The goal is to have a "
-				"standard interface so different solvers can work with different kinds of calculation.",
-	};	
+		&isInitialized,		// Value
+		&method,			// Value
+		&relativeAccuracy,	// Value
+		&absoluteAccuracy,	// Value
+		&stoich,			// DestFinfo
+		&proc,				// SharedFinfo
+	};
 	
 	static  Cinfo gslIntegratorCinfo(
-		doc,
-		sizeof( doc ) / sizeof( string ),		
-		initNeutralCinfo(),
+		"GslIntegrator",
+		Neutral::initCinfo(),
 		gslIntegratorFinfos,
 		sizeof(gslIntegratorFinfos)/sizeof(Finfo *),
-		ValueFtype1< GslIntegrator >::global(),
-			schedInfo, 1
+		new Dinfo< GslIntegrator >
 	);
 
 	return &gslIntegratorCinfo;
 }
 
-static const Cinfo* gslIntegratorCinfo = initGslIntegratorCinfo();
-
-/*
-static const Slot integrateSlot =
-	initGslIntegratorCinfo()->getSlot( "integrateSrc" );
-	*/
-static const Slot reinitSlot =
-	initGslIntegratorCinfo()->getSlot( "gsl.reinitSrc" );
-static const Slot requestYslot =
-	initGslIntegratorCinfo()->getSlot( "gsl.requestYsrc" );
-
+static const Cinfo* gslIntegratorCinfo = GslIntegrator::initCinfo();
 
 ///////////////////////////////////////////////////
 // Basic class function definitions
@@ -141,39 +103,49 @@ GslIntegrator::GslIntegrator()
 {
 	isInitialized_ = 0;
 	method_ = "rk5";
+#ifdef USE_GSL
 	gslStepType_ = gsl_odeiv_step_rkf45;
 	gslStep_ = 0;
-	nVarMols_ = 0;
+#endif // USE_GSL
+	nVarPools_ = 0;
 	absAccuracy_ = 1.0e-6;
 	relAccuracy_ = 1.0e-6;
 	internalStepSize_ = 1.0e-4;
-	y_ = 0;
+	// y_ = 0;
         gslEvolve_ = NULL;
         gslControl_ = NULL;
-        
-        
+}
+
+GslIntegrator::~GslIntegrator()
+{
+	if ( gslEvolve_ )
+		gsl_odeiv_evolve_free( gslEvolve_ );
+	if ( gslControl_ )
+		gsl_odeiv_control_free( gslControl_ );
+	if ( gslStep_ )
+		gsl_odeiv_step_free( gslStep_ );
+	/*
+	if ( y_ )
+		delete[] y_;
+		*/
 }
 
 ///////////////////////////////////////////////////
 // Field function definitions
 ///////////////////////////////////////////////////
 
-bool GslIntegrator::getIsInitialized( Eref e )
+bool GslIntegrator::getIsInitialized() const
 {
-	return static_cast< const GslIntegrator* >( e.data() )->isInitialized_;
+	return isInitialized_;
 }
 
-string GslIntegrator::getMethod( Eref e )
+string GslIntegrator::getMethod() const
 {
-	return static_cast< const GslIntegrator* >( e.data() )->method_;
+	return method_;
 }
-void GslIntegrator::setMethod( const Conn* c, string method )
+void GslIntegrator::setMethod( string method )
 {
-	static_cast< GslIntegrator* >( c->data() )->innerSetMethod( method );
-}
-
-void GslIntegrator::innerSetMethod( const string& method )
-{
+#ifdef USE_GSL
 	method_ = method;
 	gslStepType_ = 0;
 	// cout << "in void GslIntegrator::innerSetMethod( string method ) \n";
@@ -203,79 +175,57 @@ void GslIntegrator::innerSetMethod( const string& method )
 			method << "' not known, using rk5\n";
 		gslStepType_ = gsl_odeiv_step_rkf45;
 	}
+#endif // USE_GSL
 }
 
-
-double GslIntegrator::getRelativeAccuracy( Eref e )
+double GslIntegrator::getRelativeAccuracy() const
 {
-	return static_cast< const GslIntegrator* >( e.data() )->relAccuracy_;
+	return relAccuracy_;
 }
-void GslIntegrator::setRelativeAccuracy( const Conn* c, double value )
+void GslIntegrator::setRelativeAccuracy( double value )
 {
-	static_cast< GslIntegrator* >( c->data() )->relAccuracy_ = value;
-}
-
-double GslIntegrator::getAbsoluteAccuracy( Eref e )
-{
-	return static_cast< const GslIntegrator* >( e.data() )->absAccuracy_;
-}
-void GslIntegrator::setAbsoluteAccuracy( const Conn* c, double value )
-{
-	static_cast< GslIntegrator* >( c->data() )->absAccuracy_ = value;
+	relAccuracy_ = value;
 }
 
-double GslIntegrator::getInternalDt( Eref e )
+double GslIntegrator::getAbsoluteAccuracy() const
 {
-	return static_cast< const GslIntegrator* >( e.data() )->internalStepSize_;
+	return absAccuracy_;
 }
-void GslIntegrator::setInternalDt( const Conn* c, double value )
+void GslIntegrator::setAbsoluteAccuracy( double value )
 {
-	static_cast< GslIntegrator* >( c->data() )->internalStepSize_ = value;
+	absAccuracy_ = value;
+}
+
+double GslIntegrator::getInternalDt() const
+{
+	return internalStepSize_;
+}
+void GslIntegrator::setInternalDt( double value )
+{
+	internalStepSize_ = value;
 }
 
 ///////////////////////////////////////////////////
 // Dest function definitions
 ///////////////////////////////////////////////////
 
-void GslIntegrator::setMolN( const Conn* c, double y, unsigned int i )
-{
-	static_cast< GslIntegrator* >( c->data() )->
-		innerSetMolN( y, i );
-}
-
-void GslIntegrator::innerSetMolN( double y, unsigned int i ) 
-{
-	if ( i >= nVarMols_ ) {
-		cout << "Error: GslIntegrator::innerSetMolN: i >=nVarMols: " <<
-			i << " >= " << nVarMols_ << endl;
-		return;
-	}
-	y_[i] = y;
-}
-
-void GslIntegrator::assignStoichFunc( const Conn* c, void* stoich )
-{
-	static_cast< GslIntegrator* >( c->data() )->
-		assignStoichFuncLocal( stoich );
-}
-
 /**
  * This function should also set up the sizes, and it should be at 
  * allocate, not reinit time.
  */
-void GslIntegrator::assignStoichFuncLocal( void* stoich ) 
+void GslIntegrator::stoich( Id stoichId )
 {
-	Stoich* s = static_cast< Stoich* >( stoich );
-		// memcpy( &S_[0], y, nVarMolsBytes_ );
-	// y_ = s->S();
-	
-	nVarMols_ = s->nVarMols();
-	y_ = new double[ nVarMols_ ];
-	dynamicBuffers_ = s->dynamicBuffers(); // filthy, just a ptr copy
+#ifdef USE_GSL
+	Stoich* s = reinterpret_cast< Stoich* >( stoichId.eref().data() );
+	nVarPools_ = s->getNumVarPools();
+	y_ = s->getY();
+	/*
+	y_ = new double[ nVarPools_ ];
 
-	memcpy( y_, s->Sinit(), nVarMols_ * sizeof( double ) );
-	for ( unsigned int i = 0; i < nVarMols_; ++i )
+	memcpy( y_, s->Sinit(), nVarPools_ * sizeof( double ) );
+	for ( unsigned int i = 0; i < nVarPools_; ++i )
 		assert( !isnan( y_[ i ] ) && y_[i] >= 0.0 );
+		*/
 
 	isInitialized_ = 1;
         // Allocate GSL functions if not already allocated,
@@ -286,12 +236,12 @@ void GslIntegrator::assignStoichFuncLocal( void* stoich )
             gsl_odeiv_step_free(gslStep_);
         }
         
-        gslStep_ = gsl_odeiv_step_alloc( gslStepType_, nVarMols_ );
+        gslStep_ = gsl_odeiv_step_alloc( gslStepType_, nVarPools_ );
         
    	assert( gslStep_ != 0 );
         if ( !gslEvolve_ )
         {
-            gslEvolve_ = gsl_odeiv_evolve_alloc(nVarMols_);
+            gslEvolve_ = gsl_odeiv_evolve_alloc(nVarPools_);
         }
         else
         {
@@ -312,28 +262,9 @@ void GslIntegrator::assignStoichFuncLocal( void* stoich )
         
 	gslSys_.function = &Stoich::gslFunc;
 	gslSys_.jacobian = 0;
-	gslSys_.dimension = nVarMols_;
-	gslSys_.params = stoich;
-}
-
-/**
- * Copies over the values in S to the y_ vector of the GSL.
- */
-void GslIntegrator::assignY( const Conn* c, double* S )
-{
-	static_cast< GslIntegrator* >( c->data() )->innerAssignY( S );
-}
-
-void GslIntegrator::innerAssignY( double* S ) 
-{
-	 assert( nVarMols_ > 0 );
-	 memcpy( y_, S, nVarMols_ * sizeof( double ) );
-}
-
-void GslIntegrator::processFunc( const Conn* c, ProcInfo info )
-{
-	static_cast< GslIntegrator* >( c->data() )->
-		innerProcessFunc( c->target(), info );
+	gslSys_.dimension = nVarPools_;
+	gslSys_.params = static_cast< void* >( s );
+#endif // USE_GSL
 }
 
 /**
@@ -343,10 +274,11 @@ void GslIntegrator::processFunc( const Conn* c, ProcInfo info )
  * The latter is harder to manage and works best if there is only this
  * one integrator running the simulation. Here we do the former.
  */
-void GslIntegrator::innerProcessFunc( Eref e, ProcInfo info )
+void GslIntegrator::process( const Eref& e, ProcPtr info )
 {
-	double nextt = info->currTime_ + info->dt_;
-	double t = info->currTime_;
+#ifdef USE_GSL
+	double nextt = info->currTime + info->dt;
+	double t = info->currTime;
 	while ( t < nextt ) {
 		int status = gsl_odeiv_evolve_apply ( 
 			gslEvolve_, gslControl_, gslStep_, &gslSys_, 
@@ -355,18 +287,21 @@ void GslIntegrator::innerProcessFunc( Eref e, ProcInfo info )
 		if ( status != GSL_SUCCESS )
 			break;
 
+		/*
 		// Zero out buffered molecules. Perhaps this can be ignored
 		for( vector< unsigned int >::const_iterator 
 			i = dynamicBuffers_->begin(); 
 			i != dynamicBuffers_->end(); ++i )
 			y_[ *i ] = 0.0;
+			*/
 	}
+#endif // USE_GSL
 }
 
-void GslIntegrator::reinitFunc( const Conn* c, ProcInfo info )
+void GslIntegrator::reinit( const Eref& e, ProcPtr info )
 {
     // Everything is done in assignStoichFuncLocal
 	// But the init function should somehow move here.
-	send0( c->target(), reinitSlot );
+	// send0( c->target(), reinitSlot );
 	// y_[] = yprime_[]
 }
