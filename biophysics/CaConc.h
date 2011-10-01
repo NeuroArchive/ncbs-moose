@@ -36,48 +36,36 @@
 class CaConc
 {
 	public:
-		CaConc()
-		{
-			Ca_ = 0.0;
-			CaBasal_ = 0.0;
-			tau_ = 1.0;
-			B_ = 1.0;
-                        thickness_ = 0.0;
-                        ceiling_ = DBL_MAX;
-                        floor_ = -DBL_MAX;
-		}
-
+		CaConc();
 		///////////////////////////////////////////////////////////////
 		// Message handling functions
 		///////////////////////////////////////////////////////////////
-		static void reinitFunc( const Conn* c, ProcInfo info );
-		void innerReinitFunc( const Conn* c );
-		static void processFunc( const Conn* c, ProcInfo info );
-		void innerProcessFunc( const Conn* conn, ProcInfo info );
+		void reinit( const Eref&, ProcPtr info );
+		void process( const Eref&, ProcPtr info );
 
-		static void currentFunc( const Conn* c, double I );
-		static void currentFractionFunc(
-				const Conn* c, double I, double fraction );
-		static void increaseFunc( const Conn* c, double I );
-		static void decreaseFunc( const Conn* c, double I );
-		static void basalMsgFunc( const Conn* c, double value );
+		void current( double I );
+		void currentFraction( double I, double fraction );
+		void increase( double I );
+		void decrease( double I );
 		///////////////////////////////////////////////////////////////
 		// Field handling functions
 		///////////////////////////////////////////////////////////////
-		static void setCa( const Conn* c, double val );
-		static double getCa( Eref e );
-		static void setCaBasal( const Conn* c, double val );
-		static double getCaBasal( Eref e );
-		static void setTau( const Conn* c, double val );
-		static double getTau( Eref e );
-		static void setB( const Conn* c, double val );
-		static double getB( Eref e );
-                static void setThickness( const Conn* c, double val );
-                static double getThickness( Eref e);
-                static void setCeiling( const Conn* c, double val );
-                static double getCeiling( Eref e);
-                static void setFloor( const Conn* c, double val );
-                static double getFloor( Eref e);
+		void setCa( double val );
+		double getCa() const;
+		void setCaBasal( double val );
+		double getCaBasal() const;
+		void setTau( double val );
+		double getTau() const;
+		void setB( double val );
+		double getB() const;
+        void setThickness( double val );
+        double getThickness() const;
+        void setCeiling( double val );
+        double getCeiling() const;
+        void setFloor( double val );
+        double getFloor() const;
+
+		static const Cinfo* initCinfo();
 	private:
 		double Ca_;
 		double CaBasal_;
@@ -85,11 +73,10 @@ class CaConc
 		double B_;
 		double c_;
 		double activation_;
-                double thickness_;
-                double ceiling_;
-                double floor_;
+		double thickness_;
+		double ceiling_;
+		double floor_;
 };
 
-extern const Cinfo* initCaConcCinfo();
 
 #endif // _CACONC_H

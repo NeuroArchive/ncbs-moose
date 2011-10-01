@@ -13,8 +13,8 @@
  * using the Stoich class as a base. 
  */
 
-#ifndef _gssaStoich_h
-#define _gssaStoich_h
+#ifndef _GssaStoich_h
+#define _GssaStoich_h
 class GssaStoich: public Stoich
 {
 	public:
@@ -23,33 +23,29 @@ class GssaStoich: public Stoich
 		///////////////////////////////////////////////////
 		// Msg Dest function definitions
 		///////////////////////////////////////////////////
-		static void reinitFunc( const Conn* c );
-		static void processFunc( const Conn* c, ProcInfo info );
-/*
-		static void integrateFunc( 
-			const Conn* c, vector< double >* v, double dt );
-*/
-		//void clear( Eref stoich );
+		void process( const Eref& e, ProcPtr p );
+		void reinit( const Eref& e, ProcPtr p );
 
 		///////////////////////////////////////////////////
 		// Field access functions.
 		///////////////////////////////////////////////////
-		static string getMethod( Eref e );
-		static void setMethod( const Conn* c, string method );
-		void innerSetMethod( const string& method );
-		//static string getPath( Eref e );
-		//static void setPath( const Conn* c, string value );
-		//void localSetPath( Eref stoich, const string& value );
+		string getMethod() const;
+		void setMethod( string method );
+
+		// Overrides the Stoich version.
+		void setPath( const Eref& e, const Qinfo* q, string path );
+
 		///////////////////////////////////////////////////
 		// Functions used by the GillespieIntegrator
 		///////////////////////////////////////////////////
-		void rebuildMatrix( Eref stoich, vector< Id >& ret );
+		void rebuildMatrix();
 		void updateDependentRates( const vector< unsigned int >& deps );
 		void updateDependentMathExpn( 
 			const vector< unsigned int >& deps );
 		void updateAllRates();
 		unsigned int pickReac();
-		void innerProcessFunc( Eref e, ProcInfo info );
+
+		static const Cinfo* initCinfo();
 	private:
 
 		/**
@@ -87,11 +83,18 @@ class GssaStoich: public Stoich
 		void updateRates( vector< double>* yprime, double dt  );
 
 		// virtual func to handle externally imposed changes in mol N
-		void innerSetMolN( const Conn* c, double y, unsigned int i );
+		void innerSetMolN( double y, unsigned int i );
 		
 		///////////////////////////////////////////////////
 		// Internal fields.
 		///////////////////////////////////////////////////
+
+		/**
+		 * Vector of rates of reactions. This is a state vector because
+		 * we don't recalculate it each time, only the subset that are
+		 * changed by the last reaction.
+		 */
+		vector< double > v_;
 
 		/**
 		 * Specifies method to use for calculation. Currently
@@ -154,4 +157,4 @@ class GssaStoich: public Stoich
 		KinSparseMatrix transN_; 
 
 };
-#endif // _Stoich_h
+#endif // _GssaStoich_h

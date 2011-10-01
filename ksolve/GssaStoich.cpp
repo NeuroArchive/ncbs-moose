@@ -6,88 +6,100 @@
 ** GNU Lesser General Public License version 2.1
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
+#include "StoichHeaders.h"
+#include "ElementValueFinfo.h"
+#include "Pool.h"
+#include "BufPool.h"
+#include "FuncPool.h"
+#include "Reac.h"
+#include "Enz.h"
+#include "MMenz.h"
+#include "SumFunc.h"
+#include "MathFunc.h"
+#include "Boundary.h"
+#include "MeshEntry.h"
+#include "ChemMesh.h"
+#include "ZombiePool.h"
+#include "ZombieBufPool.h"
+#include "ZombieFuncPool.h"
+#include "ZombieReac.h"
+#include "ZombieEnz.h"
+#include "ZombieMMenz.h"
+#include "ZombieSumFunc.h"
 
-#include <map>
-#include <algorithm>
-#include "moose.h"
-#include "../element/Wildcard.h"
-#include "RateTerm.h"
-#include "KinSparseMatrix.h"
-#include "InterSolverFlux.h"
-#include "Stoich.h"
+#include "../shell/Shell.h"
+
 #include "GssaStoich.h"
-#include "randnum.h"
+#include "../randnum/randnum.h"
 
-// Protects against the total propensity exceeding the cumulative
-// sum of propensities, atot. We do a lot of adding and subtracting of
-// dependency terms from atot. Roundoff error will eventually cause
-// this to drift from the true sum. To guarantee that we never lose
-// the propensity of the last reaction, this safety factor scales the
-// first calculation of atot to be slightly larger. Periodically this
-// will cause the reaction picking step to exceed the last reaction 
-// index. This is safe, we just pick another random number.  
-// This will happen rather infrequently.
-// That is also a good time to update the cumulative sum.
-// A double should have >15 digits, so cumulative error will be much
-// smaller than this.
+/**
+ * The SAFETY_FACTOR Protects against the total propensity exceeding
+ * the cumulative
+ * sum of propensities, atot. We do a lot of adding and subtracting of
+ * dependency terms from atot. Roundoff error will eventually cause
+ * this to drift from the true sum. To guarantee that we never lose
+ * the propensity of the last reaction, this safety factor scales the
+ * first calculation of atot to be slightly larger. Periodically this
+ * will cause the reaction picking step to exceed the last reaction 
+ * index. This is safe, we just pick another random number.  
+ * This will happen rather infrequently.
+ * That is also a good time to update the cumulative sum.
+ * A double should have >15 digits, so cumulative error will be much
+ * smaller than this.
+ */
 const double SAFETY_FACTOR = 1.0 + 1.0e-9;
 
-const Cinfo* initGssaStoichCinfo()
+const Cinfo* GssaStoich::initCinfo()
 {
-	static Finfo* processShared[] =
-	{
-		new DestFinfo( "process",
-			Ftype1< ProcInfo >::global(),
-			RFCAST( &GssaStoich::processFunc )),
-		new DestFinfo( "reinit",
-			Ftype1< ProcInfo >::global(),
-			RFCAST( &GssaStoich::reinitFunc )),
+	//////////////////////////////////////////////////////////////
+	// Process func Definitions
+	//////////////////////////////////////////////////////////////
+	static DestFinfo process( "process",
+		"Handles process call",
+		new ProcOpFunc< GssaStoich >( &GssaStoich::process ) );
+	static DestFinfo reinit( "reinit",
+		"Handles reinint call",
+		new ProcOpFunc< GssaStoich >( &GssaStoich::reinit ) );
+	static Finfo* procShared[] = {
+		&process, &reinit
 	};
 
-	static Finfo* process = new SharedFinfo( "process", processShared,
-		sizeof( processShared ) / sizeof( Finfo* ) );
+	static SharedFinfo proc( "proc",
+		"Shared message for process and reinit",
+		procShared, sizeof( procShared ) / sizeof( const Finfo* )
+	);
 
+	///////////////////////////////////////////////////////
+	// Field definitions
+	///////////////////////////////////////////////////////
+	static ElementValueFinfo< GssaStoich, string > path(
+		"path",
+		"Path of reaction system to take over and solve",
+		&GssaStoich::setPath,
+		&GssaStoich::getPath
+	);
+
+	static ValueFinfo< GssaStoich, string > method( 
+		"method", 
+		"Numerical method to use for the GssaStoich. The default"
+		"and currently the only method is Gillespie1.",
+		&GssaStoich::setMethod,
+		&GssaStoich::getMethod
+	);
+
+	///////////////////////////////////////////////////////
 	//These are the fields of the stoich class
 	static Finfo* gssaStoichFinfos[] =
 	{
-		///////////////////////////////////////////////////////
-		// Field definitions
-		///////////////////////////////////////////////////////
-		new ValueFinfo( "method", 
-			ValueFtype1< string >::global(),
-			GFCAST( &GssaStoich::getMethod ), 
-			RFCAST( &GssaStoich::setMethod )
-		),
-		/*
-		* Inherited. Get rid of after testing.
-		new ValueFinfo( "path", 
-			ValueFtype1< string >::global(),
-			GFCAST( &GssaStoich::getPath ), 
-			RFCAST( &GssaStoich::setPath )
-		),
-		*/
-		///////////////////////////////////////////////////////
-		// MsgSrc definitions
-		///////////////////////////////////////////////////////
-		///////////////////////////////////////////////////////
-		// MsgDest definitions
-		///////////////////////////////////////////////////////
-		///////////////////////////////////////////////////////
-		// Shared definitions
-		///////////////////////////////////////////////////////
-/*
-		new SharedFinfo( "integrate", integrateShared, 
-				sizeof( integrateShared )/ sizeof( Finfo* ) ),
-		new SharedFinfo( "gssa", gssaShared, 
-				sizeof( gssaShared )/ sizeof( Finfo* ) ),
-*/
-		process,
+		&path,
+		&method,
+		&proc,
 	};
-	static SchedInfo schedInfo[] = { { process, 0, 0 } };
+
 	static string doc[] =
 	{
 		"Name", "GssaStoich",
-		"Author", "Upinder S. Bhalla, 2008, NCBS",
+		"Author", "Upinder S. Bhalla, 2008, 2011, NCBS",
 		"Description", "GssaStoich: Gillespie Stochastic Simulation Algorithm object.Closely based on the "
 		"Stoich object and inherits its handling functions for constructing the matrix. Sets up "
 		"stoichiometry matrix based calculations from a\nwildcard path for the reaction system.Knows how to "
@@ -97,19 +109,17 @@ const Cinfo* initGssaStoichCinfo()
 	};
 
 	static Cinfo gssaStoichCinfo(
-		doc,
-		sizeof( doc ) / sizeof( string ),		
-		initStoichCinfo(),
+		"GssaStoich",
+		Stoich::initCinfo(),
 		gssaStoichFinfos,
 		sizeof( gssaStoichFinfos )/sizeof(Finfo *),
-		ValueFtype1< GssaStoich >::global(),
-			schedInfo, 1
-		);
+		new Dinfo< GssaStoich >()
+	);
 
 	return &gssaStoichCinfo;
 }
 
-static const Cinfo* gssaStoichCinfo = initGssaStoichCinfo();
+static const Cinfo* gssaStoichCinfo = GssaStoich::initCinfo();
 
 ///////////////////////////////////////////////////
 // Class function definitions
@@ -118,105 +128,45 @@ static const Cinfo* gssaStoichCinfo = initGssaStoichCinfo();
 GssaStoich::GssaStoich()
 	: Stoich(), atot_( 0.0 ), t_( 0.0 )
 {
-	useOneWayReacs_ = 1;
+	useOneWay_ = 1;
 }
 		
 ///////////////////////////////////////////////////
 // Field function definitions
 ///////////////////////////////////////////////////
 
-string GssaStoich::getMethod( Eref e )
+string GssaStoich::getMethod() const
 {
-	return static_cast< const GssaStoich* >( e.data() )->method_;
-}
-void GssaStoich::setMethod( const Conn* c, string method )
-{
-	static_cast< GssaStoich* >( c->data() )->innerSetMethod( method );
+	return method_;
 }
 
-void GssaStoich::innerSetMethod( const string& method )
+void GssaStoich::setMethod( string method )
 {
 	method_ = method;
-	//cout << "in void GssaStoich::innerSetMethod( " << method << ") \n";
-/*
-	gssaMethod = G1;
-	if ( method == "tauLeap" ) {
-		gssaMethod = TauLeap;
-	}
-*/
 }
 
-/*
-string GssaStoich::getPath( Eref e ) {
-	return static_cast< const GssaStoich* >( e.data() )->path_;
-}
-
-void GssaStoich::setPath( const Conn* c, string value ) {
-	static_cast< GssaStoich* >( c->data() )->
-	localSetPath( c->target(), value );
-}
-
-void GssaStoich::localSetPath( Eref stoich, const string& value )
+void GssaStoich::setPath( const Eref& e, const Qinfo* q, string path )
 {
-	path_ = value;
-	vector< Id > ret;
-	wildcardFind( path_, ret );
-	clear( stoich );
-	if ( ret.size() > 0 ) {
-		rebuildMatrix( stoich, ret );
-	} else {
-		cout << "No objects to simulate in path '" << value << "'\n";
-	}
+	Stoich::setPath( e, q, path );
+	rebuildMatrix();
 }
-*/
 
 ///////////////////////////////////////////////////
-// Dest function definitions
+// Setup funcs
 ///////////////////////////////////////////////////
-
-// Static func
-void GssaStoich::reinitFunc( const Conn* c )
-{
-	Stoich::reinitFunc( c );
-	GssaStoich* s = static_cast< GssaStoich* >( c->data() );
-	// Here we round off up or down with prob depending on fractional
-	// part of the init value.
-	for ( vector< double >::iterator i = s->S_.begin(); 
-		i != s->S_.end(); ++i ) {
-		double base = floor( *i );
-		double frac = *i - base;
-		if ( mtrand() > frac )
-			*i = base;
-		else
-			*i = base + 1.0;
-	}
-	s->t_ = 0.0;
-	s->updateAllRates();
-}
-
-/*
- * This function could be much tighter if I maintain a dependency list
- * from molecules to reactions. If so I would only have to update the
- * affected reaction rates. But I don't expect to have
- * to assign molecules very often. So I just update the whole lot.
- */
-void GssaStoich::innerSetMolN( const Conn* c, double y, unsigned int i )
-{
-	Stoich::innerSetMolN( c, y, i );
-	GssaStoich* s = static_cast< GssaStoich* >( c->data() );
-	s->updateAllRates();
-}
 
 /**
  * Virtual function to make the data structures from the 
  * object oriented specification of the signaling network.
+ * Assumes that the Stoich::setPath has already been invoked.
  */
-void GssaStoich::rebuildMatrix( Eref stoich, vector< Id >& ret )
+void GssaStoich::rebuildMatrix()
 {
-	Stoich::rebuildMatrix( stoich, ret );
 	// Stuff here to set up the dependencies.
 	unsigned int numRates = N_.nColumns();
 	assert ( numRates == rates_.size() );
+
+	v_.resize( numReac_, 0 );
 
 	// Here we fix the issue of having a single substrate at
 	// more than first order. Its rate must be computed differently
@@ -224,30 +174,27 @@ void GssaStoich::rebuildMatrix( Eref stoich, vector< Id >& ret )
 	// each order.
 	for ( unsigned int i = 0; i < numRates; ++i ) {
 		vector< unsigned int > molIndex;
-		if ( rates_[i]->getReactants( molIndex, S_ ) > 1 ) {
+		if ( rates_[i]->getReactants( molIndex ) > 1 ) {
 			if ( molIndex.size() == 2 && molIndex[0] == molIndex[1] ) {
 				RateTerm* oldRate = rates_[i];
 				rates_[ i ] = new StochSecondOrderSingleSubstrate(
-					oldRate->getR1(), &S_[ molIndex[ 0 ] ]
+					oldRate->getR1(), molIndex[ 0 ]
 				);
 				delete oldRate;
 			} else if ( molIndex.size() > 2 ) {
 				RateTerm* oldRate = rates_[ i ];
-				vector< const double* > v;
-				for ( vector< unsigned int >::iterator j = 
-					molIndex.begin(); j != molIndex.end(); ++j )
-					v.push_back( &S_[ *j ] );
-				rates_[ i ] = new StochNOrder( oldRate->getR1(), v);
+				rates_[ i ] = new StochNOrder( oldRate->getR1(), molIndex);
 				delete oldRate;
 			}
 		}
 	}
 
 	// Here we set up dependency stuff. First the basic reac deps.
-	transN_.setSize( numRates, N_.nRows() );
-	assert( N_.nRows() == nMols_ );
-	N_.transpose( transN_ );
-	transN_.truncateRow( nVarMols_ );
+	// transN_.setSize( numRates, N_.nRows() );
+	assert( N_.nRows() == S_[0].size() );
+	transN_ = N_;
+	transN_.transpose();
+	transN_.truncateRow( numVarPools_ );
 	dependency_.resize( numRates );
 	for ( unsigned int i = 0; i < numRates; ++i ) {
 		transN_.getGillespieDependence( i, dependency_[ i ] );
@@ -281,7 +228,7 @@ void GssaStoich::fillMmEnzDep()
 			rates_[ i ] );
 		if ( mme ) {
 			vector< unsigned int > reactants;
-			mme->getReactants( reactants, S_ );
+			mme->getReactants( reactants );
 			if ( reactants.size() > 1 )
 				enzMolMap[ reactants.front() ] = i; // front is enzyme.
 		}
@@ -290,6 +237,18 @@ void GssaStoich::fillMmEnzDep()
 	// Use the map to fill in deps.
 	for ( unsigned int i = 0; i < numRates; ++i ) {
 		// Extract the row of all molecules that depend on the reac.
+		const int* entry;
+		const unsigned int* colIndex;
+
+		unsigned int numInRow = transN_.getRow( i, &entry, &colIndex );
+		for( unsigned int j = 0; j < numInRow; ++j ) {
+			map< unsigned int, unsigned int >::iterator pos = 
+				enzMolMap.find( colIndex[j] );
+			if ( pos != enzMolMap.end() )
+				dependency_[i].push_back( pos->second );
+		}
+
+		/*
 		transN_.getRowIndices( i, indices );
 		for ( vector< unsigned int >::iterator 
 			j = indices.begin(); j != indices.end(); ++j )
@@ -299,6 +258,7 @@ void GssaStoich::fillMmEnzDep()
 			if ( pos != enzMolMap.end() )
 				dependency_[i].push_back( pos->second );
 		}
+		*/
 	}
 }
 
@@ -318,6 +278,23 @@ void GssaStoich::fillMathDep()
 		vector< unsigned int >& dep = dependentMathExpn_[ i ];
 		dep.resize( 0 );
 		// Extract the row of all molecules that depend on the reac.
+		// However, the sumTotals and other math dep stuff needs to be
+		// redefined to use the math object.
+		/*
+		const int* entry;
+		const unsigned int* colIndex;
+		unsigned int numInRow = transN_.getRow( i, &entry, &colIndex );
+		for ( unsigned int j = 0; j < sumTotals_.size(); ++j ) {
+			if ( sumTotals_[ j ].hasInput( colIndex, S_ ) ) {
+				insertMathDepReacs( j, i );
+				dep.push_back( j );
+			}
+		}
+		*/
+
+
+
+		/*
 		transN_.getRowIndices( i, indices );
 		// This looks like N^2, but usually there will be very few
 		// SumTots, so a simple linear scan should do.
@@ -327,16 +304,19 @@ void GssaStoich::fillMathDep()
 				dep.push_back( j );
 			}
 		}
+		*/
 	}
 }
 
 /**
  * Inserts reactions that depend on molecules modified by the
  * specified MathExpn, into the dependency list.
+ * Later.
  */
 void GssaStoich::insertMathDepReacs( unsigned int mathDepIndex,
 	unsigned int firedReac )
 {
+	/*
 	unsigned int molIndex = sumTotals_[ mathDepIndex ].target( S_ );
 	vector< unsigned int > reacIndices;
 
@@ -345,24 +325,55 @@ void GssaStoich::insertMathDepReacs( unsigned int mathDepIndex,
 		vector< unsigned int >& dep = dependency_[ firedReac ];
 		dep.insert( dep.end(), reacIndices.begin(), reacIndices.end() );
 	}
+	*/
 }
+
+/*
+void makeVecUnique( vector< unsigned int >& v )
+{
+	vector< unsigned int >::iterator pos = unique( v.begin(), v.end() );
+	v.resize( pos - v.begin() );
+}
+*/
+
 
 // Clean up dependency lists: Ensure only unique entries.
 void GssaStoich::makeReacDepsUnique()
 {
 	unsigned int numRates = N_.nColumns();
 	for ( unsigned int i = 0; i < numRates; ++i ) {
-		makeVecUnique( dependency_[ i ] );
-		/*
+//		makeVecUnique( dependency_[ i ] );
 		vector< unsigned int >& dep = dependency_[ i ];
 		/// STL stuff follows, with the usual weirdness.
 		vector< unsigned int >::iterator pos = 
 			unique( dep.begin(), dep.end() );
 		dep.resize( pos - dep.begin() );
-		// copy( dep.begin(), pos, ret.begin() );
-		*/
 	}
 }
+
+///////////////////////////////////////////////////
+// Runtime funcs
+///////////////////////////////////////////////////
+
+void GssaStoich::reinit( const Eref& e, ProcPtr p )
+{
+	Stoich::innerReinit();
+	// Here we round off up or down with prob depending on fractional
+	// part of the init value.
+	for ( unsigned int j = 0; j < numMeshEntries_; ++j ) {
+		for ( vector< double >::iterator i = S_[j].begin(); i != S_[j].end(); ++i ) {
+			double base = floor( *i );
+			double frac = *i - base;
+			if ( mtrand() > frac )
+				*i = base;
+			else
+				*i = base + 1.0;
+		}
+	}
+	t_ = 0.0;
+	updateAllRates();
+}
+
 
 unsigned int GssaStoich::pickReac()
 {
@@ -380,15 +391,9 @@ unsigned int GssaStoich::pickReac()
 	return v_.size();
 }
 
-void GssaStoich::processFunc( const Conn* c, ProcInfo info )
+void GssaStoich::process( const Eref& e, ProcPtr info )
 {
-	static_cast< GssaStoich* >( c->data() )->
-		innerProcessFunc( c->target(), info );
-}
-
-void GssaStoich::innerProcessFunc( Eref e, ProcInfo info )
-{
-	double nextt = info->currTime_ + info->dt_;
+	double nextt = info->currTime + info->dt;
 	while ( t_ < nextt ) {
 		// Figure out when the reaction will occur. The atot_
 		// calculation actually estimates time for which reaction will
@@ -406,17 +411,8 @@ void GssaStoich::innerProcessFunc( Eref e, ProcInfo info )
 			updateAllRates();
 			continue;
 		}
-		transN_.fireReac( rindex, S_ );
+		transN_.fireReac( rindex, S_[0] );
 
-		// Ugly stuff for molecules buffered after run started.
-		// Inherited from Stoich. Here we just need to restore the
-		// n's in the dynamic buf list to their nInit. Note that
-		// any updates of nInit will percolate through the
-		// kineticHub to GssaStoich::setMolN, which will update
-		// all rates, so things should keep track.
-		// Only issue is that the changing of the mode itself should
-		// trigger the update of all rates.
-		updateDynamicBuffers();
 		// Math expns must be first, because they may alter 
 		// substrate mol #.
 		updateDependentMathExpn( dependentMathExpn_[ rindex ] );
@@ -437,7 +433,7 @@ void GssaStoich::updateDependentRates( const vector< unsigned int >& deps )
 	for( vector< unsigned int >::const_iterator i = deps.begin(); 
 		i != deps.end(); ++i ) {
 		atot_ -= v_[ *i ];
-		atot_ += ( v_[ *i ] = ( *rates_[ *i ] )() );
+		atot_ += ( v_[ *i ] = ( *rates_[ *i ] )( &S_[0][0] ) );
 	}
 }
 
@@ -448,22 +444,26 @@ void GssaStoich::updateDependentRates( const vector< unsigned int >& deps )
  */
 void GssaStoich::updateDependentMathExpn( const vector< unsigned int >& deps )
 {
+	/*
 	for( vector< unsigned int >::const_iterator i = deps.begin(); 
 		i != deps.end(); ++i ) {
 		sumTotals_[ *i ].sum();
 	}
+	*/
 }
 
 void GssaStoich::updateAllRates()
 {
 	// SumTots must go first because rates depend on them.
+	/*
 	vector< SumTotal >::const_iterator k;
 	for ( k = sumTotals_.begin(); k != sumTotals_.end(); k++ )
 		k->sum();
+		*/
 
 	atot_ = 0.0;
 	for( unsigned int i = 0; i < rates_.size(); ++i ) {
-		atot_ += ( v_[ i ] = ( *rates_[ i ] )() );
+		atot_ += ( v_[ i ] = ( *rates_[ i ] )( &S_[0][0] ) );
 	}
 	// Here we put in a safety factor into atot to ensure that
 	// cumulative roundoff errors from the dependency 

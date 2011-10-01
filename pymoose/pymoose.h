@@ -1,81 +1,65 @@
+// pymoose.h --- 
+// 
+// Filename: pymoose.h
+// Description: 
+// Author: Subhasis Ray
+// Maintainer: 
+// Copyright (C) 2010 Subhasis Ray, all rights reserved.
+// Created: Fri Mar 11 09:49:33 2011 (+0530)
+// Version: 
+// Last-Updated: Thu Aug 25 15:25:02 2011 (+0530)
+//           By: Subhasis Ray
+//     Update #: 183
+// URL: 
+// Keywords: 
+// Compatibility: 
+// 
+// 
+
+// Commentary: 
+// 
+// 
+// 
+// 
+
+// Change log:
+// 
+// 2011-03-11 09:50:06 (+0530) Dividing C++ wrapper and C externals
+// for pymoose.
+// 
+
+// Code:
 #ifndef _PYMOOSE_H
 #define _PYMOOSE_H
-#include "PyMooseIterable.h"
-#include "PyMooseContext.h"
-#include "PyMooseUtil.h"
-#include "PyMooseBase.h"
-#include "Neutral.h"
+#include <string>
+#include <map>
 
-#include "Class.h"
-
-#include "HSolve.h"
-#include "Cell.h"
-#include "Compartment.h"
-#include "HHGate.h"
-#include "HHChannel.h"
-#include "SpikeGen.h"
-#include "SynChan.h"
-#include "NMDAChan.h"
-#include "BinSynchan.h"
-
-#include "Interpol.h"
-#include "Table.h"
-#include "TableIterator.h"
-#include "Tick.h"
-#include "ClockJob.h"
-
-#include "KineticHub.h"
-#include "Kintegrator.h"
-#include "MathFunc.h"
-//#include "Mg_block.h"
-#include "Neutral.h"
-
-#include "RandGenerator.h"
-#include "BinomialRng.h"
-#include "ExponentialRng.h"
-#include "GammaRng.h"
-#include "NormalRng.h"
-#include "PoissonRng.h"
-
-#include "Enzyme.h"
-#include "Reaction.h"
-#include "Stoich.h"
-#include "Molecule.h"
-#include "Nernst.h"
-#include "CaConc.h"
-
-#include "Tick.h"
-#ifdef USE_GL
-#include "GLcell.h"
-#include "GLview.h"
-#endif
+class Shell;
+class Id;
 namespace pymoose{
-extern PyMooseContext* context;
-#if 0
-// A set of convenience functions 
-Id pwe(); // similar to pwd in unix
-void ce(const string& path); // similar to cd
-void ce(const Id& id); // similar to cd
-void ce(const PyMooseBase& obj); // similar to cd
-Id id(const string& path); // path2id
-void loadg(const string& filepath); // load a genesis script
-void rung(const string& statement); // run a genesis statement
-vector<Id> children(Id id); // list of children of the object with Id id
-vector<Id> children(const string& path); // list of children of the object with Id id
-const string& getfield(const string& path, const string& field); 
-const string& getfield(Id obj, const string& field);
-void setfield(const string& path, const string& field, string value);
-void setfield(const string& path, const string& field, double value);
-void setfield(const string& path, const string& field, int value);
-vector<string> messagelist(Id obj, const string& field, bool incoming);
-void srandom(long seed); // seed the random number generator
-void step(double runtime);
-void step(long steps);
-void step();
-void stop();
-void setclock(int clockNo, double dt, int stage=0);
-void useclock(int clockNo, const string path, const string func="process");
-bool exists(const string path);
-#endif
-}
-#endif
+/**
+ * Base of the whole PyMoose class hierarchy.
+ */
+class PyMooseBase
+{
+  public:
+    PyMooseBase();
+    virtual ~PyMooseBase();    
+}; // ! class PyMooseBase
+Shell& getShell();
+void finalize();
+const std::map<std::string, std::string>& getArgMap();
+} // ! namespace pymoose
+
+////////////////////////////////////////////////////////
+// These functions are defined in pymooseutil.cpp
+////////////////////////////////////////////////////////
+void setup_runtime_env(bool verbose=true);
+Shell& getShell();
+void finalize();
+string getFieldType(ObjId id, string fieldName, string finfoType="");
+vector<string> getFieldNames(ObjId id, string finfoType);
+        
+#endif // !_PYMOOSE_H
+// 
+// pymoose.h ends here

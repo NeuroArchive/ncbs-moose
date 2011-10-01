@@ -13,40 +13,31 @@ class GslIntegrator
 {
 	public:
 		GslIntegrator();
-
+		~GslIntegrator();
 
 ///////////////////////////////////////////////////
 // Field function definitions
 ///////////////////////////////////////////////////
-		static bool getIsInitialized( Eref e );
-		static string getMethod( Eref e );
-		static void setMethod( const Conn* c, string method );
-		void innerSetMethod( const string& method );
-		static double getRelativeAccuracy( Eref e );
-		static void setRelativeAccuracy( const Conn* c, double value );
-		static double getAbsoluteAccuracy( Eref e );
-		static void setAbsoluteAccuracy( const Conn* c, double value );
-		static double getInternalDt( Eref e );
-		static void setInternalDt( const Conn* c, double value );
+		bool getIsInitialized() const;
+		string getMethod() const;
+		void setMethod( string method );
+		double getRelativeAccuracy() const;
+		void setRelativeAccuracy( double value );
+		double getAbsoluteAccuracy() const;
+		void setAbsoluteAccuracy( double value );
+		double getInternalDt() const;
+		void setInternalDt( double value );
 
 ///////////////////////////////////////////////////
 // Dest function definitions
 ///////////////////////////////////////////////////
 
-		static void allocateFunc( const Conn* c, vector< double >* y );
-		void allocateFuncLocal( vector< double >*  y );
-		static void processFunc( const Conn* c, ProcInfo info );
-		void innerProcessFunc( Eref e, ProcInfo info );
-		static void reinitFunc( const Conn* c, ProcInfo info  );
+		void process( const Eref& e, ProcPtr info );
+		void reinit( const Eref& e, ProcPtr info );
 
-		static void assignStoichFunc( const Conn* c, void* stoich );
-		void assignStoichFuncLocal( void* stoich );
-		static void assignY( const Conn* c, double* S );
-		void innerAssignY( double* S );
+		void stoich( const Eref& e, const Qinfo* q, Id stoichId );
 
-		static void setMolN( const Conn* c, double y, unsigned int i );
-		void innerSetMolN( double y, unsigned int i ) ;
-
+		static const Cinfo* initCinfo();
 	private:
 		bool isInitialized_;
 		string method_;
@@ -54,9 +45,9 @@ class GslIntegrator
 		double relAccuracy_;
 		double internalStepSize_;
 		double* y_;
-		unsigned int nVarMols_;
-		void* stoich_;
-		const vector< unsigned int >* dynamicBuffers_;
+		unsigned int nVarPools_;
+		Id stoichId_;
+		StoichThread stoichThread_;
 
 		const gsl_odeiv_step_type* gslStepType_;
 		gsl_odeiv_step* gslStep_;
