@@ -1,10 +1,11 @@
 from xml.etree import ElementTree as ET
 import string
+import sys
+import math
+from os import path
 import moose
-import sys, math
-
-from ChannelML import *
-from moose.utils import *
+from moose import utils
+from ChannelML import ChannelML
 
 class MorphML():
 
@@ -15,8 +16,8 @@ class MorphML():
         self.nml='http://morphml.org/networkml/schema'
         self.cellDictBySegmentId={}
         self.cellDictByCableId={}
-        self.context = moose.PyMooseBase.getContext()
         self.nml_params = nml_params
+        self.model_dir = nml_params['model_dir']
 
     def readMorphMLFromFile(self,filename,params={}):
         """
@@ -46,7 +47,8 @@ class MorphML():
             self.length_factor = 1.0
         cellname = cell.attrib["name"]
         print "loading cell :", cellname,"into /library ."
-        moosecell = moose.Cell('/library/'+cellname)
+        #~ moosecell = moose.Cell('/library/'+cellname)
+        moosecell = moose.Neutral('/library/'+cellname)
         self.cellDictBySegmentId[cellname] = [moosecell,{}]
         self.cellDictByCableId[cellname] = [moosecell,{}]
         self.segDict = {}
@@ -55,13 +57,15 @@ class MorphML():
         #### load morphology and connections between compartments
         for segment in cell.findall(".//{"+self.mml+"}segment"):
             segmentname = segment.attrib['name']
-            #print segmentname
+            print segmentname
             segmentid = segment.attrib['id']
             # the moose "hsolve" method assumes compartments to be asymmetric compartments and symmetrizes them
             # but that is not what we want when translating from Neuron which has only symcompartments -- so be careful!
             moosesegmentname = segmentname+'_'+segmentid
+            moosesegmentpath = moosecell.path+'/'+moosesegmentname
             self.segDict[segmentid]=[moosesegmentname]
-            moosesegment = moose.Compartment(moosesegmentname, moosecell) # segmentname is NOT unique - eg: mitral bbmit exported from NEURON
+            #~ moosesegment = moose.Compartment(moosesegmentname, moosecell) # segmentname is NOT unique - eg: mitral bbmit exported from NEURON
+            moosesegment = moose.Compartment(moosesegmentpath) # segmentname is NOT unique - eg: mitral bbmit exported from NEURON
             self.cellDictBySegmentId[cellname][1][segmentid] = moosesegment
             # cable is an optional attribute. Need to change the way things are done.
             cableid = segment.attrib['cable']
@@ -100,7 +104,7 @@ class MorphML():
             moosesegment.z = float(distal.attrib["z"])*self.length_factor
             ## proximal tag may not be present, so take only distal diameter
             moosesegment.diameter = float(distal.attrib["diameter"]) * self.length_factor
-            moosesegment.length = sqrt((moosesegment.x-moosesegment.x0)**2+\
+            moosesegment.length = math.sqrt((moosesegment.x-moosesegment.x0)**2+\
                 (moosesegment.y-moosesegment.y0)**2+(moosesegment.z-moosesegment.z0)**2)
             if moosesegment.length == 0.0:          # neuroconstruct seems to set length=0 for round soma!
                 moosesegment.length = moosesegment.diameter
@@ -143,7 +147,7 @@ class MorphML():
                 if mechanism.attrib.has_key("passive_conductance"):
                     if mechanism.attrib['passive_conductance'] in ["true",'True','TRUE']:
                         passive = True
-                #print "Loading mechanism ", mechanismname
+                print "Loading mechanism ", mechanismname
                 ## ONLY creates channel if at least one parameter (like gmax) is specified in the xml
                 ## Neuroml does not allow you to specify all default values.
                 ## However, granule cell example in neuroconstruct has Ca ion pool without
@@ -183,7 +187,7 @@ class MorphML():
                              parametername, " in mechanism ",mechanismname
             #### Connect the Ca pools and channels
             #### Am connecting these at the very end so that all channels and pools have been created
-            connect_CaConc(self.cellDictByCableId[cellname][1].values())
+            utils.connect_CaConc(self.cellDictByCableId[cellname][1].values())
         
         ##########################################################
         #### load connectivity / synapses into the compartments
@@ -198,7 +202,7 @@ class MorphML():
                         self.set_group_compartment_param(cell, cellname, potential_syn_loc,\
                          'spikegen_type', potential_syn_loc.attrib['synapse_type'], self.nml, mechanismname='spikegen')
 
-        #print "Finished loading into library cell: ",cellname
+        print "Finished loading into library cell: ",cellname
         return {cellname:self.segDict}
 
     def set_group_compartment_param(self, cell, cellname, parameter, name, value, grouptype, mechanismname=None):
@@ -249,37 +253,42 @@ class MorphML():
             pass
         elif mechanismname is not None:
             ## if mechanism is not present in compartment, deep copy from library
-            if not self.context.exists(compartment.path+'/'+mechanismname):
+            if not moose.exists(compartment.path+'/'+mechanismname):
                 ## if channel does not exist in library load it from xml file
-                if not self.context.exists("/library/"+mechanismname):
+                if not moose.exists("/library/"+mechanismname):
                     cmlR = ChannelML(self.nml_params)
-                    cmlR.readChannelMLFromFile(mechanismname+'.xml')
+                    model_filename = mechanismname+'.xml'
+                    model_path = path.join(self.model_dir, model_filename)
+                    cmlR.readChannelMLFromFile(model_path)
                 neutralObj = moose.Neutral("/library/"+mechanismname)
-                if 'Conc' in neutralObj.className: # Ion concentration pool
+                if 'CaConc' == neutralObj.className: # Ion concentration pool
                     libcaconc = moose.CaConc("/library/"+mechanismname)
                     ## deep copies the library caconc under the compartment
-                    caconc = moose.CaConc(libcaconc,mechanismname,compartment)
+                    channel = moose.copy(libcaconc.id_,compartment.id_,mechanismname)
+                    channel = moose.CaConc(channel)
                     ## CaConc connections are made later using connect_CaConc()
                     ## Later, when calling connect_CaConc,
                     ## B is set for caconc based on thickness of Ca shell and compartment l and dia.
-                elif 'HHChannel2D' in neutralObj.className : ## HHChannel2D
+                elif 'HHChannel2D' == neutralObj.className : ## HHChannel2D
                     libchannel = moose.HHChannel2D("/library/"+mechanismname)
                     ## deep copies the library channel under the compartment
-                    channel = moose.HHChannel2D(libchannel,mechanismname,compartment)
+                    channel = moose.copy(libchannel.id_,compartment.id_,mechanismname)
+                    channel = moose.HHChannel2D(channel)
                     channel.connect('channel',compartment,'channel')
-                elif 'HHChannel' in neutralObj.className : ## HHChannel
+                elif 'HHChannel' == neutralObj.className : ## HHChannel
                     libchannel = moose.HHChannel("/library/"+mechanismname)
                     ## deep copies the library channel under the compartment
-                    channel = moose.HHChannel(libchannel,mechanismname,compartment)
+                    channel = moose.copy(libchannel.id_,compartment.id_,mechanismname)
+                    channel = moose.HHChannel(channel)
                     channel.connect('channel',compartment,'channel')
             ## if mechanism is present in compartment, just wrap it
             else:
                 neutralObj = moose.Neutral(compartment.path+'/'+mechanismname)
-                if 'Conc' in neutralObj.className: # Ion concentration pool
+                if 'CaConc' == neutralObj.className: # Ion concentration pool
                     caconc = moose.CaConc(compartment.path+'/'+mechanismname) # wraps existing channel
-                elif 'HHChannel2D' in neutralObj.className : ## HHChannel2D
+                elif 'HHChannel2D' == neutralObj.className : ## HHChannel2D
                     channel = moose.HHChannel2D(compartment.path+'/'+mechanismname) # wraps existing channel
-                elif 'HHChannel' in neutralObj.className : ## HHChannel
+                elif 'HHChannel' == neutralObj.className : ## HHChannel
                     channel = moose.HHChannel(compartment.path+'/'+mechanismname) # wraps existing channel
             if name == 'Gbar':
                 channel.Gbar = value*math.pi*compartment.diameter*compartment.length
@@ -289,4 +298,4 @@ class MorphML():
                 caconc.thick = value ## JUST THIS WILL NOT DO - HAVE TO SET B based on this thick!
                 ## Later, when calling connect_CaConc,
                 ## B is set for caconc based on thickness of Ca shell and compartment l and dia.
-        #print "Setting ",name," for ",compartment.path," value ",value
+        print "Setting ",name," for ",compartment.path," value ",value

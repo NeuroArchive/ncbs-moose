@@ -157,8 +157,6 @@ static const Finfo* hubCompartmentChannelFinfo =
  */
 static const Finfo* compartmentInjectFinfo =
 	initCompartmentCinfo()->findFinfo( "injectMsg" );
-static const Finfo* compartmentInjectFieldFinfo =
-	initCompartmentCinfo()->findFinfo( "inject" );
 static const Finfo* compartmentChannelFinfo =
 	initCompartmentCinfo()->findFinfo( "channel" );
 static const Finfo* compartmentVmFinfo =
@@ -203,7 +201,7 @@ Finfo* initCompartmentZombieFinfo()
 	};
 
 	static const ThisFinfo* tf = dynamic_cast< const ThisFinfo* >( 
-		initCompartmentCinfo()->getThisFinfo( ) );
+		initCompartmentCinfo()->getThisFinfo() );
 	assert( tf != 0 );
 
 	static SolveFinfo compartmentZombieFinfo( 
@@ -252,7 +250,7 @@ Finfo* initHHChannelZombieFinfo()
 	};
 
 	static const ThisFinfo* tf = dynamic_cast< const ThisFinfo* >( 
-		initHHChannelCinfo()->getThisFinfo( ) );
+		initHHChannelCinfo()->getThisFinfo() );
 	assert( tf != 0 );
 
 	static SolveFinfo hhchannelZombieFinfo( 
@@ -275,7 +273,7 @@ Finfo* initCaConcZombieFinfo()
 	};
 
 	static const ThisFinfo* tf = dynamic_cast< const ThisFinfo* >( 
-		initCaConcCinfo()->getThisFinfo( ) );
+		initCaConcCinfo()->getThisFinfo() );
 	assert( tf != 0 );
 
 	static SolveFinfo caconcZombieFinfo( 
@@ -298,7 +296,7 @@ static Finfo* caconcZombieFinfo = initCaConcZombieFinfo();
 /////////////////////////////////////////////////////////////////////////
 // Constructor
 /////////////////////////////////////////////////////////////////////////
-HSolveHub::HSolveHub( )
+HSolveHub::HSolveHub()
 	: integ_( 0 )
 { ; }
 
@@ -321,9 +319,9 @@ void HSolveHub::innerHubFunc( Eref hub, HSolveActive* integ )
 	hub_ = hub;
 	integ_ = integ;
 	
-	manageCompartments( );
-	manageHHChannels( );
-	manageCaConcs( );
+	manageCompartments();
+	manageHHChannels();
+	manageCaConcs();
 }
 
 /**
@@ -335,10 +333,10 @@ void HSolveHub::destroy( const Conn* c )
 {
 	static Finfo* origCompartmentFinfo =
 		const_cast< Finfo* >(
-			initCompartmentCinfo()->getThisFinfo( ) );
+			initCompartmentCinfo()->getThisFinfo() );
 	static Finfo* origHHChannelFinfo =
 		const_cast< Finfo* >(
-			initHHChannelCinfo()->getThisFinfo( ) );
+			initHHChannelCinfo()->getThisFinfo() );
 	
 	Element* hub = c->target().e;
 	unsigned int eIndex = c->target().i;
@@ -384,9 +382,9 @@ void HSolveHub::idlist2elist(
 		elist.push_back( ( *id )() );
 }	
 
-void HSolveHub::manageCompartments( )
+void HSolveHub::manageCompartments()
 {
-	const vector< Id >& idlist = integ_->getCompartments( );
+	const vector< Id >& idlist = integ_->getCompartments();
 	vector< Element* > elist;
 	idlist2elist( idlist, elist );
 	
@@ -429,9 +427,9 @@ void HSolveHub::manageCompartments( )
 	}
 }
 
-void HSolveHub::manageHHChannels( )
+void HSolveHub::manageHHChannels()
 {
-	const vector< Id >& idlist = integ_->getHHChannels( );
+	const vector< Id >& idlist = integ_->getHHChannels();
 	vector< Element* > elist;
 	idlist2elist( idlist, elist );
 	
@@ -443,9 +441,9 @@ void HSolveHub::manageHHChannels( )
 	}
 }
 
-void HSolveHub::manageCaConcs( )
+void HSolveHub::manageCaConcs()
 {
-	const vector< Id >& idlist = integ_->getCaConcs( );
+	const vector< Id >& idlist = integ_->getCaConcs();
 	vector< Element* > elist;
 	idlist2elist( idlist, elist );
 	
@@ -678,7 +676,7 @@ double HSolveHub::getVm( Eref e )
 void HSolveHub::setInject( const Conn* c, double value )
 {
 	Eref e = c->target();
-	set< double >( e, compartmentInjectFieldFinfo, value );
+	set< double >( e, compartmentInjectFinfo, value );
 	
 	unsigned int index;
 	HSolveHub* nh = getHubFromZombie( e, index );
@@ -854,29 +852,6 @@ double HSolveHub::getZ( Eref e )
 	
 	if ( nh )
 		return nh->integ_->getZ( index );
-	
-	return 0.0;
-}
-
-void HSolveHub::setCaBasal( const Conn* c, double value )
-{
-	Eref e = c->target();
-	set< double >( e, caConcCaFinfo, value );
-	
-	unsigned int index;
-	HSolveHub* nh = getHubFromZombie( e, index );
-	
-	if ( nh )
-		nh->integ_->setCaBasal( index, value );
-}
-
-double HSolveHub::getCaBasal( Eref e )
-{
-	unsigned int index;
-	HSolveHub* nh = getHubFromZombie( e, index );
-	
-	if ( nh )
-		return nh->integ_->getCaBasal( index );
 	
 	return 0.0;
 }

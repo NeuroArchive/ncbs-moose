@@ -19,30 +19,117 @@ public:
 	HSolve()
 	{ ; }
 	
-	static void processFunc( const Conn* c, ProcInfo p );
-	static void setupFunc( const Conn* c, Id seed, double dt );
+	void process( const Eref& hsolve, ProcPtr p );
+	void reinit( const Eref& hsolve, ProcPtr p );
 	
-	static string getPath( Eref e );
-	static void setCaAdvance( const Conn* c, int value );
-	static int getCaAdvance( Eref e );
-	static void setVDiv( const Conn* c, int vDiv );
-	static int getVDiv( Eref e );
-	static void setVMin( const Conn* c, double vMin );
-	static double getVMin( Eref e );
-	static void setVMax( const Conn* c, double vMax );
-	static double getVMax( Eref e );
-	static void setCaDiv( const Conn* c, int caDiv );
-	static int getCaDiv( Eref e );
-	static void setCaMin( const Conn* c, double caMin );
-	static double getCaMin( Eref e );
-	static void setCaMax( const Conn* c, double caMax );
-	static double getCaMax( Eref e );
+	void setSeed( Id seed );
+	Id getSeed() const;
+	
+	void setPath( string path );
+	string getPath() const;
+	
+	void setCaAdvance( int caAdvance );
+	int getCaAdvance() const;
+	
+	void setVDiv( int vDiv );
+	int getVDiv() const;
+	
+	void setVMin( double vMin );
+	double getVMin() const;
+	
+	void setVMax( double vMax );
+	double getVMax() const;
+	
+	void setCaDiv( int caDiv );
+	int getCaDiv() const;
+	
+	void setCaMin( double caMin );
+	double getCaMin() const;
+	
+	void setCaMax( double caMax );
+	double getCaMax() const;
+	
+	// Interface functions defined in HSolveInterface.cpp
+	double getInitVm( Id id ) const;
+	void setInitVm( Id id, double value );
+	
+	double getVm( Id id ) const;
+	void setVm( Id id, double value );
+	
+	double getCm( Id id ) const;
+	void setCm( Id id, double value );
+	
+	double getEm( Id id ) const;
+	void setEm( Id id, double value );
+	
+	double getRm( Id id ) const;
+	void setRm( Id id, double value );
+	
+	double getRa( Id id ) const;
+	void setRa( Id id, double value );
+	
+	// Im is read-only
+	double getIm( Id id ) const;
+	
+	// Ia is read-only
+	double getIa( Id id ) const;
+	
+	double getInject( Id id ) const;
+	void setInject( Id id, double value );
+	
+	void addInject( Id id, double value );
+	
+	/// Interface to compartments
+	//~ const vector< Id >& getCompartments() const;
+	
+	void addGkEk( Id id, double v1, double v2 );
+	
+	/// Interface to channels
+	//~ const vector< Id >& getHHChannels() const;
+	double getHHChannelGbar( Id id ) const;
+	void setHHChannelGbar( Id id, double value );
+	
+	double getEk( Id id ) const;
+	void setEk( Id id, double value );
+	
+	double getGk( Id id ) const;
+	void setGk( Id id, double value );
+	
+	// Ik is read-only
+	double getIk( Id id ) const;
+	
+	double getX( Id id ) const;
+	void setX( Id id, double value );
+	
+	double getY( Id id ) const;
+	void setY( Id id, double value );
+	
+	double getZ( Id id ) const;
+	void setZ( Id id, double value );
+	
+	/// Interface to CaConc
+	//~ const vector< Id >& getCaConcs() const;
+	double getCa( Id id ) const;
+	void setCa( Id id, double value );
+	
+	/// Interface to external channels
+	//~ const vector< vector< Id > >& getExternalChannels() const;
+	
+	static const Cinfo* initCinfo();
 	
 private:
-	void setup( Eref integ, Id seed, double dt );
-	void setupHub( Eref integ );
+	void setup( Eref hsolve, Id seed, double dt );
+	void zombify( Eref hsolve ) const;
 	
-	string path_;
+	//~ void setupHub( Eref integ );
+	
+	// Mapping global Id to local index. Defined in HSolveInterface.cpp.
+	void mapIds();
+	void mapIds( vector< Id > id );
+	unsigned int localIndex( Id id ) const;
+	map< Id, unsigned int > localIndex_;
+	
+	Id seed_;
 };
 
 #endif // _HSOLVE_H

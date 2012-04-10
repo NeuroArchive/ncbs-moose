@@ -1,15 +1,17 @@
 from xml.etree import ElementTree as ET
-from ChannelML import *
-from MorphML import *
-from NetworkML import *
+from ChannelML import ChannelML
+from MorphML import MorphML
+from NetworkML import NetworkML
 import string
 import moose
+from moose.neuroml.utils import *
 import sys
+from os import path
 
 class NeuroML():
 
     def __init__(self):
-        self.context = moose.PyMooseBase.getContext()
+        pass
 
     def readNeuroMLFromFile(self,filename,params={}):
         """
@@ -19,6 +21,7 @@ class NeuroML():
         print "Loading neuroml file ... ", filename
         tree = ET.parse(filename)
         root_element = tree.getroot()
+        self.model_dir = path.dirname( filename )
         self.lengthUnits = root_element.attrib['lengthUnits']
         self.temperature = CELSIUS_default # gets replaced below if tag for temperature is present
         self.temperature_default = True
@@ -29,7 +32,10 @@ class NeuroML():
                 self.temperature_default = False
         if self.temperature_default:
             print "Using default temperature of", self.temperature,"degrees Celsius."
-        self.nml_params = {'temperature':self.temperature}
+        self.nml_params = {
+                'temperature':self.temperature,
+                'model_dir':self.model_dir,
+        }
 
         #print "Loading channels and synapses into MOOSE /library ..."
         cmlR = ChannelML(self.nml_params)

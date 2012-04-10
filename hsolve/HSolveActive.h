@@ -13,53 +13,12 @@
 class HSolveActive: public HSolvePassive
 {
 	typedef vector< CurrentStruct >::iterator currentVecIter;
-	
+
 public:
 	HSolveActive();
 	
 	void setup( Id seed, double dt );
-	void solve( ProcInfo info );
-	
-	/**
-	 * Interface functions to access the solver's data: Defined in HSolveInterface.cpp
-	 */
-	
-	/// Interface to compartments
-	const vector< Id >& getCompartments( ) const;
-	double getVm( unsigned int index ) const;
-	void setVm( unsigned int index, double value );
-	double getInject( unsigned int index ) const;
-	void setInject( unsigned int index, double value );
-	double getIm( unsigned int index ) const;
-	void addInject( unsigned int index, double value );
-	void addGkEk( unsigned int index, double v1, double v2 );
-	
-	/// Interface to channels
-	const vector< Id >& getHHChannels( ) const;
-	double getHHChannelGbar( unsigned int index ) const;
-	void setHHChannelGbar( unsigned int index, double value );
-	double getEk( unsigned int index ) const;
-	void setEk( unsigned int index, double value );
-	double getGk( unsigned int index ) const;
-	void setGk( unsigned int index, double value );
-	// Ik is read-only
-	double getIk( unsigned int index ) const;
-	double getX( unsigned int index ) const;
-	void setX( unsigned int index, double value );
-	double getY( unsigned int index ) const;
-	void setY( unsigned int index, double value );
-	double getZ( unsigned int index ) const;
-	void setZ( unsigned int index, double value );
-	
-	/// Interface to CaConc
-	const vector< Id >& getCaConcs( ) const;
-	double getCaBasal( unsigned int index ) const;
-	void setCaBasal( unsigned int index, double value );
-	double getCa( unsigned int index ) const;
-	void setCa( unsigned int index, double value );
-	
-	/// Interface to external channels
-	const vector< vector< Id > >& getExternalChannels( ) const;
+	void step( ProcPtr info );
 	
 protected:
 	/**
@@ -90,10 +49,9 @@ protected:
 	double                    caMin_;
 	double                    caMax_;
 	int                       caDiv_;
-
-private:
+	
 	/**
-	 * Internal data structures
+	 * Internal data structures. Will also be accessed in derived class HSolve.
 	 */
 	vector< CurrentStruct >   current_;
 	vector< double >          state_;
@@ -102,50 +60,52 @@ private:
 	vector< SpikeGenStruct >  spikegen_;
 	vector< SynChanStruct >   synchan_;
 	vector< CaConcStruct >    caConc_;
+	vector< double >          ca_;
 	vector< double >          caActivation_;
-	vector< CaTractStruct >   caTract_;
-	vector< CurrentStruct* >  caSource_;
 	vector< double* >         caTarget_;
 	LookupTable               vTable_;
 	LookupTable               caTable_;
-	vector< Id >              caConcId_;
 	vector< bool >            gCaDepend_;
+	vector< unsigned int >    caCount_;
 	vector< int >             caDependIndex_;
 	vector< LookupColumn >    column_;
-	vector< LookupRow >       caRow_;
-	vector< LookupRow* >      caRowChan_;
-	vector< Id >              channelId_;
-	vector< Id >              gateId_;
+	vector< LookupRow >       caRowCompt_;
+	vector< LookupRow* >      caRow_;
 	vector< int >             channelCount_;
 	vector< currentVecIter >  currentBoundary_;
 	vector< unsigned int >    chan2compt_;
 	vector< unsigned int >    chan2state_;
-	vector< vector< Id > >    externalChannelId_;
 	vector< double >          externalCurrent_;
+	vector< Id >              caConcId_;
+	vector< Id >              channelId_;
+	vector< Id >              gateId_;
+	vector< vector< Id > >    externalChannelId_;
 	
+private:
 	/**
 	 * Setting up of data structures: Defined in HSolveActiveSetup.cpp
 	 */
-	void readHHChannels( );
-	void readGates( );
-	void readCalcium( );
-	void readSynapses( );
-	void readExternalChannels( );
-	void createLookupTables( );
-	void cleanup( );
-
+	void readHHChannels();
+	void readGates();
+	void readCalcium();
+	void readSynapses();
+	void readExternalChannels();
+	
+	void createLookupTables();
+	void cleanup();
+	
 	/**
 	 * Integration: Defined in HSolveActive.cpp
 	 */
-	void calculateChannelCurrents( );
-	void updateMatrix( );
-	void forwardEliminate( );
-	void backwardSubstitute( );
-	void advanceCalcium( );
+	void calculateChannelCurrents();
+	void updateMatrix();
+	void forwardEliminate();
+	void backwardSubstitute();
+	void advanceCalcium();
 	void advanceChannels( double dt );
-	void advanceSynChans( ProcInfo info );
-	void sendSpikes( ProcInfo info );
-	void sendValues( );
+	void advanceSynChans( ProcPtr info );
+	void sendSpikes( ProcPtr info );
+	void sendValues();
 	
 	static const int INSTANT_X;
 	static const int INSTANT_Y;

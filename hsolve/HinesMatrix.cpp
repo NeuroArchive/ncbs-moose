@@ -7,14 +7,14 @@
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
+#include "header.h"
 #include "HinesMatrix.h"
 #include <sstream>
 #include <iomanip>
 
 void HinesMatrix::setup( const vector< TreeNodeStruct >& tree, double dt )
 {
-	clear( );
+	clear();
 	
 	nCompt_ = tree.size();
 	dt_ = dt;
@@ -23,42 +23,43 @@ void HinesMatrix::setup( const vector< TreeNodeStruct >& tree, double dt )
 	for ( unsigned int i = 0; i < nCompt_; i++ )
 		Ga_.push_back( 2.0 / tree[ i ].Ra );
 	
-	makeJunctions( );
-	makeMatrix( );
-	makeOperands( );
+	makeJunctions();
+	makeMatrix();
+	makeOperands();
 }
 
-void HinesMatrix::clear( )
+void HinesMatrix::clear()
 {
 	nCompt_ = 0;
 	dt_ = 0.0;
-	junction_.clear( );
-	HS_.clear( );
-	HJ_.clear( );
-	HJCopy_.clear( );
-	VMid_.clear( );
-	operand_.clear( );
-	backOperand_.clear( );
+	junction_.clear();
+	HS_.clear();
+	HJ_.clear();
+	HJCopy_.clear();
+	VMid_.clear();
+	operand_.clear();
+	backOperand_.clear();
 	stage_ = 0;
 	
 	tree_ = 0;
 	Ga_.clear();
-	coupled_.clear( );
-	operandBase_.clear( );
-	groupNumber_.clear( );
+	coupled_.clear();
+	operandBase_.clear();
+	groupNumber_.clear();
 }
 
 bool groupCompare(
 	const vector< unsigned int >& A,
 	const vector< unsigned int >& B )
 {
-	if ( A.size() && B.size() )
-		return A[ 0 ] < B[ 0 ];
-	return 0;
+	if ( A.empty() || B.empty() )
+		return 0;
+	
+	return A[ 0 ] < B[ 0 ];
 }
 
 // Stage 3
-void HinesMatrix::makeJunctions( ) {
+void HinesMatrix::makeJunctions() {
 	// 3.1
 	for ( unsigned int i = 0; i < nCompt_; ++i ) {
 		const vector< unsigned int >& c = ( *tree_ )[ i ].children;
@@ -103,7 +104,7 @@ void HinesMatrix::makeJunctions( ) {
 }
 
 // Stage 4
-void HinesMatrix::makeMatrix( ) {
+void HinesMatrix::makeMatrix() {
 	const vector< TreeNodeStruct >& node = *tree_;
 	
 	// Setting up HS
@@ -116,7 +117,7 @@ void HinesMatrix::makeMatrix( ) {
 	double gi, gj, gij;
 	vector< JunctionStruct >::iterator junction = junction_.begin();
 	for ( unsigned int i = 0; i < nCompt_ - 1; ++i ) {
-		if ( junction_.size() &&
+		if ( !junction_.empty() &&
 		     junction < junction_.end() &&
 		     i == junction->index )
 		{
@@ -188,7 +189,7 @@ void HinesMatrix::makeMatrix( ) {
 }
 
 // Stage 5
-void HinesMatrix::makeOperands( ) {
+void HinesMatrix::makeOperands() {
 	unsigned int index;
 	unsigned int rank;
 	unsigned int farIndex;
@@ -318,7 +319,7 @@ void HinesMatrix::makeOperands( ) {
 ///////////////////////////////////////////////////////////////////////////
 // Public interface to matrix
 ///////////////////////////////////////////////////////////////////////////
-unsigned int HinesMatrix::getSize( ) const
+unsigned int HinesMatrix::getSize() const
 {
 	return nCompt_;
 }
@@ -356,7 +357,7 @@ double HinesMatrix::getA( unsigned int row, unsigned int col ) const
 		
 		if ( find( group.begin(), group.end(), bigger ) != group.end() ) {
 			location = 0;
-			for ( int i = 0; i < ( int )groupNumber; ++i ) {
+			for ( int i = 0; i < static_cast< int >( groupNumber ); ++i ) {
 				size = coupled_[ i ].size();
 				location += size * ( size - 1 );
 			}
@@ -392,7 +393,7 @@ double HinesMatrix::getVMid( unsigned int row ) const
 ///////////////////////////////////////////////////////////////////////////
 ostream& operator <<( ostream& s, const HinesMatrix& m )
 {
-	unsigned int size = m.getSize( );
+	unsigned int size = m.getSize();
 	
 	s << "\nA:\n";
 	for ( unsigned int i = 0; i < size; i++ ) {
@@ -420,8 +421,7 @@ ostream& operator <<( ostream& s, const HinesMatrix& m )
 
 void testHinesMatrix()
 {
-	cout << "\nTesting HinesMatrix" << flush;
-	vector< unsigned int > N;
+	//~ cout << "\nTesting HinesMatrix" << flush;
 	vector< int* > childArray;
 	vector< unsigned int > childArraySize;
 	
@@ -444,8 +444,6 @@ void testHinesMatrix()
 	 *  child of compartment Y if X is one level further away from the soma (#15)
 	 *  than Y. So #17 is the parent of #'s 2, 9 and 18.
 	 */
-	
-	N.push_back( 20 );
 	
 	int childArray_1[ ] =
 	{
@@ -486,8 +484,6 @@ void testHinesMatrix()
 	 * 
 	 */
 	
-	N.push_back( 4 );
-	
 	int childArray_2[ ] =
 	{
 		/* c0  */  -1, 
@@ -510,8 +506,6 @@ void testHinesMatrix()
 	 *          1     0  <--- Soma
 	 * 
 	 */
-	
-	N.push_back( 4 );
 	
 	int childArray_3[ ] =
 	{
@@ -536,8 +530,6 @@ void testHinesMatrix()
 	 * 
 	 */
 	
-	N.push_back( 4 );
-	
 	int childArray_4[ ] =
 	{
 		/* c0  */  -1,
@@ -561,8 +553,6 @@ void testHinesMatrix()
 	 *         3   5
 	 * 
 	 */
-	
-	N.push_back( 6 );
 	
 	int childArray_5[ ] =
 	{
@@ -590,8 +580,6 @@ void testHinesMatrix()
 	 * 
 	 */
 	
-	N.push_back( 7 );
-	
 	int childArray_6[ ] =
 	{
 		/* c0  */  -1,
@@ -610,8 +598,6 @@ void testHinesMatrix()
 	 *  Cell 7: Single compartment
 	 */
 	
-	N.push_back( 1 );
-	
 	int childArray_7[ ] =
 	{
 		/* c0  */  -1,
@@ -623,8 +609,6 @@ void testHinesMatrix()
 	/**
 	 *  Cell 8: 3 compartments; soma is in the middle.
 	 */
-	
-	N.push_back( 3 );
 	
 	int childArray_8[ ] =
 	{
@@ -639,8 +623,6 @@ void testHinesMatrix()
 	/**
 	 *  Cell 9: 3 compartments; first compartment is soma.
 	 */
-	
-	N.push_back( 3 );
 	
 	int childArray_9[ ] =
 	{
@@ -672,9 +654,9 @@ void testHinesMatrix()
 	int* array;
 	unsigned int arraySize;
 	for ( unsigned int cell = 0; cell < childArray.size(); cell++ ) {
-		nCompt = N[ cell ];
 		array = childArray[ cell ];
 		arraySize = childArraySize[ cell ];
+		nCompt = count( array, array + arraySize, -1 );
 		
 		// Prepare cell
 		tree.clear();
@@ -689,11 +671,11 @@ void testHinesMatrix()
 		for ( unsigned int a = 0; a < arraySize; a++ )
 			if ( array[ a ] == -1 )
 				count++;
-			else		
+			else
 				tree[ count ].children.push_back( array[ a ] );
 		
 		// Prepare local matrix
-		makeFullMatrix(	tree, dt, matrix );
+		makeFullMatrix( tree, dt, matrix );
 		
 		// Prepare sparse matrix
 		H.setup( tree, dt );
@@ -710,6 +692,8 @@ void testHinesMatrix()
 				);
 			}
 	}
+	
+	cout << ".";
 }
 
 #endif // DO_UNIT_TESTS

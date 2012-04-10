@@ -7,75 +7,51 @@
 #** See the file COPYING.LIB for the full notice.
 #**********************************************************************/
 
-TARGET = kinetics.o
+TARGET = _kinetics.o
 
 OBJ = \
-	Molecule.o	\
-	Reaction.o	\
-	Enzyme.o	\
+	Pool.o	\
+	BufPool.o	\
+	FuncPool.o	\
+	Reac.o	\
+	Enz.o	\
+	MMenz.o	\
+	Species.o	\
+	ReadKkit.o	\
+	ReadCspace.o	\
 	MathFunc.o	\
-	Geometry.o	\
-	Surface.o	\
-	Panel.o	\
-	RectPanel.o	\
-	TriPanel.o	\
-	SpherePanel.o	\
-	HemispherePanel.o	\
-	CylPanel.o	\
-	DiskPanel.o	\
-	KinCompt.o	\
-	KinPlaceHolder.o	\
-	TestKinetics.o	\
+	SumFunc.o	\
+	lookupSizeFromMesh.o	\
+	testKinetics.o	\
 
 HEADERS = \
 	../basecode/header.h \
-	../connections/Conn.h \
-	../basecode/Element.h \
 
 
-# Smoldyn, written by Steven Andrews, provides a numerical engine for
-# 3-D single-particle simulations using Smoluchowsky dynamics. It is
-# licenced on a non-commercial license. Should be fine for academic use.
-# Optional: Comment out the following three items if not using Smoldyn
-ifdef ($(USE_SMOLDYN))
-SMOLDYN_OBJ = \
-	Particle.o \
-	SmoldynHub.o \
-SMOLDYN_FLAGS = -DUSE_SMOLDYN
-# This is a static lib version, does not need the lib_path
-#SMOLDYN_LIBS = /home/bhalla/genesis/SFmus/moose-g3/kinetics/Smoldyn/source/libsmoldyn.a
-
-# This version uses dynamic libs. Not yet confirmed to work.
-#SMOLDYN_LIB_PATH = -L/home/bhalla/genesis/SFmus/moose-g3/kinetics/Smoldyn/source
-#SMOLDYN_LIBS = libsmoldyn.so
-endif # !USE_SMOLDYN
+#	Boundary.o	\
+#	ChemCompt.o	\
 
 default: $(TARGET)
 
 $(OBJ)	: $(HEADERS)
-Molecule.o:	Molecule.h ../basecode/Ftype2.h
-Reaction.o:	Reaction.h ../basecode/Ftype2.h
-Enzyme.o:	Enzyme.h ../basecode/Ftype2.h
-Geometry.o:	Geometry.h
-Surface.o:	Surface.h
-Panel.o:	Panel.h
-RectPanel.o:	Panel.h RectPanel.h
-TriPanel.o:	Panel.h TriPanel.h
-SpherePanel.o:	Panel.h SpherePanel.h
-HemispherePanel.o:	Panel.h HemispherePanel.h
-CylPanel.o:	Panel.h CylPanel.h
-DiskPanel.o:	Panel.h DiskPanel.h
-KinCompt.o:	KinCompt.h
-KinPlaceHolder.o:	KinPlaceHolder.h
-TestKinetics.o:	Molecule.h Reaction.h Enzyme.h Makefile
+Pool.o:	Pool.h lookupSizeFromMesh.h
+BufPool.o:	Pool.h BufPool.h lookupSizeFromMesh.h
+FuncPool.o:	Pool.h FuncPool.h lookupSizeFromMesh.h
+Reac.o:	Reac.h lookupSizeFromMesh.h
+Enz.o:	Enz.h lookupSizeFromMesh.h
+MMenz.o:	MMenz.h  lookupSizeFromMesh.h
+Boundary.o:	Boundary.h
+ChemCompt.o:	ChemCompt.h
+Species.o:	Species.h
+ReadKkit.o:	lookupSizeFromMesh.h ReadKkit.h Pool.h FuncPool.h ../shell/Shell.h 
+ReadCspace.o:	lookupSizeFromMesh.h ReadCspace.h ../shell/Shell.h
+MathFunc.o:	MathFunc.h
+SumFunc.o:	SumFunc.h
+lookupSizeFromMesh.o: lookupSizeFromMesh.h
+testKinetics.o:	ReadKkit.h
 
-ifdef ($(USE_SMOLDYN)
-$(SMOLDYN_OBJ) : $(HEADERS)
-Particle.o:		SmoldynHub.h Particle.h Molecule.h
-SmoldynHub.o:	KinSparseMatrix.h SmoldynHub.h Smoldyn/source/smolrun.h
-endif # !USE_SMOLDYN
 .cpp.o:
-	$(CXX) $(CXXFLAGS) $(SMOLDYN_FLAGS) -I.. -I../basecode -I../element $< -c
+	$(CXX) $(CXXFLAGS) $(SMOLDYN_FLAGS) -I.. -I../basecode -I../msg $< -c
 
 $(TARGET):		$(OBJ) $(SMOLDYN_OBJ) $(HEADERS)
 	$(LD) -r -o $(TARGET) $(OBJ) $(SMOLDYN_OBJ) $(SMOLDYN_LIB_PATH) $(SMOLDYN_LIBS) 

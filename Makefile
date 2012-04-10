@@ -26,154 +26,57 @@
 #     ADDITIONAL COMMANDLINE VARIABLES FOR MAKE
 #
 ######################################################################     
+# The variable BUILD determines if it should be optimized (release)
+# or a debug version (default).
 # make can be run with a command line parameter like below:
-# 		make clean
-# 		make BUILD=debug USE_SBML=0 USE_MPI=1
-# 
+# make clean BUILD=debug
+# make BUILD=debug
 # another option is to define BUILD as an environment variable:
-# 		export BUILD=debug
-# 		export USE_SBML=0
-# 		export USE_MPI=1
-# 		make clean
-# 		make
+# export BUILD=debug
+# make clean
+# make
 #
-# There are a few variables whose value you can set to control compilation.
-# Choose the libraries you want by setting the USE_* flags to 0 or 1 (to exclude
-# or include the library). The variables you can set are:
+# There are some more variables which just need to be defined for 
+# controlling the compilation and the value does not matter. These are:
+#
+# USE_GSL - use GNU Scientific Library for integration in kinetic simulations
 # 
-# BUILD (default value: release) - If this variable is set to 'release' (default),
-# 		moose will be compiled in optimized mode. If it is set to 'debug', then 
-# 		debug symbols will be included and compiler optimizations will not be used.
-#
-# USE_GSL (default value: 1) - use GNU Scientific Library for integration in
-# 		kinetic simulations.
-#		
-# USE_SBML (default value: 1) - compile with support for the Systems Biology
-# 		Markup Language (SBML). This allows you to read and write chemical 
-# 		kinetic models in the simulator-indpendent SBML format.
+# USE_READLINE - use the readline library which provides command history and 
+# 		better command line editing capabilities
 # 
-# USE_NEUROML (default value: 0) - compile with support for the NeuroML. This 
-#		allows you to read neuronal models in the NeuroML format.
-#		Look in external/neuroML_src/README for the extra steps needed 
-#		to add the libraries & headers.
-#
-# USE_READLINE (default value: 1) - use the readline library which provides
-# 		command history and better command line editing capabilities
-#
-# USE_MPI (default value: 0) - compile with support for parallel computing through
-# 		MPICH library
-# 
-# USE_MUSIC (default value: 0) - compile with MUSIC support. The MUSIC library 
-# 		allows runtime exchange of information between simulators.
-#
-# USE_CURSES (default value: 0) - To compile with curses support (terminal aware
-# 		printing)
-# 
-# USE_GL (default value: 0) - To compile with OpenSceneGraph support to enable the MOOSE
-# 		elements 'GLcell', 'GLview'.
-#
-# GENERATE_WRAPPERS (default value: 0) - useful for python interface developers.
-# 		The binary created with this option looks for a directory named
-# 		'generated' in the working directory and creates a wrapper class
-# 		(one .h file and a .cpp file ) and partial code for the swig interface
-# 		file (pymoose.i). These files with some modification can be used for
+# GENERATE_WRAPPERS - useful for python interface developers. The binary created 
+# 		with this option looks for a directory named 'generated' in the
+# 		working directory and creates a wrapper class ( one .h file 
+# 		and a .cpp file ) and partial code for the swig interface file
+# 		(pymoose.i). These files with some modification can be used for
 # 		generating the python interface using swig.
 #
-
-# Default values for flags. The operator ?= assigns the given value only if the
-# variable is not already defined.
+# USE_MPI - compile with support for parallel computing through MPICH library
+#
 
 # BUILD (= debug, release)
-BUILD?=release
-USE_GSL?=1
-USE_SBML?=1
-USE_NEUROML?=0
-USE_READLINE?=1
-USE_MPI?=0
-USE_MUSIC?=0
-USE_CURSES?=0
-USE_GL?=0
-GENERATE_WRAPPERS?=0
-SVN?=0
-export BUILD
-export USE_GSL
-export USE_SBML
-export USE_NEUROML
-export USE_READLINE
-export USE_MPI
-export USE_MUSIC
-export USE_CURSES
-export USE_GL
-export GENERATE_WRAPPERS
+ifndef BUILD
+BUILD=debug
+endif
 
-# PLATFORM (= Linux, win32, mac)
 #If using mac uncomment the following lines
-PLATFORM=Linux
+# PLATFORM=mac
 #export PLATFORM
 
 # Get the processor architecture - i686 or x86_64
 # All these should be taken care of in a script, not in the 
 # Makefile. But we are
-MACHINE?=i686 
-
+ifndef MACHINE
+MACHINE=i686 
+endif
 # We are assuming all non-win32 systems to be POSIX compliant
 # and thus have the command uname for getting Unix system name
 ifneq ($(OSTYPE),win32)
 MACHINE=$(shell uname -m)
+PLATFORM := $(shell uname -s)
 endif
 
-# Debug mode:
-ifeq ($(BUILD),debug)
-CXXFLAGS = -g -Wall -Wno-long-long -pedantic  -DUSE_GENESIS_PARSER
-endif
-# Optimized mode:
-ifeq ($(BUILD),release)
-CXXFLAGS  = -O3 -Wall -Wno-long-long -pedantic -DNDEBUG -DUSE_GENESIS_PARSER 
-endif
-# Insert the svn revision no. into the code as a preprocessor macro
-ifneq ($(SVN),0)
-SVN_REVISION=$(shell svnversion)
-ifneq ($(SVN_REVISION),export)
-CXXFLAGS+=-DSVN_REVISION=\"$(SVN_REVISION)\"
-endif
-endif
-
-##########################################################################
-#
-# MAC OS X compilation, Debug mode:
-ifeq ($(PLATFORM),mac)
-CXXFLAGS += -Wno-deprecated -force_cpusubtype_ALL -mmacosx-version-min=10.4
-endif
-# Use the options below for compiling on GCC4.1
-# GNU C++ 4.1 and newer might need -ffriend-injection
-#
-#CXXFLAGS  =	-g -Wall -pedantic -DDO_UNIT_TESTS -ffriend-injection -DUSE_GENESIS_PARSER
-
-##########################################################################
-#
-# Don't mess with stuff below!
-#
-##########################################################################
-
-
-# Libraries are defined below. For now we do not use threads.
-SUBLIBS = 
-#LIBS =	-lm -lpthread
-LIBS = 	-lm 
-##########################################################################
-#
-# Developer options (Don't try these unless you are writing new code!)
-#
-# For generating python interface:
-# Do remember that you have to create a directory named "generated" 
-# in the working directory of moose. Also you have to do some editing 
-# to get the generated code to work. 
-# Although this binary of MOOSE is verbose in its complaints, is completely harmless 
-# except for the overhead of  checks for the existence of a few files at startup.
-ifeq ($(GENERATE_WRAPPERS),1)
-CXXFLAGS += -DGENERATE_WRAPPERS
-endif
-
+# Get the python version
 ifneq ($(OSTYPE),win32)
 PYTHON_VERSION := $(subst ., ,$(lastword $(shell python --version 2>&1)))
 PYTHON_VERSION_MAJOR := $(word 1,${PYTHON_VERSION})
@@ -181,183 +84,242 @@ PYTHON_VERSION_MINOR := $(word 2,${PYTHON_VERSION})
 INSTALLED_PYTHON := python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}
 endif
 
+# Debug mode:
+ifeq ($(BUILD),debug)
+CXXFLAGS = -g -pthread -Wall -Wno-long-long -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER
+USE_GSL = 1
+endif
+# Optimized mode:
+ifeq ($(BUILD),release)
+CXXFLAGS  = -O3 -pthread -Wall -Wno-long-long -pedantic -DNDEBUG -DUSE_GENESIS_PARSER
+USE_GSL = 1
+endif
+# Profiling mode:
+ifeq ($(BUILD),profile)
+CXXFLAGS  = -O3 -pg -Wall -Wno-long-long -pedantic -DNDEBUG -DUSE_GENESIS_PARSER  
+USE_GSL = 1
+endif
+# Threading mode:
+ifeq ($(BUILD),thread)
+CXXFLAGS  = -O3 -pthread -Wall -Wno-long-long -pedantic -DNDEBUG -DUSE_GENESIS_PARSER  
+USE_GSL = 1
+endif
+
+# MPI mode:
+ifeq ($(BUILD),mpi)
+CXXFLAGS  = -g -pthread -Wall -Wno-long-long -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER
+USE_MPI = 1
+USE_GSL = 1
+endif
+
+# optimized MPI mode:
+ifeq ($(BUILD),ompi)
+CXXFLAGS  = -O3 -pthread -Wall -Wno-long-long -pedantic -DNDEBUG -DUSE_GENESIS_PARSER
+USE_MPI = 1
+USE_GSL = 1
+endif
+
+# optimised mode but with unit tests.
+ifeq ($(BUILD),odebug)
+CXXFLAGS = -O3 -pthread -Wall -Wno-long-long -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER
+USE_GSL = 1
+endif
+
+# including SMOLDYN
+ifdef USE_SMOLDYN
+CXXFLAGS = -g -pthread -Wall -Wno-long-long -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER
+USE_GSL = 1
+endif
+
+##########################################################################
+#
+# MAC OS X compilation, Debug mode:
+ifeq ($(PLATFORM),Darwin)
+CXXFLAGS += -DMACOSX # GCC compiler also sets __APPLE__ for Mac OS X which can be used instead
+CXXFLAGS += -Wno-deprecated -force_cpusubtype_ALL -mmacosx-version-min=10.4
+endif
+# Use the options below for compiling on GCC4.1
+# GNU C++ 4.1 and newer might need -ffriend-injection
+#
+#CXXFLAGS  =	-g -Wall -pedantic -DDO_UNIT_TESTS -ffriend-injection -DUSE_GENESIS_PARSER
+
+# Insert the svn revision no. into the code as a preprocessor macro.
+# Only for release versions we want to pass SVN=0 to make.
+ifndef SVN
+SVN?=1
+endif
+ifneq ($(SVN),0)
+SVN_REVISION=$(shell svnversion)
+ifneq ($(SVN_REVISION),export)
+CXXFLAGS+=-DSVN_REVISION=\"$(SVN_REVISION)\"
+endif
+endif
+
+
+# Libraries are defined below.
+SUBLIBS = 
+LIBS =	-lm -lpthread -L/usr/lib -L/usr/local/lib
+#LIBS = 	-lm
+#ifeq ($(BUILD),thread)
+#LIBS += -lpthread
+#endif
+
+# For 64 bit Linux systems add paths to 64 bit libraries 
+ifeq ($(PLATFORM),Linux)
+CXXFLAGS += -DLINUX
+ifeq ($(MACHINE),x86_64)
+LIBS+= -L/lib64 -L/usr/lib64
+endif
+endif
+
+##########################################################################
+#
+# Developer options (Don't try these unless you are writing new code!)
+##########################################################################
 # For parallel (MPI) version:
-ifeq ($(USE_MUSIC),1)
-USE_MPI = 1 # Automatically enable MPI if USE_MUSIC is on (doesn't seem to work though.)
+ifdef USE_MUSIC
+USE_MPI = 1		# Automatically enable MPI if USE_MUSIC is on
 CXXFLAGS += -DUSE_MUSIC
 LIBS += -lmusic
-MUSIC_DIR = music
-MUSIC_LIB = music/music.o
 endif
 
 # The -DMPICH_IGNORE_CXX_SEEK flag is because of a bug in the
 # MPI-2 standard. Enabled by default because it use crops up
 # often enough. You won't need if if you are not using MPICH, or
 # if your version of MPICH has fixed the issue.
-ifeq ($(USE_MPI),1)
+ifdef USE_MPI
 # CXXFLAGS += -DUSE_MPI
 CXXFLAGS += -DUSE_MPI -DMPICH_IGNORE_CXX_SEEK
-CXX = mpicxx
-PARALLEL_DIR = parallel
-PARALLEL_LIB = parallel/parallel.o
 endif
 
 #use this for readline library
 #CXXFLAGS = -g -Wall -pedantic -DDO_UNIT_TESTS -DUSE_GENESIS_PARSER -DUSE_READLINE
 
 
-# To use GSL, pass USE_GSL=1 in make command line
-ifeq ($(USE_GSL),1)
-LIBS+= -lgsl -lgslcblas
-CXXFLAGS+= -DUSE_GSL 
+# To use GSL, pass USE_GSL=true ( anything on the right will do) in make command line
+ifdef USE_GSL
+LIBS+= -L/usr/lib -lgsl -lgslcblas
+CXXFLAGS+= -DUSE_GSL
 endif
 
-# To use SBML, pass USE_SBML=1 in make command line
-ifeq ($(USE_SBML),1)
-LIBS+= -lsbml
-CXXFLAGS+=-DUSE_SBML 
-LDFLAGS += -L/usr/lib
-SBML_DIR = sbml_IO
-SBML_LIB = sbml_IO/sbml_IO.o 
+# To use Smoldyn, pass USE_SMOLDYN=true ( anything on the right will do) in make command line
+ifdef USE_SMOLDYN
+#LIBS+= -L/usr/local/lib -lsmoldyn
+CXXFLAGS+= -DUSE_SMOLDYN
+SMOLDYN_DIR = smol
+SMOLDYN_LIB = smol/_smol.o /usr/local/lib/libsmoldyn.a
+LIBS += -lsmoldyn
 endif
 
-# To use NeuroML, pass USE_NeuroML=1 in make command line
-ifeq ($(USE_NEUROML),1)
-LIBS+= -lxml2 -lneuroml
-LDFLAGS+= -Lexternal/neuroML_src
-CXXFLAGS+=-DUSE_NEUROML
-NEUROML_DIR = neuroML_IO
-NEUROML_LIB = neuroML_IO/neuroML_IO.o
-LIBNEUROML_SRC = external/neuroML_src
-LIBNEUROML_DYNAMIC = external/neuroML_src/libneuroml.so
-LIBNEUROML_STATIC = external/neuroML_src/libneuroml.a
+# To compile with readline support pass USE_READLINE=true in make command line
+ifdef USE_READLINE
+LIBS+= -lreadline
+CXXFLAGS+= -DUSE_READLINE
 endif
 
-# To compile with readline support pass USE_READLINE=1 in make command line
-ifeq ($(USE_READLINE),1)
-LIBS+= -lreadline -lncurses
-CXXFLAGS+= -DUSE_READLINE 
-endif
-
-# To compile with curses support (terminal aware printing) pass USE_CURSES=1 in make command line
-ifeq ($(USE_CURSES),1)
+# To compile with curses support (terminal aware printing) pass USE_CURSES=true in make command line
+ifdef USE_CURSES
 LIBS += -lcurses
 CXXFLAGS+= -DUSE_CURSES
 endif
 
-# To compile with OpenSceneGraph support and enable 'GLcell', 'GLview' pass USE_GL=1 in make command line
-ifeq ($(USE_GL),1)
-	LIBS += -losg -losgDB -lOpenThreads -lboost_serialization
-	LDFLAGS += -L/usr/local/lib 
-	CXXFLAGS += -DUSE_GL -I. -Ibasecode
-	GL_DIR = gl/src
-	GLCELL_LIB = gl/src/GLcell.o
-	GLVIEW_LIB = gl/src/GLview.o gl/src/GLshape.o
+ifdef USE_MUSIC
+	MUSIC_DIR = music
+	MUSIC_LIB = music/music.o
 endif
 
-# For mac with USE_GL, force 32-bit architecture because OSG doesn't fully build in 64-bit yet
-ifeq ($(PLATFORM),mac)
-ifeq ($(USE_GL),1)
-CXXFLAGS += -arch i386
-endif
-endif
-
-# For 64 bit Linux systems add paths to 64 bit libraries 
-ifeq ($(OSTYPE),Linux)
-ifeq ($(MACHINE),x86_64)
-LDFLAGS +=-L/lib64 -L/usr/lib64
-endif
+# Here we automagically change compilers to deal with MPI.
+ifdef USE_MPI
+	CXX = mpicxx
+#	CXX = /usr/local/mvapich2/bin/mpicxx
+#	PARALLEL_DIR = parallel
+#	PARALLEL_LIB = parallel/parallel.o
+else
+	CXX = g++
+#	CXX = CC	# Choose between Solaris CC and g++ on a Solaris machine
 endif
 
+ifdef USE_HDF5
+	CXXFLAGS+= -DUSE_HDF5  -DH5_NO_DEPRECATED_SYMBOLS -I/usr/local/hdf5/include
+	LIBS+= -lhdf5
+endif
 
 LD = ld
 
-SUBDIR = basecode connections maindir genesis_parser shell element scheduling \
-	biophysics hsolve kinetics ksolve builtins utility \
-	randnum robots device $(GL_DIR) $(SBML_DIR) $(NEUROML_DIR) $(PARALLEL_DIR) $(MUSIC_DIR) 
+SUBDIR = \
+	basecode \
+	msg \
+	shell \
+	biophysics\
+	hsolve\
+	randnum\
+	scheduling\
+	builtins\
+	device\
+	kinetics \
+	ksolve \
+	regressionTests \
+	utility \
+	geom \
+	mesh \
+	manager \
+	$(SMOLDYN_DIR) \
+
 
 # Used for 'make clean'
-CLEANSUBDIR = $(SUBDIR) gl/src sbml_IO neuroML_IO parallel music pymoose $(LIBNEUROML_SRC)
+CLEANSUBDIR = $(SUBDIR) $(PARALLEL_DIR) pymoose
 
 OBJLIBS =	\
-	basecode/basecode.o \
-	connections/connections.o \
-	maindir/maindir.o \
-	genesis_parser/SLI.o \
-	element/element.o \
-	shell/shell.o \
-	utility/utility.o \
-	randnum/randnum.o	\
-	scheduling/scheduling.o \
-	biophysics/biophysics.o \
-	hsolve/hsolve.o \
-	kinetics/kinetics.o \
-	ksolve/ksolve.o \
-	builtins/builtins.o \
-	robots/robots.o \
-	device/device.o \
-	$(GLCELL_LIB) \
-	$(GLVIEW_LIB) \
-	$(SBML_LIB) \
-	$(NEUROML_LIB) \
-	$(PARALLEL_LIB) \
-	$(MUSIC_LIB)
+	basecode/_basecode.o \
+	msg/_msg.o \
+	shell/_shell.o \
+	biophysics/_biophysics.o \
+	hsolve/_hsolve.o \
+	randnum/_randnum.o \
+	scheduling/_scheduling.o \
+	builtins/_builtins.o \
+	device/_device.o \
+	kinetics/_kinetics.o \
+	ksolve/_ksolve.o \
+	regressionTests/_rt.o \
+	utility/_utility.o \
+	geom/_geom.o \
+	mesh/_mesh.o \
+	manager/_manager.o \
+	$(SMOLDYN_LIB) \
 
 export CXX
 export CXXFLAGS
 export LD
-export LDFLAGS
 export LIBS
+export USE_GSL
 
-moose: libs $(OBJLIBS) $(LIBNEUROML_STATIC)
-	$(CXX) $(LDFLAGS) $(CXXFLAGS) $(OBJLIBS) $(LIBS) -o moose 
+moose: libs $(OBJLIBS) $(PARALLEL_LIB)
+	$(CXX) $(CXXFLAGS) $(OBJLIBS) $(PARALLEL_LIB) $(LIBS) -o moose
 	@echo "Moose compilation finished"
 
 libmoose.so: libs
 	$(CXX) -G $(LIBS) -o libmoose.so
 	@echo "Created dynamic library"
 
-.PHONEY : pymoose
-
-pymoose: CXXFLAGS += -DPYMOOSE -fPIC -I/usr/include/${INSTALLED_PYTHON}
-pymoose: SUBDIR += pymoose	
-pymoose: OBJLIBS := pymoose/pymoose.o $(OBJLIBS)
+# There are some unix/gcc specific paths here. Should be cleaned up later.
+pymoose: CXXFLAGS += -DPYMOOSE -fPIC -fno-strict-aliasing -I/usr/include/${INSTALLED_PYTHON} # Should be updated according to location of user include directory
+pymoose: SUBDIR += pymoose
+pymoose: OBJLIBS += pymoose/_pymoose.o
 pymoose: LIBS += -l${INSTALLED_PYTHON}
-pymoose: LDFLAGS +=-shared
-pymoose: python/moose/_moose.so	
-
-python/moose/_moose.so: libs $(OBJLIBS) $(LIBNEUROML_DYNAMIC) 
+pymoose: python/moose/_moose.so
+python/moose/_moose.so: libs $(OBJLIBS)
 	$(CXX) -shared $(LDFLAGS) $(CXXFLAGS) -o $@ $(OBJLIBS) $(LIBS)
-	cp pymoose/moose.py ./python/moose/
-
-$(LIBNEUROML_DYNAMIC): 
-	$(MAKE) -C $(LIBNEUROML_SRC) TYPE=dynamic
-
-$(LIBNEUROML_STATIC):
-	$(MAKE) -C $(LIBNEUROML_SRC) TYPE=static
-
 
 libs:
-	@echo "Compiling with flags:"
-	@echo "	BUILD:" $(BUILD)
-	@echo "	USE_GSL:" $(USE_GSL)
-	@echo "	USE_SBML:" $(USE_SBML)
-	@echo "	USE_NEUROML:" $(USE_NEUROML)
-	@echo "	USE_READLINE:" $(USE_READLINE)
-	@echo "	USE_MPI:" $(USE_MPI)
-	@echo "	USE_MUSIC:" $(USE_MUSIC)
-	@echo "	USE_CURSES:" $(USE_CURSES)
-	@echo "	USE_GL:" $(USE_GL)
-	@echo "	SVN_REVISION:" $(SVN_REVISION)
-	@echo "	GENERATE_WRAPPERS:" $(GENERATE_WRAPPERS)
-	@echo "	LDFLAGS:" $(LDFLAGS)
-	@(for i in $(SUBDIR); do $(MAKE) -C $$i; done)
+	@(for i in $(SUBDIR) $(PARALLEL_DIR); do $(MAKE) -C $$i; done)
 	@echo "All Libs compiled"
 
+mpp: preprocessor/*.cpp preprocessor/*.h
+	@( rm -f mpp; cd preprocessor; make CXX="$(CXX)" CXXFLAGS="$(CXXFLAGS)"; ln mpp ..; cd ..)
 
-default: moose 
+default: moose mpp
 
 clean:
 	@(for i in $(CLEANSUBDIR) ; do $(MAKE) -C $$i clean;  done)
-	-rm -rf moose mpp core.* DOCS/html *.so moose.py *.pyc
-
+	-rm -rf moose mpp core.* DOCS/html python/moose/*.so python/moose/*.pyc  
