@@ -8,11 +8,13 @@
 **********************************************************************/
 
 #include <cmath>
-#include "moose.h"
+#include "header.h"
 #include "HSolveStruct.h"
 
 void ChannelStruct::setPowers(
-	double Xpower, double Ypower, double Zpower )
+	double Xpower,
+	double Ypower,
+	double Zpower )
 {
 	Xpower_ = Xpower;
 	takeXpower_ = selectPower( Xpower );
@@ -61,7 +63,7 @@ void ChannelStruct::process( double*& state, CurrentStruct& current )
 	current.Gk = Gbar_ * fraction;
 }
 
-void CaConcStruct::process( double activation ) {
+double CaConcStruct::process( double activation ) {
 	c_ = factor1_ * c_ + factor2_ * activation;
-	ca_ = ( CaBasal_ + c_ );
+	return ( CaBasal_ + c_ );
 }

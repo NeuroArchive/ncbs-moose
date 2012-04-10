@@ -1,109 +1,174 @@
+/**********************************************************************
+** This program is part of 'MOOSE', the
+** Messaging Object Oriented Simulation Environment.
+**           Copyright (C) 2003-2010 Upinder S. Bhalla. and NCBS
+** It is made available under the terms of the
+** GNU Lesser General Public License version 2.1
+** See the file COPYING.LIB for the full notice.
+**********************************************************************/
+
+#include "header.h"
+#include "GHK.h"
 /*
  * NOT FULLY TESTED YET.
  *
  *
  */
 
-
-#include <math.h>
-#include "moose.h"
-#include "GHK.h"
-
-const Cinfo* initGHKCinfo()
+static SrcFinfo1< double >* VmOut()
 {
+	static SrcFinfo1< double > VmOut( "VmOut", 
+		"Relay of membrane potential Vm." );
+	return &VmOut;
+}
 
-  static Finfo* processShared[] =
-    {
-      new DestFinfo( "process", Ftype1< ProcInfo >::global(),
-                     RFCAST( &GHK::processFunc ) ),
-      new DestFinfo( "reinit", Ftype1< ProcInfo >::global(),
-                     RFCAST( &GHK::reinitFunc ) ),
-    };
+static SrcFinfo2< double, double >* channelOut()
+{
+	static SrcFinfo2< double, double > channelOut( "channelOut", 
+		"Sends channel variables Gk and Ek to compartment" );
+	return &channelOut;
+}
 
-  static Finfo* process =
-    new SharedFinfo( "process", processShared,
-                     sizeof( processShared ) / sizeof( Finfo* ) );
+static SrcFinfo1< double >* IkOut()
+{
+	static SrcFinfo1< double > IkOut( "IkOut", 
+		"MembraneCurrent." );
+	return &IkOut;
+}
 
-  static Finfo* channelShared[] =
-    {
-      new SrcFinfo( "channel", Ftype2< double, double >::global() ),
-      new DestFinfo( "Vm", Ftype1< double >::global(),
-                     RFCAST( &GHK::channelFunc ) ),
-    };
-  
-  static Finfo* ghkShared[] =
-    {
-      new SrcFinfo( "Vm", Ftype1< double >::global() ),
-      new DestFinfo( "permeability", Ftype1< double >::global(),
-                     RFCAST( &GHK::addPermeability ) ),
-    };
+const Cinfo* GHK::initCinfo()
+{
+	/////////////////////////////////////////////////////////////////////
+	// Shared messages
+	/////////////////////////////////////////////////////////////////////
+	static DestFinfo process( "process", 
+		"Handles process call",
+		new ProcOpFunc< GHK >( &GHK::process ) );
+	static DestFinfo reinit( "reinit", 
+		"Handles reinit call",
+		new ProcOpFunc< GHK >( &GHK::reinit ) );
+	static Finfo* processShared[] =
+	{
+		&process, &reinit
+	};
+	static SharedFinfo proc( "proc", 
+			"This is a shared message to receive Process message from the"
+			"scheduler. The first entry is a MsgDest for the Process "
+			"operation. It has a single argument, ProcInfo, which "
+			"holds lots of information about current time, thread, dt and"
+			"so on.\n The second entry is a MsgDest for the Reinit "
+			"operation. It also uses ProcInfo.",
+		processShared, sizeof( processShared ) / sizeof( Finfo* )
+	);
 
-  //!! Need to add channelFunc
+	/////////////////////////////////////////////////////////////////////
+	/// ChannelOut SrcFinfo defined above.
+	static DestFinfo handleVm( "handleVm", 
+		"Handles Vm message coming in from compartment",
+		new EpFunc1< GHK, double >( &GHK::handleVm ) );
 
+	static Finfo* channelShared[] =
+	{
+		channelOut(), &handleVm
+	};
+	static SharedFinfo channel( "channel", 
+		"This is a shared message to couple channel to compartment. "
+		"The first entry is a MsgSrc to send Gk and Ek to the compartment "
+		"The second entry is a MsgDest for Vm from the compartment.",
+		channelShared, sizeof( channelShared ) / sizeof( Finfo* )
+	);
+
+	///////////////////////////////////////////////////////
+	static DestFinfo addPermeability( "addPermeability", 
+		"Handles permeability message coming in from channel",
+		new OpFunc1< GHK, double >( &GHK::addPermeability ) );
+
+	/// Permability SrcFinfo defined above.
+	static Finfo* ghkShared[] =
+	{
+		VmOut(), &addPermeability
+	};
+	static SharedFinfo ghk( "ghk", 
+		"Message from channel to current Goldman-Hodgkin-Katz object"
+		"This shared message connects to an HHChannel. "
+		"The first entry is a MsgSrc which relays the Vm received from "
+		"a compartment. The second entry is a MsgDest which receives "
+		"channel conductance, and interprets it as permeability.",
+		ghkShared, sizeof( ghkShared ) / sizeof( Finfo* ) );
+
+	/////////////////////////////////////////////////////////////////////
+	static ReadOnlyValueFinfo< GHK, double > Ik( "Ik", 
+		"Membrane current",
+    	&GHK::getIk
+	);
+	static ReadOnlyValueFinfo< GHK, double > Gk( "Gk", 
+		"Conductance",
+		&GHK::getGk
+	);
+	static ReadOnlyValueFinfo< GHK, double > Ek( "Ek", 
+		"Reversal Potential",
+		&GHK::getEk
+	);
+	static ValueFinfo< GHK, double > T( "T", 
+		"Temperature of system",
+		&GHK::setTemperature,
+		&GHK::getTemperature
+	);
+	static ValueFinfo< GHK, double > p( "p", 
+		"Permeability of channel",
+		&GHK::setPermeability,
+		&GHK::getPermeability
+	);
+	static ValueFinfo< GHK, double > Vm( "Vm", 
+		"Membrane potential",
+		&GHK::setVm,
+		&GHK::getVm
+	);
+	static ValueFinfo< GHK, double > Cin( "Cin", 
+		"Internal concentration",
+		&GHK::setCin,
+		&GHK::getCin
+	);
+	static ValueFinfo< GHK, double > Cout( "Cout", 
+		"External ion concentration",
+		&GHK::setCout,
+		&GHK::getCout
+	);
+	static ValueFinfo< GHK, double > valency( "valency", 
+		"Valence of ion",
+		&GHK::setValency,
+		&GHK::getValency
+	);
+	/////////////////////////////////////////////////////////////////////
+	// DestFinfos
+	/////////////////////////////////////////////////////////////////////
+	static DestFinfo CinDest( "CinDest", 
+		"Alias for set_Cin",
+		new OpFunc1< GHK, double >( &GHK::setCin ) );
+	static DestFinfo CoutDest( "CoutDest", 
+		"Alias for set_Cout",
+		new OpFunc1< GHK, double >( &GHK::setCout ) );
+
+	/////////////////////////////////////////////////////////////////////
   static Finfo* GHKFinfos[] =
     {
-      new ValueFinfo( "Ik", ValueFtype1< double >::global(),
-                      GFCAST( &GHK::getIk ),
-                      &dummyFunc
-                      ),
-      new ValueFinfo( "Gk", ValueFtype1< double >::global(),
-                      GFCAST( &GHK::getGk ),
-                      &dummyFunc
-                      ),
-      new ValueFinfo( "Ek", ValueFtype1< double >::global(),
-                      GFCAST( &GHK::getEk ),
-                      &dummyFunc
-                      ),
-      new ValueFinfo( "T", ValueFtype1< double >::global(),
-                      GFCAST( &GHK::getTemperature ),
-                      RFCAST( &GHK::setTemperature )
-                      ),
-      new ValueFinfo( "p", ValueFtype1< double >::global(),
-                      GFCAST( &GHK::getPermeability ),
-                      RFCAST( &GHK::setPermeability )
-                      ),
-      new ValueFinfo( "Vm", ValueFtype1< double >::global(),
-                      GFCAST( &GHK::getVm ),
-                      RFCAST( &GHK::setVm )
-                      ),
-      new ValueFinfo( "Cin", ValueFtype1< double >::global(),
-                      GFCAST( &GHK::getCin ),
-                      RFCAST( &GHK::setCin )
-                      ),
-      new ValueFinfo( "Cout", ValueFtype1< double >::global(),
-                      GFCAST( &GHK::getCout ),
-                      RFCAST( &GHK::setCout )
-                      ),
-      new ValueFinfo( "valency", ValueFtype1< double >::global(),
-                      GFCAST( &GHK::getValency ),
-                      RFCAST( &GHK::setValency )
-                      ),
-      process,
-
-      new SrcFinfo( "IkSrc", Ftype1< double >::global() ),
-
-      new DestFinfo( "CinDest", Ftype1< double >::global(),
-                     RFCAST( &GHK::setCin ) ),
-      new DestFinfo( "CoutDest", Ftype1< double >::global(),
-                     RFCAST( &GHK::setCout ) ),
-      new DestFinfo( "pDest", Ftype1< double >::global(),      
-                     RFCAST( &GHK::addPermeability ) ),
-      new SharedFinfo( "channel", channelShared,
-                       sizeof( channelShared ) / sizeof( Finfo* ),
-                       "This is a shared message to couple channel to compartment. "
-                       "The first entry is a MsgSrc to send Gk and Ek to the compartment "
-                       "The second entry is a MsgDest for Vm from the compartment." ),
-      new SharedFinfo( "ghk", ghkShared,
-                       sizeof( ghkShared ) / sizeof( Finfo* ),
-                       "This shared message connects to an HHChannel. "
-					   "The first entry is a MsgSrc which relays the Vm received from "
-					   "a compartment. The second entry is a MsgDest which receives "
-					   "channel conductance, and interprets it as permeability." ),
+      &process,			// Shared
+	  &channel,			// Shared
+	  &ghk,				// Shared
+	  &Ik,				// ReadOnlyValue
+	  &Gk,				// ReadOnlyValue
+	  &Ek,				// ReadOnlyValue
+	  &T,				// Value
+	  &p,				// Value
+	  &Vm,				// Value
+	  &Cin,				// Value
+	  &Cout,				// Value
+	  &valency,				// Value
+	  &CinDest,				// Dest
+	  &CoutDest,			// Dest
+	  &addPermeability,		// Dest
+	  IkOut()				// Src
     };
-
-  // Order of updates: (t0) Compartment -> (t1) HHChannel -> (t2) GHK
-  static SchedInfo schedInfo[] = { { process, 0, 2 } };
-
   static string doc[] =
     {
       "Name", "GHK",
@@ -114,128 +179,115 @@ const Cinfo* initGHKCinfo()
       "reversal potential and slope conductance.",
     };
 
-  static Cinfo GHKCinfo(
-                doc,
-                sizeof( doc ) / sizeof( string ),
-                initNeutralCinfo(),
-                GHKFinfos,
-                sizeof( GHKFinfos )/sizeof(Finfo *),
-                ValueFtype1< GHK >::global(),
-                schedInfo, 1
-        );
+	static Cinfo GHKCinfo(
+		"GHK",
+		Neutral::initCinfo(),
+		GHKFinfos, sizeof( GHKFinfos )/sizeof(Finfo *),
+		new Dinfo< GHK >()
+	);
 
-  return &GHKCinfo;
-
+	return &GHKCinfo;
 }
 
-static const Cinfo* GHKCinfo = initGHKCinfo();
+static const Cinfo* GHKCinfo = GHK::initCinfo();
 
-
-static const Slot ikSlot =
-        initGHKCinfo()->getSlot( "IkSrc" );
-
-static const Slot channelSlot =
-        initGHKCinfo()->getSlot( "channel.channel" );
-
-static const Slot vmSlot =
-        initGHKCinfo()->getSlot( "ghk.Vm" );
-
+GHK::GHK()
+	:	Ik_( 0.0 ), 
+		Gk_( 0.0 ), 
+		Ek_( 0.0 ), 
+		p_( 0.0 ), 
+		Cin_( 50e-6 ), 
+		Cout_( 2 )
+{;}
 
 ///////////////////////////////////////////////////
 // Field function definitions
 ///////////////////////////////////////////////////
 
 
-double GHK::getEk( Eref e )
+double GHK::getEk() const
 {
-        return static_cast< GHK* >( e.data() )->Ek_;
+        return Ek_;
 }
 
 
-double GHK::getIk( Eref e )
+double GHK::getIk() const
 {
-        return static_cast< GHK* >( e.data() )->Ik_;
+        return Ik_;
 }
 
 
-double GHK::getGk( Eref e )
+double GHK::getGk() const
 {
-        return static_cast< GHK* >( e.data() )->Gk_;
+        return Gk_;
 }
 
 
-void GHK::setTemperature( const Conn* c, double T )
+void GHK::setTemperature( double T )
 {
-        static_cast< GHK* >( c->data() )->T_ = T;
+        T_ = T;
 }
-double GHK::getTemperature( Eref e )
+double GHK::getTemperature() const
 {
-        return static_cast< GHK* >( e.data() )->T_;
-}
-
-
-void GHK::setPermeability( const Conn* c, double p )
-{
-    static_cast< GHK* >( c->data() )->p_ = p;
-}
-
-void GHK::addPermeability( const Conn* c, double p )
-{
-  static_cast< GHK* >( c->data() )->p_ += p;
-  
-}
-
-double GHK::getPermeability( Eref e )
-{
-        return static_cast< GHK* >( e.data() )->p_;
+        return T_;
 }
 
 
-void GHK::setVm( const Conn* c, double Vm )
+void GHK::setPermeability( double p )
 {
-        static_cast< GHK* >( c->data() )->Vm_ = Vm;
+	p_ = p;
 }
-double GHK::getVm( Eref e )
+
+void GHK::addPermeability( double p )
 {
-        return static_cast< GHK* >( e.data() )->Vm_;
+	p_ += p;
+}
+
+double GHK::getPermeability() const
+{
+        return p_;
 }
 
 
-void GHK::setCin( const Conn* c, double Cin )
+void GHK::setVm( double Vm )
 {
-        static_cast< GHK* >( c->data() )->Cin_ = Cin;
+        Vm_ = Vm;
 }
-double GHK::getCin( Eref e )
+double GHK::getVm() const
 {
-        return static_cast< GHK* >( e.data() )->Cin_;
-}
-
-
-void GHK::setCout( const Conn* c, double Cout )
-{
-        static_cast< GHK* >( c->data() )->Cout_ = Cout;
-}
-double GHK::getCout( Eref e )
-{
-        return static_cast< GHK* >( e.data() )->Cout_;
+        return Vm_;
 }
 
 
-void GHK::setValency( const Conn* c, double valency )
+void GHK::setCin( double Cin )
 {
-        static_cast< GHK* >( c->data() )->valency_ = valency;
+        Cin_ = Cin;
 }
-double GHK::getValency( Eref e )
+double GHK::getCin() const
 {
-        return static_cast< GHK* >( e.data() )->valency_;
+        return Cin_;
 }
 
 
-void GHK::channelFunc( const Conn* c, double Vm )
+void GHK::setCout( double Cout )
 {
-        static_cast< GHK* >( c->data() )->Vm_ = Vm;
-		send1< double >( c->target(), vmSlot, Vm );
+        Cout_ = Cout;
 }
+double GHK::getCout() const
+{
+        return Cout_;
+}
+
+
+void GHK::setValency( double valency )
+{
+        valency_ = valency;
+}
+double GHK::getValency() const
+{
+        return valency_;
+}
+
 
 
 ///////////////////////////////////////////////////
@@ -243,136 +295,100 @@ void GHK::channelFunc( const Conn* c, double Vm )
 ///////////////////////////////////////////////////
 
 
-void GHK::processFunc( const Conn* c, ProcInfo p )
+void GHK::handleVm( const Eref& e, const Qinfo* q, double Vm )
 {
-        static_cast< GHK* >( c->data() )->innerProcessFunc( c->target(), p );
+        Vm_ = Vm;
+		VmOut()->send( e, q->threadNum(), Vm );
 }
 
-
-void GHK::innerProcessFunc( Eref e, ProcInfo info )
+void GHK::process( const Eref& e, ProcPtr info )
 {
-  // Code for process adapted from original GENESIS ghk.c
+	// Code for process adapted from original GENESIS ghk.c
+	Ek_ = log(Cout_/Cin_)/GHKconst_;
+	
+	double exponent = GHKconst_*Vm_;
+	double e_to_negexp = exp(-exponent);
 
-  Ek_ = log(Cout_/Cin_)/GHKconst_;
+	if ( fabs(exponent) < 0.00001 ) {
+		/* exponent near zero, calculate current some other way */
+		
+		/* take Taylor expansion of V'/[exp(V') - 1], where
+		* V' = constant * Vm
+		*  First two terms should be enough this close to zero
+		*/
+	
+		Ik_ = -valency_ * p_ * FARADAY *
+		(Cin_ - (Cout_ * e_to_negexp)) / (1-0.5 * exponent);
+	} else {       /* exponent far from zero, calculate directly */
+		Ik_ = -p_ * FARADAY * valency_ * exponent *
+		(Cin_ - (Cout_ * e_to_negexp)) / (1.0 - e_to_negexp);
+	}
 
-  double exponent = GHKconst_*Vm_;
-  double e_to_negexp = exp(-exponent);
+	/* Now calculate the chord conductance, but
+	* check the denominator for a divide by zero.  */
 
+	exponent = Ek_ - Vm_;
+	if ( fabs(exponent) < 1e-12 ) {
+		/* we are very close to the rest potential, so just set the
+		* current and conductance to zero.  */
+		Ik_ = Gk_ = 0.0;
+	} else { /* calculate in normal way */
+		Gk_ = Ik_ / exponent;
+	}
+	channelOut()->send( e, info->threadIndexInGroup, Gk_, Ek_ );
+	IkOut()->send( e, info->threadIndexInGroup, Ik_ );
 
-  if ( abs(exponent) < 0.00001 ) {
-    /* exponent near zero, calculate current some other way */
-
-    /* take Taylor expansion of V'/[exp(V') - 1], where
-     * V' = constant * Vm
-     *  First two terms should be enough this close to zero
-     */
-
-    Ik_ = -valency_ * p_ * FARADAY *
-      (Cin_ - (Cout_ * e_to_negexp)) / (1-0.5 * exponent);
-
-  } else {       /* exponent far from zero, calculate directly */
-    
-    Ik_ = -p_ * FARADAY * valency_ * exponent *
-      (Cin_ - (Cout_ * e_to_negexp)) / (1.0 - e_to_negexp);
-    
-  }
-
-    /* Now calculate the chord conductance, but
-     * check the denominator for a divide by zero.  */
-
-  exponent = Ek_ - Vm_;
-    if ( abs(exponent) < 1e-12 ) {
-      /* we are very close to the rest potential, so just set the
-       * current and conductance to zero.  */
-
-      Ik_ = Gk_ = 0.0;
-    } else { /* calculate in normal way */
-      Gk_ = Ik_ / exponent;
-    }
-
-    send2< double, double >( e, channelSlot, Gk_, Ek_ );
-    send1< double >( e, ikSlot, Ik_ );
-
-    // Set permeability to 0 at each timestep
-    p_ = 0;
-
+	// Set permeability to 0 at each timestep
+	p_ = 0;
 }
 
-
-
-void GHK::reinitFunc( const Conn* c, ProcInfo p )
+void GHK::reinit( const Eref& e, ProcPtr info )
 {
-  static_cast< GHK* >( c->data() )->innerReinitFunc( c->target(), p );
-}
+	GHKconst_ =  F_OVER_R*valency_/ (T_ + ZERO_CELSIUS);
 
-void GHK::innerReinitFunc( Eref e, ProcInfo info )
-{
-  GHKconst_ =  F_OVER_R*valency_/ (T_ + ZERO_CELSIUS);
+	if( fabs(valency_) == 0) {
+		std::cerr << "GHK warning, valency set to zero" << std::endl;
+	}
 
-  if(abs(valency_) == 0) {
-    std::cerr << "GHK warning, valency set to zero" << std::endl;
-  }
+	if( Cin_ < 0) {
+		std::cerr << "GHK error, invalid Cin set" << std::endl;
+	}
 
-  if(Cin_ < 0) {
-    std::cerr << "GHK error, invalid Cin set" << std::endl;
-  }
+	if( Cout_ < 0) {
+		std::cerr << "GHK error, invalid Cout set" << std::endl;
+	}
 
-  if(Cout_ < 0) {
-    std::cerr << "GHK error, invalid Cout set" << std::endl;
-  }
+	if( T_ + ZERO_CELSIUS <= 0) {
+		std::cerr << "GHK is freezing, please raise temperature" << std::endl;
+	}
 
-  if(T_ + ZERO_CELSIUS <= 0) {
-    std::cerr << "GHK is freezing, please raise temperature" << std::endl;
-  }
+	if( p_ < 0) {
+		std::cerr << "GHK error, invalid permeability" << std::endl;
+	}
 
-  if(p_ < 0) {
-    std::cerr << "GHK error, invalid permeability" << std::endl;
-  }
-
-    send2< double, double >( e, channelSlot, Gk_, Ek_ );
-    send1< double >( e, ikSlot, Ik_ );
-
+	channelOut()->send( e, info->threadIndexInGroup, Gk_, Ek_ );
+	IkOut()->send( e, info->threadIndexInGroup, Ik_ );
 }
 
 
 /*
-
 // This function should be called from TestBiophysics.cpp
 
 void testGHK()
 {
-  cout << "\nTesting GHK";
+cout << "\nTesting GHK";
 
-  Element* n = Neutral::create( "Neutral", "n", Element::root()->id(),
-                                Id::scratchId() );
+Element* n = Neutral::create( "Neutral", "n", Element::root()->id(),
+                            Id::scratchId() );
 
-  Element* g = Neutral::create( "GHK", "ghk", n->id(), Id::scratchId() );
+Element* g = Neutral::create( "GHK", "ghk", n->id(), Id::scratchId() );
 
-  Element* chan = Neutral::create( "HHChannel", "Na", compt->id(),
-                                   Id::scratchId() );
+Element* chan = Neutral::create( "HHChannel", "Na", compt->id(),
+                               Id::scratchId() );
 
-  bool ret = Eref( compt ).add( "channel", chan, "channel" );
+bool ret = Eref( compt ).add( "channel", chan, "channel" );
 
-  // How do I connect the compartment -> HH -> GHK for unit testing
-  // I do not want HH to couple back to the compartment
-
-
-
+// How do I connect the compartment -> HH -> GHK for unit testing
+// I do not want HH to couple back to the compartment
 }
-
 */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
