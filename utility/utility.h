@@ -1,23 +1,43 @@
-/**********************************************************************
-** This program is part of 'MOOSE', the
-** Messaging Object Oriented Simulation Environment,
-**           copyright (C) 2003-2004 Upinder S. Bhalla. and NCBS
-** It is made available under the terms of the
-** GNU Lesser General Public License version 2.1
-** See the file COPYING.LIB for the full notice.
-** Development of this software was supported by
-** Biophase Simulations Inc, http://www.bpsims.com
-** See the file BIOPHASE.INFO for details.
-**********************************************************************/
+// utility.h --- 
+// 
+// Filename: utility.h
+// Description: 
+// Author: Subhasis Ray
+// Maintainer: 
+// Copyright (C) 2010 Subhasis Ray, all rights reserved.
+// Created: Wed Mar 23 10:25:58 2011 (+0530)
+// Version: 
+// Last-Updated: Mon Apr 23 13:52:56 2012 (+0530)
+//           By: Subhasis Ray
+//     Update #: 17
+// URL: 
+// Keywords: 
+// Compatibility: 
+// 
+// 
+
+// Commentary: 
+// 
+// 
+// 
+// 
+
+// Change log:
+// 
+// 
+// 
+
+// Code:
 
 #ifndef _UTILITY_H
-#define _UTILITY_H
 
-#include "randnum/randnum.h"
-#include "StringUtil.h"
-#include "Property.h"
-#include "PathUtility.h"
-#include "ArgParser.h"
-#include "NumUtil.h"
+char shortType(std::string type);
+char shortFinfo(std::string ftype);
+#include "strutil.h"
+const map<std::string, std::string>& getArgMap();
 
-#endif
+#endif // !_UTILITY_H
+
+
+// 
+// utility.h ends here

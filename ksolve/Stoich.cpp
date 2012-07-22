@@ -1,1136 +1,1020 @@
 /**********************************************************************
 ** This program is part of 'MOOSE', the
 ** Messaging Object Oriented Simulation Environment.
-**           Copyright (C) 2003-2007 Upinder S. Bhalla. and NCBS
+**           Copyright (C) 2003-2010 Upinder S. Bhalla. and NCBS
 ** It is made available under the terms of the
 ** GNU Lesser General Public License version 2.1
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include <map>
-#include <algorithm>
+#include "StoichHeaders.h"
+#include "ElementValueFinfo.h"
+#include "Pool.h"
+#include "BufPool.h"
+#include "FuncPool.h"
+#include "Reac.h"
+#include "Enz.h"
+#include "MMenz.h"
+#include "SumFunc.h"
+#include "MathFunc.h"
+#include "Boundary.h"
+#include "MeshEntry.h"
+#include "ChemMesh.h"
+#include "ZombiePool.h"
+#include "ZombieBufPool.h"
+#include "ZombieFuncPool.h"
+#include "ZombieReac.h"
+#include "ZombieEnz.h"
+#include "ZombieMMenz.h"
+#include "ZombieSumFunc.h"
+#include "../mesh/Stencil.h"
 
-#include "moose.h"
-#include "../element/Wildcard.h"
-#include "RateTerm.h"
-#include "KinSparseMatrix.h"
-#include "InterSolverFlux.h"
-#include "Stoich.h"
-#include "kinetics/Molecule.h"
-#include "kinetics/Reaction.h"
-#include "kinetics/Enzyme.h"
+#include "../shell/Shell.h"
 
 #ifdef USE_GSL
 #include <gsl/gsl_errno.h>
 #endif
 
-const double RateTerm::EPSILON = 1.0e-6;
+#define EPSILON 1e-15
 
-	// Limits the k1, but unfortunately there is a volume scaling here.
-	// for reference, if vol = 1e-15, k1 ~ 1e-6 for a Km of 1.
-const double Stoich::EPSILON = 1.0e-12; 
-
-const Cinfo* initStoichCinfo()
+static SrcFinfo1< Id >* plugin()
 {
-	// connects to the KineticHub object
-	static Finfo* hubShared[] =
-	{
-		new SrcFinfo( "rateTermInfoSrc", 
-			Ftype3< vector< RateTerm* >*, KinSparseMatrix*, bool >::global()
-		),
-		new SrcFinfo( "rateSizeSrc", 
-			Ftype3< unsigned int, unsigned int, unsigned int >::
-			global()
-		),
-		new SrcFinfo( "molSizeSrc", 
-			Ftype3< unsigned int, unsigned int, unsigned int >::
-			global()
-		),
-		new SrcFinfo( "molConnectionSrc",
-			Ftype3< vector< double >* , 
-				vector< double >* , 
-				vector< Eref >*  
-				>::global(),
-				"This one is a bit ugly. It sends the entire S_ and Sinit_  arrays over"
-		),
-		new SrcFinfo( "reacConnectionSrc",
-			Ftype2< unsigned int, Eref >::global()
-		),
-		new SrcFinfo( "enzConnectionSrc",
-			Ftype2< unsigned int, Eref >::global()
-		),
-		new SrcFinfo( "mmEnzConnectionSrc",
-			Ftype2< unsigned int, Eref >::global()
-		),
-		new SrcFinfo( "completeSetupSrc",
-			Ftype1< string >::global()
-		),
-		new SrcFinfo( "clearSrc",
-			Ftype0::global()
-		),
-		new DestFinfo( "setMolN", 
-			Ftype2< double, unsigned int >::global(),
-			RFCAST( &Stoich::setMolN )
-		),
-		new DestFinfo( "setBuffer", 
-			Ftype2< int, unsigned int >::global(),
-			RFCAST( &Stoich::setBuffer ),
-			"Assigns dynamic buffers. First arg is mode and second is the molecule index."
-		),
-	};
-	static Finfo* integrateShared[] =
-	{
-		new DestFinfo( "reinit", Ftype0::global(),
-			&Stoich::reinitFunc ),
-		new DestFinfo( "integrate",
-			Ftype2< vector< double >* , double >::global(),
-			RFCAST( &Stoich::integrateFunc ) ),
-		new SrcFinfo( "allocate",
-			Ftype1< vector< double >* >::global() ),
-	};
-	static Finfo* gslShared[] =
-	{
-		new DestFinfo( "reinit", Ftype0::global(),
-			&Stoich::reinitFunc ),
-		new SrcFinfo( "assignStoich",
-			Ftype1< void* >::global() ),
-		new SrcFinfo( "setMolNsrc",
-			Ftype2< double, unsigned int >::global() ),
-		new DestFinfo( "requestY", Ftype0::global(),
-			&Stoich::requestY ),
-		new SrcFinfo( "assignYsrc",
-			Ftype1< double* >::global() ),
-	};
+	static SrcFinfo1< Id > ret(
+		"plugin", 
+		"Sends out Stoich Id so that plugins can directly access fields and functions"
+	);
+	return &ret;
+}
 
-	/**
-	 * These are the fields of the stoich class
-	 */
-	static Finfo* stoichFinfos[] =
-	{
-		///////////////////////////////////////////////////////
-		// Field definitions
-		///////////////////////////////////////////////////////
-		new ValueFinfo( "nMols", 
-			ValueFtype1< unsigned int >::global(),
-			GFCAST( &Stoich::getNmols ), 
-			&dummyFunc
-		),
-		new ValueFinfo( "nVarMols", 
-			ValueFtype1< unsigned int >::global(),
-			GFCAST( &Stoich::getNvarMols ), 
-			&dummyFunc
-		),
-		new ValueFinfo( "nSumTot", 
-			ValueFtype1< unsigned int >::global(),
-			GFCAST( &Stoich::getNsumTot ), 
-			&dummyFunc
-		),
-		new ValueFinfo( "nBuffered", 
-			ValueFtype1< unsigned int >::global(),
-			GFCAST( &Stoich::getNbuffered ), 
-			&dummyFunc
-		),
-		new ValueFinfo( "nReacs", 
-			ValueFtype1< unsigned int >::global(),
-			GFCAST( &Stoich::getNreacs ), 
-			&dummyFunc
-		),
-		new ValueFinfo( "nEnz", 
-			ValueFtype1< unsigned int >::global(),
-			GFCAST( &Stoich::getNenz ), 
-			&dummyFunc
-		),
-		new ValueFinfo( "nMMenz", 
-			ValueFtype1< unsigned int >::global(),
-			GFCAST( &Stoich::getNmmEnz ), 
-			&dummyFunc
-		),
-		new ValueFinfo( "nExternalRates", 
-			ValueFtype1< unsigned int >::global(),
-			GFCAST( &Stoich::getNexternalRates ), 
-			&dummyFunc
-		),
-		new ValueFinfo( "useOneWayReacs", 
-			ValueFtype1< bool >::global(),
-			GFCAST( &Stoich::getUseOneWayReacs ), 
-			RFCAST( &Stoich::setUseOneWayReacs )
-		),
-		new ValueFinfo( "path", 
-			ValueFtype1< string >::global(),
-			GFCAST( &Stoich::getPath ), 
-			RFCAST( &Stoich::setPath )
-		),
-		new ValueFinfo( "pathVec", 
-			ValueFtype1< vector< Id > >::global(),
-			GFCAST( &Stoich::getPathVec ), 
-			RFCAST( &Stoich::setPathVec )
-		),
-		new ValueFinfo( "rateVectorSize", 
-			ValueFtype1< unsigned int >::global(),
-			GFCAST( &Stoich::getRateVectorSize ), 
-			&dummyFunc
-		),
-		///////////////////////////////////////////////////////
-		// MsgSrc definitions
-		///////////////////////////////////////////////////////
-		
-		///////////////////////////////////////////////////////
-		// MsgDest definitions
-		///////////////////////////////////////////////////////
+static SrcFinfo3< unsigned int, vector< unsigned int >, vector< double > >* nodeDiffBoundary()
+{
+	static SrcFinfo3< unsigned int, vector< unsigned int >, vector< double > > nodeDiffBoundary(
+		"nodeDiffBoundary", 
+		"Sends mol #s across boundary between nodes, to calculate diffusion"
+		"terms. arg1 is originating node, arg2 is list of meshIndices for"
+		"which data is being transferred, and arg3 are the 'n' values for"
+		"all the pools on the specified meshIndices, to be plugged into"
+		"the appropriate place on the recipient node's S_ matrix"
+	);
+	return &nodeDiffBoundary;
+}
+
+
+const Cinfo* Stoich::initCinfo()
+{
+		//////////////////////////////////////////////////////////////
+		// Field Definitions
+		//////////////////////////////////////////////////////////////
+		static ValueFinfo< Stoich, bool > useOneWay(
+			"useOneWayReacs",
+			"Flag: use bidirectional or one-way reacs. One-way is needed"
+			"for Gillespie type stochastic calculations. Two-way is"
+			"likely to be margninally more efficient in ODE calculations",
+			&Stoich::setOneWay,
+			&Stoich::getOneWay
+		);
+
+		static ReadOnlyValueFinfo< Stoich, unsigned int > nVarPools(
+			"nVarPools",
+			"Number of variable molecule pools in the reac system",
+			&Stoich::getNumVarPools
+		);
+
 		/*
-		new DestFinfo( "rebuild", 
-			Ftype0::global(),
-			RFCAST( &Stoich::rebuild )
-		),
+		static LookupValueFinfo< Stoich, short, double > compartmentVolume(
+			"compartmentVolume",
+			"Size of specified compartment",
+			&Stoich::setCompartmentVolume,
+			&Stoich::getCompartmentVolume
+		);
 		*/
-		new DestFinfo( "rescaleVolume", 
-			Ftype1< double >::global(),
-			RFCAST( &Stoich::rescaleVolume ),
-			"Scales the volume of the model by the specified ratio."
-		),
 
-		new DestFinfo( "makeFlux", 
-			Ftype3< string, 
-				vector< unsigned int >, vector< double > >::global(),
-			RFCAST( &Stoich::makeFlux ),
-			"Sets up an InterSolverFlux stub."
-			"makeFlux( stubName, molIndices, fluxRates )"
-			"The Stoich adds another entry to its flux_ vector, and"
-			"this becomes a new child object that acts as the stub."
-		),
-		new DestFinfo( "startFromCurrentConcs", 
-			Ftype0::global(),
-			RFCAST( &Stoich::startFromCurrentConcs ),
-			"Copies over the current state of the kinetic system to use"
-			"for initial conditions. Sinit = S"
-		),
-		
-		///////////////////////////////////////////////////////
-		// Shared definitions
-		///////////////////////////////////////////////////////
-		new SharedFinfo( "hub", hubShared, 
-				sizeof( hubShared )/ sizeof( Finfo* ),
-					"Several messages that connect to the KineticHub" ),
-		new SharedFinfo( "integrate", integrateShared, 
-				sizeof( integrateShared )/ sizeof( Finfo* ),
-					"Messages that connect to the KineticIntegrator" ),
-		new SharedFinfo( "gsl", gslShared, 
-				sizeof( gslShared )/ sizeof( Finfo* ),
-					"Messages that connect to the GslIntegrator object" ),
+		static ElementValueFinfo< Stoich, string > path(
+			"path",
+			"Path of reaction system to take over",
+			&Stoich::setPath,
+			&Stoich::getPath
+		);
 
+		static ReadOnlyValueFinfo< Stoich, unsigned int > numMeshEntries(
+			"numMeshEntries",
+			"Number of meshEntries in reac-diff system",
+			&Stoich::getNumMeshEntries
+		);
+
+		static ReadOnlyValueFinfo< Stoich, double > estimatedDt(
+			"estimatedDt",
+			"Estimate of fastest (smallest) timescale in system."
+			"This is fallible because it depends on instantaneous concs,"
+			"which of course change over the course of the simulation.",
+			&Stoich::getEstimatedDt
+		);
+
+		//////////////////////////////////////////////////////////////
+		// MsgDest Definitions
+		//////////////////////////////////////////////////////////////
+		/*
+		static DestFinfo process( "process",
+			"Handles process call",
+			new ProcOpFunc< Stoich >( &Stoich::process ) );
+		static DestFinfo reinit( "reinit",
+			"Handles reinint call",
+			new ProcOpFunc< Stoich >( &Stoich::reinit ) );
+			*/
+
+		static DestFinfo meshSplit( "meshSplit",
+			"Handles message from ChemMesh that defines how "
+			"meshEntries are decomposed on this node, and how they "
+			"communicate between nodes."
+			"Args: (volumeVectorForAllEntries, localEntryList, "
+			"outgoingDiffusion[node#][entry#], "
+			"incomingDiffusion[node#][entry#])",
+			new OpFunc4< Stoich, 
+				vector< double >, vector< unsigned int >,
+				vector< vector< unsigned int > >,
+				vector< vector< unsigned int > >
+			>( &Stoich::meshSplit )
+		);
+
+		//////////////////////////////////////////////////////////////
+		// FieldElementFinfo defintion for Ports. Assume up to 16.
+		//////////////////////////////////////////////////////////////
+		static FieldElementFinfo< Stoich, Port > portFinfo( "port",
+			"Sets up field Elements for ports",
+			Port::initCinfo(),
+			&Stoich::getPort,
+			&Stoich::setNumPorts,
+			&Stoich::getNumPorts,
+			16
+		);
+
+		//////////////////////////////////////////////////////////////
+		// SharedMsg Definitions
+		//////////////////////////////////////////////////////////////
+		/*
+		static Finfo* procShared[] = {
+			&process, &reinit
+		};
+		static SharedFinfo proc( "proc",
+			"Shared message for process and reinit",
+			procShared, sizeof( procShared ) / sizeof( const Finfo* )
+		);
+		*/
+
+	static Finfo* stoichFinfos[] = {
+		&useOneWay,		// Value
+		&nVarPools,		// Value
+		&numMeshEntries,		// Value
+		&estimatedDt,		// ReadOnlyValue
+		// &compartmentVolume,	//Value
+		&path,			// Value
+		plugin(),		// SrcFinfo
+		nodeDiffBoundary(),		// SrcFinfo
+		&meshSplit,		// DestFinfo
+		&portFinfo,		// FieldElementFinfo
 	};
-	
-	static string doc[] =
-	{
-		"Name", "Stoich",
-		"Author", "Upinder S. Bhalla, 2007, NCBS",
-		"Description", "Stoich: Sets up stoichiometry matrix based calculations from a wildcard path for "
-				"the reaction system. Knows how to compute derivatives for most common things, also "
-				"knows how to handle special cases where the object will have to do its own "
-				"computation. Generates a stoichiometry matrix,which is useful for lots of other "
-				"operations as well."
-				"Also provides child stub objects to act as a hook"
-				"for inter-solver flow of molecules"
-	};
-	
-	static Cinfo stoichCinfo(
-		doc,
-		sizeof( doc ) / sizeof( string ),		
-		initNeutralCinfo(),
+
+	static Cinfo stoichCinfo (
+		"Stoich",
+		Neutral::initCinfo(),
 		stoichFinfos,
-		sizeof( stoichFinfos )/sizeof(Finfo *),
-		ValueFtype1< Stoich >::global()
+		sizeof( stoichFinfos ) / sizeof ( Finfo* ),
+		new Dinfo< Stoich >()
 	);
 
 	return &stoichCinfo;
 }
 
-static const Cinfo* stoichCinfo = initStoichCinfo();
-
-static const Slot rateTermInfoSlot =
-	initStoichCinfo()->getSlot( "hub.rateTermInfoSrc" );
-static const Slot rateSizeSlot =
-	initStoichCinfo()->getSlot( "hub.rateSizeSrc" );
-static const Slot molSizeSlot =
-	initStoichCinfo()->getSlot( "hub.molSizeSrc" );
-static const Slot molConnectionSlot =
-	initStoichCinfo()->getSlot( "hub.molConnectionSrc" );
-static const Slot reacConnectionSlot =
-	initStoichCinfo()->getSlot( "hub.reacConnectionSrc" );
-static const Slot enzConnectionSlot =
-	initStoichCinfo()->getSlot( "hub.enzConnectionSrc" );
-static const Slot mmEnzConnectionSlot =
-	initStoichCinfo()->getSlot( "hub.mmEnzConnectionSrc" );
-static const Slot completeSetupSlot =
-	initStoichCinfo()->getSlot( "hub.completeSetupSrc" );
-static const Slot clearSlot =
-	initStoichCinfo()->getSlot( "hub.clearSrc" );
-static const Slot allocateSlot =
-	initStoichCinfo()->getSlot( "integrate.allocate" );
-static const Slot assignStoichSlot =
-	initStoichCinfo()->getSlot( "gsl.assignStoich" );
-static const Slot setMolNslot =
-	initStoichCinfo()->getSlot( "gsl.setMolNsrc" );
-static const Slot assignYslot =
-	initStoichCinfo()->getSlot( "gsl.assignYsrc" );
-
-///////////////////////////////////////////////////
-// Class function definitions
-///////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+// Class definitions
+//////////////////////////////////////////////////////////////
+static const Cinfo* stoichCinfo = Stoich::initCinfo();
 
 Stoich::Stoich()
-{
-	nMols_ = 0;
-	nVarMols_ = 0;
-	nVarMolsBytes_ = 0;
-	nSumTot_ = 0;
-	nBuffered_ = 0;
-	nReacs_ = 0;
-	nEnz_ = 0;
-	nMmEnz_ = 0;
-	nExternalRates_ = 0;
-	useOneWayReacs_ = 0;
-	lasty_ = 0;
-}
+	: 
+		useOneWay_( 0 ),
+		path_( "" ),
+		S_(1),
+		Sinit_(1),
+		y_(1),
+		localMeshEntries_( 1 ),
+		totPortSize_( 0 ),
+		objMapStart_( 0 ),
+		numVarPools_( 0 ),
+		numVarPoolsBytes_( 0 ),
+		numReac_( 0 )
+{;}
 
 Stoich::~Stoich()
 {
-	for ( vector< RateTerm* >::iterator i = rates_.begin(); 
+	for ( vector< RateTerm* >::iterator i = rates_.begin();
 		i != rates_.end(); ++i )
-		delete (*i);
-}
-		
-///////////////////////////////////////////////////
-// Field function definitions
-///////////////////////////////////////////////////
+		delete *i;
 
-unsigned int Stoich::getNmols( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->nMols_;
+	for ( vector< FuncTerm* >::iterator i = funcs_.begin();
+		i != funcs_.end(); ++i )
+		delete *i;
+	unZombifyModel();
 }
 
-unsigned int Stoich::getNvarMols( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->nVarMols_;
-}
+//////////////////////////////////////////////////////////////
+// MsgDest Definitions
+//////////////////////////////////////////////////////////////
 
-unsigned int Stoich::getNsumTot( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->nSumTot_;
-}
-
-unsigned int Stoich::getNbuffered( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->nBuffered_;
-}
-
-unsigned int Stoich::getNreacs( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->nReacs_;
-}
-
-unsigned int Stoich::getNenz( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->nEnz_;
-}
-
-unsigned int Stoich::getNmmEnz( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->nMmEnz_;
-}
-
-unsigned int Stoich::getNexternalRates( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->nExternalRates_;
-}
-void Stoich::setUseOneWayReacs( const Conn* c, int value ) {
-	static_cast< Stoich* >( c->data() )->useOneWayReacs_ = value;
-}
-
-bool Stoich::getUseOneWayReacs( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->
-		useOneWayReacs_;
-}
-
-string Stoich::getPath( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->path_;
-}
-void Stoich::setPath( const Conn* c, string value ) {
-	static_cast< Stoich* >( c->data() )->localSetPath( c->target(), value);
-}
-
-vector< Id > Stoich::getPathVec( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->pathVec_;
-}
-void Stoich::setPathVec( const Conn* c, vector< Id > value ) {
-	static_cast< Stoich* >( c->data() )->localSetPathVec( 
-		c->target(), value);
-}
-
-unsigned int Stoich::getRateVectorSize( Eref e ) {
-	return static_cast< const Stoich* >( e.data() )->rates_.size();
-}
-
-///////////////////////////////////////////////////
-// Dest function definitions
-///////////////////////////////////////////////////
-
-// Static func
-void Stoich::reinitFunc( const Conn* c )
+// This must only be called by the object that is actually
+// handling the processing: GssaStoich or GslIntegrator at this
+// time. That is because this function may reallocate memory
+// and its values must propagate serially to the calling object.
+// Somewhat inefficient: Must be called on thread 0 but would ideally
+// like to split among threads.
+void Stoich::innerReinit()
 {
-	Stoich* s = static_cast< Stoich* >( c->data() );
-	s->S_ = s->Sinit_;
+	// This might not be true, since S_ maintains extra info for the 
+	// off-node pools to which it connects.
+	// assert( y_.size() == S_.size() );
+
+	assert( y_.size() == localMeshEntries_.size() );
+	assert( Sinit_.size() == S_.size() );
+
+	for ( unsigned int i = 0; i < y_.size(); ++i ) {
+		y_[i].assign( Sinit_[i].begin(), Sinit_[i].begin() + numVarPools_ );
+	}
+	S_ = Sinit_;
+
+	for ( unsigned int i = 0; i < localMeshEntries_.size(); ++i ) {
+		updateFuncs( 0, localMeshEntries_[i] );
+	}
+	// updateV( 0 );
+}
+
+/**
+ * Handles incoming messages representing influx of molecules
+ */
+void Stoich::influx( unsigned int port, vector< double > pool )
+{
 	/*
-	cout << "Stoich::reinitFunc: Assigning S_. \nS_ = ( ";
-	for ( unsigned int i = 0; i < s->S_.size(); ++i )
-		cout << s->S_[i] << ", ";
-	cout << " ), Sinit_ = ( ";
-	for ( unsigned int i = 0; i < s->Sinit_.size(); ++i )
-		cout << s->Sinit_[i] << ", ";
-	cout << " )\n";
+	assert( pool.size() == inPortEnd_ - inPortStart_ );
+	unsigned int j = 0;
+	for ( unsigned int i = inPortStart_; i < inPortEnd_; ++i ) {
+		S_[i] += pool[j++];
+	}
 	*/
-
-
-	// send1< vector< double >* >( e, allocateSlot, &s->S_ );
-	// send1< void* >( e, assignStoichSlot, e->data() );
-	s->lasty_ = 0;
-	s->nCopy_ = 0;
-	s->nCall_ = 0;
-}
-
-// static func
-void Stoich::integrateFunc( const Conn* c, vector< double >* v, double dt )
-{
-	Stoich* s = static_cast< Stoich* >( c->data() );
-	s->updateRates( v, dt );
-}
-
-
-/**
- * Relays a 'y' assignment request to the GSL integrator, or whatever
- * else is appropriate.
- */
-void Stoich::setMolN( const Conn* c, double y, unsigned int i )
-{
-	static_cast< Stoich* >( c->data() )->innerSetMolN( c, y, i );
 }
 
 /**
- * virtual function, for the GssaStoich we have to do much more.
+ * Should really do this using a map indexed by SpeciesId.
  */
-void Stoich::innerSetMolN( const Conn* c, double y, unsigned int i )
+void Stoich::handleAvailableMolsAtPort( unsigned int port, vector< SpeciesId > mols )
 {
-	if ( i < nVarMols_ )
-		send2< double, unsigned int>( c->target(), setMolNslot, y, i );
-}
-
-void Stoich::rescaleVolume( const Conn* c, double ratio ) {
-	static_cast< Stoich* >( c->data() )->innerRescaleVolume( ratio );
-}
-
-void Stoich::innerRescaleVolume( double ratio )
-{
-	for ( vector< double >::iterator i = S_.begin(); i != S_.end(); ++i)
-		*i *= ratio;
-	for ( vector< double >::iterator i = Sinit_.begin(); i != Sinit_.end(); ++i)
-		*i *= ratio;
-	for ( vector< RateTerm* >::iterator i = rates_.begin(); i != rates_.end(); ++i)
-		( *i )->rescaleVolume( ratio );
-}
-
-void Stoich::setBuffer( const Conn* c, int mode, unsigned int mol )
-{
-	static_cast< Stoich* >( c->data() )->innerSetBuffer( mode, mol );
-}
-
-void Stoich::innerSetBuffer( int mode, unsigned int mol )
-{
-	if ( mol >= ( nVarMols_ + nSumTot_ ) ) {
-		if ( mode != 4 ) {
-			cout << "Stoich::innerSetBuffer: Warning: Cannot change buffer state of predefined buffer molecule\n";
+	/*
+	vector< SpeciesId > ret;
+	assert( port.field() < ports_.size() );
+	ports_[port.field()]->findMatchingMolSpecies( molSpecies, ret );
+	Port& p = ports_[ port.field() ];
+	for ( vector< SpeciesId >::iterator i = species_.begin(); 
+		i != species_.end(); ++i ) {
+		if ( *i != DefaultSpeciesId ) {
+			if ( p.availableMols_.find( *i ) != p.availableMols_.end() ) {
+				ret.push_back( *i );
+				p->usedMols_.push_back( i->second );
+			}
 		}
-		// In either case, just return at this point.
+	}
+	*/
+}
+
+void Stoich::handleMatchedMolsAtPort( unsigned int port, vector< SpeciesId > mols )
+{
+	;
+}
+
+//////////////////////////////////////////////////////////////
+// Field Definitions
+//////////////////////////////////////////////////////////////
+
+void Stoich::setOneWay( bool v )
+{
+	useOneWay_ = v;
+}
+
+bool Stoich::getOneWay() const
+{
+	return useOneWay_;
+}
+
+void Stoich::setPath( const Eref& e, const Qinfo* q, string v )
+{
+	if ( path_ != "" && path_ != v ) {
+		// unzombify( path_ );
+		cout << "Stoich::setPath: need to clear old path.\n";
 		return;
 	}
-	vector< unsigned int >::iterator pos = 
-		find( dynamicBuffers_.begin(), dynamicBuffers_.end(), mol );
-	if ( mode == 4 ) { // Buffering on. 
-		if ( pos == dynamicBuffers_.end() )
-			dynamicBuffers_.push_back( mol );
-	} else { // buffering off
-		if ( pos != dynamicBuffers_.end() )
-			dynamicBuffers_.erase( pos );
-	}
-}
+	path_ = v;
+	vector< Id > elist;
+	Shell::wildcard( path_, elist );
 
-void Stoich::makeFlux( const Conn* c, 
-	string stubName, vector< unsigned int >molIndices, 
-	vector< double > fluxRates )
-{
-	static_cast< Stoich* >( c->data() )->innerMakeFlux(
-		c->target(), stubName, molIndices, fluxRates );
-}
+	allocateObjMap( elist );
+	allocateModel( elist );
+	zombifyModel( e, elist );
+	innerReinit();
+	// y_.assign( Sinit_.begin(), Sinit_.begin() + numVarPools_ );
+	// S_ = Sinit_;
 
-/**
- * Puts the data into a new entry in the flux vector, and creates
- * a stub child for handling the messages to and from the entry.
- */
-void Stoich::innerMakeFlux( Eref e,
-	string stubName, vector< unsigned int >molIndices, 
-	vector< double > fluxRates )
-{
-	assert( molIndices.size() == fluxRates.size() );
-	vector< double* > fluxMolPtrs;
-	for ( vector< unsigned int >::iterator i = molIndices.begin();
-		i != molIndices.end(); ++i ) {
-		assert( *i < S_.size() );
-		fluxMolPtrs.push_back( &S_[ *i ] );
-	}
-	InterSolverFlux* data = 
-		new InterSolverFlux( fluxMolPtrs, fluxRates ); 
-	flux_.push_back( data );
-	const Cinfo * ic = initInterSolverFluxCinfo();
-	Element* f = ic->create( Id::scratchId(), stubName,
-		static_cast< void* >( data ), 1 );
-	e.add( "childSrc", f, "child" );
-}
-
-void Stoich::startFromCurrentConcs( const Conn* c ) {
-	static_cast< Stoich* >( c->data() )->innerStartFromCurrentConcs();
-}
-
-void Stoich::innerStartFromCurrentConcs()
-{
-	assert( Sinit_.size() == S_.size() );
-	Sinit_.assign( S_.begin(), S_.end() );
-
-	for ( map< Eref, unsigned int >::iterator i = molMap_.begin();
-		i != molMap_.end(); ++i ) {
-		assert( i->second < S_.size() );
-		Eref e = i->first;
-		Molecule* m = static_cast< Molecule* >( e.data() );
-		m->localSetNinit( S_[ i->second ] );
-		/*
-		SetConn c( i->first );
-		Molecule::setConc( &c, S_[ i->second ] );
-		*/
-	}
-}
-
-/// Send S to gsl to update.
-void Stoich::requestY( const Conn* c )
-{
-#ifdef USE_GSL
-	double* s = static_cast< Stoich* >( c->data() )->S();
-	send1< double* >( c->target(), assignYslot, s );
-#endif // USE_GSL
-}
-///////////////////////////////////////////////////
-// Other function definitions
-///////////////////////////////////////////////////
-
-unsigned int countRates( Eref e, bool useOneWayReacs )
-{
-	if ( e.e->cinfo()->isA( initReactionCinfo() ) ) {
-		if ( useOneWayReacs)
-			return 2;
-		else
-			return 1;
-	}
-	if ( e.e->cinfo()->isA( initEnzymeCinfo() ) ) {
-		bool enzmode = 0;
-		bool isOK = get< bool >( e, "mode", enzmode );
-		assert( isOK );
-		if ( enzmode == 0 ) {
-			if ( useOneWayReacs )
-				return 3;
-			else
-				return 2;
-		} else { 
-			return 1;
-		}
-	}
-	return 0;
-}
-
-void Stoich::clear( Eref stoich )
-{
-	// cout << "Sending clear signal for " << stoich->name() << "\n" << flush;
-	send0( stoich, clearSlot ); // Sends command to KineticHub to clear
-			// out the old messages to solved objects, and unzombify them
-	// cout << "Clear signal sent\n" << flush;
-
-	nMols_ = 0;
-	nVarMols_ = 0;
-	nSumTot_ = 0;
-	nBuffered_ =0;
-	nReacs_ = 0;
-	nEnz_ = 0;
-	nMmEnz_ = 0;
-	nExternalRates_ = 0;
-	S_.resize( 0 );
-	Sinit_.resize( 0 );
-	v_.resize( 0 );
-	rates_.resize( 0, 0 );
-	sumTotals_.resize( 0 );
-	pathVec_.resize( 0 );
-	path2mol_.resize( 0 );
-	mol2path_.resize( 0 );
-	molMap_.clear( );
-#ifdef DO_UNIT_TESTS
-	reacMap_.clear( );
-#endif // DO_UNIT_TESTS
-	nVarMolsBytes_ = 0;
-	nCopy_ = 0;
-	nCall_ = 0;
-}
-
-void Stoich::localSetPath( Eref stoich, const string& value )
-{
-	vector< Id > ret;
-	wildcardFind( value, ret );
-	this->localSetPathVec( stoich, ret ); //Pass down to derived classes
-	path_ = value;
-}
-
-void Stoich::localSetPathVec( Eref stoich, vector< Id >& value)
-{
-	path_ = "assigned from pathVec";
-	clear( stoich );
-	pathVec_ = value;
-	if ( pathVec_.size() > 0 ) {
-		// Pass to derived classes
-		this->rebuildMatrix( stoich, pathVec_ );
-
-		// This first target is for any Kintegrator objects
-		send1< vector< double >* >( stoich, allocateSlot, &S_ );
-
-		// The second target is for GSL integrator types.
-		send1< void* >( stoich, assignStoichSlot, stoich.data() );
-	} else {
-		cout << "No objects to simulate in pathVec sized " << 
-			pathVec_.size() << "\n";
-	}
-}
-
-/**
- * Virtual function to make the data structures from the 
- * object oriented specification of the signaling network.
- */
-void Stoich::rebuildMatrix( Eref stoich, vector< Id >& ret )
-{
-	static const Cinfo* molCinfo = Cinfo::find( "Molecule" );
-	vector< Id >::iterator i;
-	vector< Eref > varMolVec;
-	vector< Eref > bufVec;
-	vector< Eref > sumTotVec;
-	int mode;
-	bool isOK;
-	unsigned int numRates = 0;
-	sort( ret.begin(), ret.end() );
-	for ( i = ret.begin(); i != ret.end(); i++ ) {
-		if ( ( *i )()->cinfo()->isA( molCinfo ) ) {
-			isOK = get< int >( ( *i )(), "mode", mode );
-			assert( isOK );
-			if ( mode == 0 ) {
-				varMolVec.push_back( i->eref() );
-			} else if ( mode == 4 ) {
-				bufVec.push_back( i->eref() );
-			} else {
-				sumTotVec.push_back( i->eref() );
-			}
-		} else {
-			numRates += countRates( i->eref(), useOneWayReacs_ );
-		}
-	}
 	/*
-	 * We set up the stoichiometry matrix with _all_ the molecules
-	 * here. Later we only update those rows (molecules) that are 
-	 * variable, but for other kinds of matrix-based analyses
-	 * it is a good thing to have the
-	 * whole lot accessible.
-	 */
-	setupMols( stoich, varMolVec, bufVec, sumTotVec );
-	N_.setSize( nMols_, numRates );
-	v_.resize( numRates, 0.0 );
-	send3< vector< RateTerm* >*, KinSparseMatrix*, bool >( 
-		stoich, rateTermInfoSlot, &rates_, &N_, useOneWayReacs_ );
-	int nReac = 0;
-	int nEnz = 0;
-	int nMmEnz = 0;
-	for ( i = ret.begin(); i != ret.end(); i++ ) {
-		if ( i->eref().e->cinfo()->isA( initReactionCinfo() ) ) {
-			nReac++;
-		} else if ( i->eref().e->cinfo()->isA( initEnzymeCinfo() ) ) {
-			bool enzmode = 0;
-			isOK = get< bool >( i->eref(), "mode", enzmode );
-			assert( isOK );
-			if ( enzmode == 0 )
-				nEnz++;
-			else
-				nMmEnz++;
-		}
-	}
-	// cout << "RebuildMatrix: Intermedate setup: " << nVarMols_ << "," << nReac << ", " << nEnz << ", " << nMmEnz << endl;
-	send3< unsigned int, unsigned int, unsigned int >(
-			stoich, rateSizeSlot, nReac, nEnz, nMmEnz );
-	for ( i = ret.begin(); i != ret.end(); i++ ) {
-		const string& cn = i->eref().e->className();
-		if ( cn == "Reaction" ) {
-			addReac( stoich, i->eref() );
-		} else if ( cn == "Enzyme" ) {
-			bool enzmode = 0;
-			isOK = get< bool >( i->eref(), "mode", enzmode );
-			assert( isOK );
-			if ( enzmode == 0 )
-				addEnz( stoich, i->eref() );
-			else
-				addMmEnz( stoich, i->eref() );
-		} else if ( cn == "Table" ) {
-			addTab( stoich, ( *i )() );
-		} else if ( cn == "Neutral" ) {
-			// cout << (*i)()->name() << " is a Neutral\n";
-		} else if ( cn == "GslIntegrator" ||
-			cn == "Kintegrator" ||
-			cn == "KineticHub" ||
-			cn == "KinCompt" ||
-			cn == "Stoich" )
-		{
-			// Ignore these
-			;
-		} else if ( !( *i )()->cinfo()->isA( molCinfo ) ) {
-			addRate( stoich, i->eref() );
-		}
-	}
-	setupReacSystem( stoich );
-	// cout << "RebuildMatrix: later setup: " << nVarMols_ << "," << nReac << ", " << nEnz << ", " << nMmEnz << endl;
+	cout << "Zombified " << numVarPools_ << " Molecules, " <<
+		numReac_ << " reactions\n";
+	N_.print();
+	*/
 }
 
+string Stoich::getPath( const Eref& e, const Qinfo* q ) const
+{
+	return path_;
+}
 
-void Stoich::setupMols(
-	Eref e,
-	vector< Eref >& varMolVec,
-	vector< Eref >& bufVec,
-	vector< Eref >& sumTotVec
+unsigned int Stoich::getNumMeshEntries() const
+{
+	return localMeshEntries_.size();
+}
+
+double Stoich::getEstimatedDt() const
+{
+	return 1; // Dummy
+}
+
+unsigned int Stoich::getNumVarPools() const
+{
+	return numVarPools_;
+}
+
+Port* Stoich::getPort( unsigned int i )
+{
+	assert( i < ports_.size() );
+	return &ports_[i];
+}
+
+unsigned int Stoich::getNumPorts() const
+{
+	return ports_.size();
+}
+
+void Stoich::setNumPorts( unsigned int num )
+{
+	assert( num < 10000 );
+	ports_.resize( num );
+}
+
+//////////////////////////////////////////////////////////////
+// Model zombification functions
+//////////////////////////////////////////////////////////////
+void Stoich::allocateObjMap( const vector< Id >& elist )
+{
+	objMapStart_ = ~0;
+	unsigned int maxId = 0;
+	for ( vector< Id >::const_iterator i = elist.begin(); i != elist.end(); ++i ){
+		if ( objMapStart_ > i->value() )
+			objMapStart_ = i->value();
+		if ( maxId < i->value() )
+			maxId = i->value();
+	}
+	objMap_.resize(0);
+	objMap_.resize( 1 + maxId - objMapStart_, 0 );
+	assert( objMap_.size() >= elist.size() );
+}
+
+void Stoich::allocateModel( const vector< Id >& elist )
+{
+	static const Cinfo* poolCinfo = Pool::initCinfo();
+	static const Cinfo* bufPoolCinfo = BufPool::initCinfo();
+	static const Cinfo* funcPoolCinfo = FuncPool::initCinfo();
+	static const Cinfo* reacCinfo = Reac::initCinfo();
+	static const Cinfo* enzCinfo = Enz::initCinfo();
+	static const Cinfo* mmEnzCinfo = MMenz::initCinfo();
+	static const Cinfo* sumFuncCinfo = SumFunc::initCinfo();
+	// static const Cinfo* meshEntryCinfo = MeshEntry::initCinfo();
+	numVarPools_ = 0;
+	numReac_ = 0;
+	vector< Id > bufPools;
+	vector< Id > funcPools;
+	unsigned int numFunc = 0;
+	for ( vector< Id >::const_iterator i = elist.begin(); i != elist.end(); ++i ){
+		Element* ei = (*i)();
+		if ( ei->cinfo() == poolCinfo ) {
+			objMap_[ i->value() - objMapStart_ ] = numVarPools_;
+			idMap_.push_back( *i );
+			++numVarPools_;
+		} else if ( ei->cinfo() == bufPoolCinfo ) {
+			bufPools.push_back( *i );
+		} else if ( ei->cinfo() == funcPoolCinfo ) {
+			funcPools.push_back( *i );
+		} else if ( ei->cinfo() == mmEnzCinfo ){
+			objMap_[ i->value() - objMapStart_ ] = numReac_;
+			++numReac_;
+		} else if ( ei->cinfo() == reacCinfo ) {
+			if ( useOneWay_ ) {
+				objMap_[ i->value() - objMapStart_ ] = numReac_;
+				numReac_ += 2;
+			} else {
+				objMap_[ i->value() - objMapStart_ ] = numReac_;
+				++numReac_;
+			}
+		} else if ( ei->cinfo() == enzCinfo ) {
+			if ( useOneWay_ ) {
+				objMap_[ i->value() - objMapStart_ ] = numReac_;
+				numReac_ += 3;
+			} else {
+				objMap_[ i->value() - objMapStart_ ] = numReac_;
+				numReac_ += 2;
+			}
+		} else if ( ei->cinfo() == sumFuncCinfo ){
+			objMap_[ i->value() - objMapStart_ ] = numFunc;
+			++numFunc;
+		} 
+	}
+
+	numBufPools_ = 0;
+	for ( vector< Id >::const_iterator i = bufPools.begin(); i != bufPools.end(); ++i ){
+		objMap_[ i->value() - objMapStart_ ] = numVarPools_ + numBufPools_;
+		idMap_.push_back( *i );
+		++numBufPools_;
+	}
+
+	numFuncPools_ = numVarPools_ + numBufPools_;
+	for ( vector< Id >::const_iterator i = funcPools.begin(); 
+		i != funcPools.end(); ++i ) {
+		objMap_[ i->value() - objMapStart_ ] = numFuncPools_++;
+		idMap_.push_back( *i );
+	}
+	assert( idMap_.size() == numFuncPools_ );
+	numFuncPools_ -= numVarPools_ + numBufPools_;
+	assert( numFunc == numFuncPools_ );
+
+	numVarPoolsBytes_ = numVarPools_ * sizeof( double );
+	concInit_.resize( numVarPools_ + numBufPools_ + numFuncPools_, 0.0 );
+	S_.resize( 1 );
+	Sinit_.resize( 1 );
+	y_.resize( 1 );
+	flux_.resize( 1 );
+	S_[0].resize( numVarPools_ + numBufPools_ + numFuncPools_, 0.0 );
+	Sinit_[0].resize( numVarPools_ + numBufPools_ + numFuncPools_, 0.0);
+	y_[0].resize( numVarPools_, 0.0 );
+	flux_[0].resize( numVarPools_, 0.0 );
+
+	diffConst_.resize( numVarPools_ + numBufPools_ + numFuncPools_, 0.0 );
+	// compartment_.resize( numVarPools_ + numBufPools_ + numFuncPools_, 0 );
+	species_.resize( numVarPools_ + numBufPools_ + numFuncPools_, 0 );
+	rates_.resize( numReac_ );
+	// v_.resize( numReac_, 0.0 ); // v is now allocated dynamically
+	funcs_.resize( numFuncPools_ );
+	N_.setSize( numVarPools_ + numBufPools_ + numFuncPools_, numReac_ );
+}
+
+void zombifyAndUnschedPool( 
+	const Eref& s, Element* orig, const Cinfo* zClass )
+{
+	////////////////////////////////////////////////////////
+	// Unschedule: Get rid of Process message
+	static const Finfo* procDest = 
+		PoolBase::initCinfo()->findFinfo( "process");
+	assert( procDest );
+
+	const DestFinfo* df = dynamic_cast< const DestFinfo* >( procDest );
+	assert( df );
+	MsgId mid = orig->findCaller( df->getFid() );
+	if ( mid != Msg::bad )
+		Msg::deleteMsg( mid );
+
+	////////////////////////////////////////////////////////
+	/*
+	PoolBase* pb = reinterpret_cast< PoolBase* >( orig->dataHandler()->data( 0 ) );
+	pb->zombify( orig, zClass );
+	*/
+	
+	PoolBase::zombify( orig, zClass, s.id() );
+}
+
+void Stoich::zombifyModel( const Eref& e, const vector< Id >& elist )
+{
+	static const Cinfo* poolCinfo = Pool::initCinfo();
+	static const Cinfo* bufPoolCinfo = BufPool::initCinfo();
+	static const Cinfo* funcPoolCinfo = FuncPool::initCinfo();
+	static const Cinfo* reacCinfo = Reac::initCinfo();
+	static const Cinfo* enzCinfo = Enz::initCinfo();
+	static const Cinfo* mmEnzCinfo = MMenz::initCinfo();
+	// static const Cinfo* chemComptCinfo = ChemMesh::initCinfo();
+	// static const Cinfo* sumFuncCinfo = SumFunc::initCinfo();
+	// The FuncPool handles zombification of stuff coming in to it.
+	vector< Id > meshEntries;
+
+	for ( vector< Id >::const_iterator i = elist.begin(); i != elist.end(); ++i ){
+		Element* ei = (*i)();
+		if ( ei->cinfo() == poolCinfo ) {
+			zombifyAndUnschedPool( e, (*i)(), ZombiePool::initCinfo() );
+		}
+		else if ( ei->cinfo() == bufPoolCinfo ) {
+			zombifyAndUnschedPool( e, (*i)(), ZombieBufPool::initCinfo() );
+		}
+		else if ( ei->cinfo() == funcPoolCinfo ) {
+			zombifyAndUnschedPool( e, (*i)(), ZombieFuncPool::initCinfo());
+			// Has also got to zombify the Func.
+			Id funcId = Neutral::child( i->eref(), "sumFunc" );
+			if ( funcId != Id() ) {
+				if ( funcId()->cinfo()->isA( "SumFunc" ) )
+					ZombieSumFunc::zombify( e.element(), funcId(), (*i) );
+			}
+		}
+		else if ( ei->cinfo() == reacCinfo ) {
+			ZombieReac::zombify( e.element(), (*i)() );
+		}
+		else if ( ei->cinfo() == mmEnzCinfo ) {
+			ZombieMMenz::zombify( e.element(), (*i)() );
+		}
+		else if ( ei->cinfo() == enzCinfo ) {
+			ZombieEnz::zombify( e.element(), (*i)() );
+		}
+	}
+}
+
+void Stoich::unZombifyModel()
+{
+	// Need to check for existence of molecule and whether it is still
+	// a zombie.
+	unsigned int i = 0;
+	for ( ; i < numVarPools_; ++i ) {
+		Element* e = idMap_[i].element();
+		if ( e != 0 &&  e->cinfo() == ZombiePool::initCinfo() )
+			PoolBase::zombify( e, Pool::initCinfo(), Id() );
+	}
+	
+	for ( ; i < numVarPools_ + numBufPools_; ++i ) {
+		Element* e = idMap_[i].element();
+		if ( e != 0 &&  e->cinfo() == ZombieBufPool::initCinfo() )
+			PoolBase::zombify( e, BufPool::initCinfo(), Id() );
+	}
+	
+	for ( ; i < numVarPools_ + numBufPools_ + numFuncPools_; ++i ) {
+		Element* e = idMap_[i].element();
+		if ( e != 0 &&  e->cinfo() == ZombieFuncPool::initCinfo() )
+			PoolBase::zombify( e, FuncPool::initCinfo(), Id() );
+	}
+	Shell* s = reinterpret_cast< Shell* >( Id().eref().data() );
+
+	s->addClockMsgs( idMap_, "proc", 4 );
+}
+
+void Stoich::handleRemesh( unsigned int numLocalMeshEntries, 
+	vector< unsigned int > computedEntries, 
+	vector< unsigned int > allocatedEntries, 
+	vector< vector< unsigned int > > outgoingDiffusion, 
+	vector< vector< unsigned int > > incomingDiffusion ) 
+{
+	cout << "Stoich::handleRemesh\n";
+}
+
+void Stoich::meshSplit(
+	vector< double > vols,
+	vector< unsigned int > localEntryList,
+	vector< vector< unsigned int > > outgoingDiffusion,
+	vector< vector< unsigned int > > incomingDiffusion
 	)
 {
-	const Finfo* nInitFinfo = Cinfo::find( "Molecule" )->
-		findFinfo( "nInit" );
-	// Field nInitField = Cinfo::find( "Molecule" )->field( "nInit" );
-	vector< Eref >::iterator i;
-	vector< Eref >elist;
-	unsigned int j = 0;
-	double nInit;
-	nVarMols_ = varMolVec.size();
-	nVarMolsBytes_ = nVarMols_ * sizeof( double );
-	nSumTot_  = sumTotVec.size();
-	nBuffered_ = bufVec.size();
-	nMols_ = nVarMols_ + nSumTot_ + nBuffered_;
-	S_.resize( nMols_ );
-	Sinit_.resize( nMols_ );
-	for ( i = varMolVec.begin(); i != varMolVec.end(); i++ ) {
-		bool ret = get< double >( *i, nInitFinfo, nInit );
-		assert( ret );
-		assert( !isnan( nInit ) );
-		Sinit_[j] = nInit;
-		molMap_[ *i ] = j++;
-		elist.push_back( *i );
-	}
-	for ( i = sumTotVec.begin(); i != sumTotVec.end(); i++ ) {
-		bool ret = get< double >( *i, nInitFinfo, nInit );
-		assert( ret );
-		assert( !isnan( nInit ) );
-		Sinit_[j] = nInit;
-		molMap_[ *i ] = j++;
-		elist.push_back( *i );
-	}
-	for ( i = bufVec.begin(); i != bufVec.end(); i++ ) {
-		bool ret = get< double >( *i, nInitFinfo, nInit );
-		assert( ret );
-		assert( !isnan( nInit ) );
-		Sinit_[j] = nInit;
-		molMap_[ *i ] = j++;
-		elist.push_back( *i );
-	}
-	for ( i = sumTotVec.begin(); i != sumTotVec.end(); i++ ) {
-		addSumTot( *i );
-	}
-	send3< unsigned int, unsigned int, unsigned int >(
-		e, molSizeSlot, nVarMols_, nBuffered_, nSumTot_ );
-	// molSizesSrc_.send( nVarMols_, nBuffered_, nSumTot_ );
-	// molConnectionsSrc_.send( &S_, &Sinit_, &elist );
-	send3< vector< double >* , vector< double >* , vector< Eref >*  >(
-		e, molConnectionSlot, &S_, &Sinit_, &elist );
-}
-
-void Stoich::addSumTot( Eref e )
-{
-	vector< const double* > mol;
-	// vector< Eref > tab;
-	if ( findTargets( e, "sumTotal", mol ) ) {
-		map< Eref, unsigned int >::iterator j = molMap_.find( e );
-		assert( j != molMap_.end() );
-		SumTotal st( &S_[ j->second ], mol );
-		sumTotals_.push_back( st );
-	}
-}
-
-// This replaces findIncoming and findReactants.
-bool Stoich::findTargets(
-	Eref e, const string& msgFieldName, vector< const double* >& ret )
-{
-	Conn* c = e.e->targets( msgFieldName, e.i );
-	map< Eref, unsigned int >::iterator j;
-	ret.resize( 0 );
-	while ( c->good() ) {
-		Eref src = c->target();
-		j = molMap_.find( src );
-		if ( j != molMap_.end() ) {
-			ret.push_back( &S_[ j->second ] );
-		} else { 
-			// Table or other object, not handled.
-			// cout << "Error: findTargets: Unable to handle " << src.name() << " as src/target for " << e.name() << "." << msgFieldName << endl;
-			;
+	// cout << "Stoich::handleMeshSplit\n";
+	unsigned int totalNumMeshEntries = vols.size();
+	unsigned int numLocal = localEntryList.size();
+	S_.resize( totalNumMeshEntries );
+	Sinit_.resize( totalNumMeshEntries );
+	y_.resize( numLocal );
+	flux_.resize( numLocal );
+	for ( unsigned int i = 0; i < numLocal; ++i ) {
+		// Assume that these values will later be initialized
+		unsigned int k = localEntryList[i]; // Converts to global index
+		assert( k < totalNumMeshEntries );
+		S_[ k ].resize( concInit_.size(), 0 );
+		Sinit_[ k ].resize( concInit_.size(), 0 );
+		for ( unsigned int j = 0; j < concInit_.size(); ++j ) {
+			S_[k][j] = Sinit_[k][j] = concInit_[j] * vols[k] * NA;
 		}
-		c->increment();
+		y_[i].resize( numVarPools_, 0 );
+		flux_[i].resize( numVarPools_, 0 );
 	}
-	delete c;
-	return ( ret.size() > 0 );
+	localMeshEntries_ = localEntryList;
+	outgoing_ = outgoingDiffusion;
+	incoming_ = incomingDiffusion;
 }
 
-class ZeroOrder* makeHalfReaction( double k, vector< const double*> v )
+unsigned int Stoich::convertIdToPoolIndex( Id id ) const
 {
-	class ZeroOrder* ret = 0;
-	switch ( v.size() ) {
-		case 0:
-			ret = new ZeroOrder( k );
-			break;
-		case 1:
-			ret = new FirstOrder( k, v[0] );
-			break;
-		case 2:
-			ret = new SecondOrder( k, v[0], v[1] );
-			break;
-		default:
-			ret = new NOrder( k, v );
-			break;
-	}
-	return ret;
+	unsigned int i = id.value() - objMapStart_;
+	assert( i < objMap_.size() );
+	i = objMap_[i];
+	assert( i < concInit_.size() );
+	return i;
 }
 
-void Stoich::fillHalfStoich( const double* baseptr, 
-	vector< const double* >& reactant, int sign, unsigned int reacNum )
+unsigned int Stoich::convertIdToReacIndex( Id id ) const
 {
-	vector< const double* >::iterator i;
-	const double* lastptr = 0;
-	int n = 1;
-	unsigned int molNum = 0;
-
-	assert( reacNum < v_.size() );
-	sort( reactant.begin(), reactant.end() );
-	lastptr = reactant.front();
-	for (i = reactant.begin() + 1; i != reactant.end(); i++) {
-		if ( *i == lastptr ) {
-			n++;
-		}
-		if ( *i != lastptr ) {
-			molNum = static_cast< unsigned int >(lastptr - baseptr);
-			assert( molNum < nMols_ );
-			if ( molNum < nMols_ ) { // If should be redundant here.
-				N_.set( molNum, reacNum, sign * n );
-				n = 1;
-			}
-		}
-		lastptr = *i;
-	}
-	molNum = static_cast< unsigned int >(lastptr - baseptr);
-	assert( molNum < nMols_ );
-	if ( molNum < nMols_ ) { // Should be redundant.
-		N_.set( molNum, reacNum, sign * n );
-	}
+	unsigned int i = id.value() - objMapStart_;
+	assert( i < objMap_.size() );
+	i = objMap_[i];
+	assert( i < rates_.size() );
+	return i;
 }
 
-void Stoich::fillStoich( 
-	const double* baseptr, 
-	vector< const double* >& sub, vector< const double* >& prd, 
-	unsigned int reacNum )
+unsigned int Stoich::convertIdToFuncIndex( Id id ) const
 {
-	if ( sub.size() > 0 && prd.size() > 0 ) {
-		fillHalfStoich( baseptr, sub, -1 , reacNum );
-		fillHalfStoich( baseptr, prd, 1 , reacNum );
+	unsigned int i = id.value() - objMapStart_;
+	assert( i < objMap_.size() );
+	i = objMap_[i];
+	assert( i < funcs_.size() );
+	return i;
+}
+
+void Stoich::installReaction( ZeroOrder* forward, ZeroOrder* reverse, Id reacId )
+{
+	unsigned int rateIndex = convertIdToReacIndex( reacId );
+	unsigned int revRateIndex = rateIndex;
+	if ( useOneWay_ ) {
+		rates_[ rateIndex ] = forward;
+		revRateIndex = rateIndex + 1;
+		rates_[ revRateIndex ] = reverse;
 	} else {
-		/*
-		if ( sub.size() == 0 )
-			cout << "Warning: Stoich::fillStoich: dangling substrate. Reaction ignored.\n";
-		else
-			cout << "Warning: Stoich::fillStoich: dangling product. Reaction ignored.\n";
-			*/
+		rates_[ rateIndex ] = 
+			new BidirectionalReaction( forward, reverse );
 	}
+
+	vector< unsigned int > molIndex;
+
+	if ( useOneWay_ ) {
+		unsigned int numReactants = forward->getReactants( molIndex );
+		for ( unsigned int i = 0; i < numReactants; ++i ) {
+			int temp = N_.get( molIndex[i], rateIndex );
+			N_.set( molIndex[i], rateIndex, temp - 1 );
+			temp = N_.get( molIndex[i], revRateIndex );
+			N_.set( molIndex[i], revRateIndex, temp + 1 );
+		}
+
+		numReactants = reverse->getReactants( molIndex );
+		for ( unsigned int i = 0; i < numReactants; ++i ) {
+			int temp = N_.get( molIndex[i], rateIndex );
+			N_.set( molIndex[i], rateIndex, temp + 1 );
+			temp = N_.get( molIndex[i], revRateIndex );
+			N_.set( molIndex[i], revRateIndex, temp - 1 );
+		}
+	} else {
+		unsigned int numReactants = forward->getReactants( molIndex );
+		for ( unsigned int i = 0; i < numReactants; ++i ) {
+			int temp = N_.get( molIndex[i], rateIndex );
+			N_.set( molIndex[i], rateIndex, temp - 1 );
+		}
+
+		numReactants = reverse->getReactants( molIndex );
+		for ( unsigned int i = 0; i < numReactants; ++i ) {
+			int temp = N_.get( molIndex[i], revRateIndex );
+			N_.set( molIndex[i], rateIndex, temp + 1 );
+		}
+	}
+}
+
+void Stoich::installMMenz( MMEnzymeBase* meb, unsigned int rateIndex,
+	const vector< Id >& subs, const vector< Id >& prds )
+{
+	rates_[rateIndex] = meb;
+
+	for ( unsigned int i = 0; i < subs.size(); ++i ) {
+		unsigned int poolIndex = convertIdToPoolIndex( subs[i] );
+		int temp = N_.get( poolIndex, rateIndex );
+		N_.set( poolIndex, rateIndex, temp - 1 );
+	}
+	for ( unsigned int i = 0; i < prds.size(); ++i ) {
+		unsigned int poolIndex = convertIdToPoolIndex( prds[i] );
+		int temp = N_.get( poolIndex, rateIndex );
+		N_.set( poolIndex, rateIndex, temp + 1 );
+	}
+}
+
+void Stoich::installEnzyme( ZeroOrder* r1, ZeroOrder* r2, ZeroOrder* r3,
+	Id enzId, Id enzMolId, const vector< Id >& prds ) 
+{
+	unsigned int rateIndex = convertIdToReacIndex( enzId );
+
+	if ( useOneWay_ ) {
+		rates_[ rateIndex ] = r1;
+		rates_[ rateIndex + 1 ] = r2;
+		rates_[ rateIndex + 2 ] = r3;
+	} else {
+		rates_[ rateIndex ] = new BidirectionalReaction( r1, r2 );
+		rates_[ rateIndex + 1 ] = r3;
+	}
+
+	vector< unsigned int > poolIndex;
+	unsigned int numReactants = r2->getReactants( poolIndex );
+	assert( numReactants == 1 ); // Should be cplx as the only product
+	unsigned int cplxPool = poolIndex[0];
+
+	if ( useOneWay_ ) {
+		numReactants = r1->getReactants( poolIndex ); // Substrates
+		for ( unsigned int i = 0; i < numReactants; ++i ) {
+			int temp = N_.get( poolIndex[i], rateIndex ); // terms for r1
+			N_.set( poolIndex[i], rateIndex, temp - 1 );
+			temp = N_.get( poolIndex[i], rateIndex + 1 ); //terms for r2
+			N_.set( poolIndex[i], rateIndex + 1, temp + 1 );
+		}
+
+		int temp = N_.get( cplxPool, rateIndex );	// term for r1
+		N_.set( cplxPool, rateIndex, temp + 1 );
+		temp = N_.get( cplxPool, rateIndex + 1 );	// term for r2
+		N_.set( cplxPool, rateIndex + 1, temp -1 );
+	} else { // Regular bidirectional reactions.
+		numReactants = r1->getReactants( poolIndex ); // Substrates
+		for ( unsigned int i = 0; i < numReactants; ++i ) {
+			int temp = N_.get( poolIndex[i], rateIndex );
+			N_.set( poolIndex[i], rateIndex, temp - 1 );
+		}
+		int temp = N_.get( cplxPool, rateIndex );
+		N_.set( cplxPool, rateIndex, temp + 1 );
+	}
+
+	// Now assign reaction 3. The complex is the only substrate here.
+	// Reac 3 is already unidirectional, so all we need to do to handle
+	// one-way reactions is to get the index right.
+	unsigned int reac3index = ( useOneWay_ ) ? rateIndex + 2 : rateIndex + 1;
+	int temp = N_.get( cplxPool, reac3index );
+	N_.set( cplxPool, reac3index, temp - 1 );
+
+	// For the products, we go to the prd list directly.
+	for ( unsigned int i = 0; i < prds.size(); ++i ) {
+		unsigned int j = convertIdToPoolIndex( prds[i] );
+		int temp = N_.get( j, reac3index );
+		N_.set( j, reac3index, temp + 1 );
+	}
+	// Enz is also a product here.
+	unsigned int enzPool = convertIdToPoolIndex( enzMolId );
+	temp = N_.get( enzPool, reac3index );
+	N_.set( enzPool, reac3index, temp + 1 );
+}
+
+//////////////////////////////////////////////////////////////
+// Field interface functions
+//////////////////////////////////////////////////////////////
+
+/**
+ * Sets the forward rate v (given in millimoloar concentration units)
+ * for the specified reaction throughout the compartment in which the
+ * reaction lives. Internally the stoich uses #/voxel units so this 
+ * involves querying the volume subsystem about volumes for each
+ * voxel, and scaling accordingly.
+ * For now assume a uniform voxel volume and hence just convert on 
+ * 0 meshIndex.
+ */
+void Stoich::setReacKf( const Eref& e, double v ) const
+{
+	static const SrcFinfo* toSub = dynamic_cast< const SrcFinfo* > (
+		ZombieReac::initCinfo()->findFinfo( "toSub" ) );
+
+	assert( toSub );
+	double volScale = convertConcToNumRateUsingMesh( e, toSub, 0 );
+
+	rates_[ convertIdToReacIndex( e.id() ) ]->setR1( v / volScale );
 }
 
 /**
- * Adds the reaction-element e to the solved system.
+ * For now assume a single rate term.
  */
-void Stoich::addReac( Eref stoich, Eref e )
+void Stoich::setReacKb( const Eref& e, double v ) const
 {
-	static ZeroOrder* dummyReac = new ZeroOrder( 0.0 );
-	vector< const double* > sub;
-	vector< const double* > prd;
-	class ZeroOrder* freac = 0;
-	class ZeroOrder* breac = 0;
-	double kf = Reaction::getRawKf( e ); // bypass the solver lookup stuff
-	double kb = Reaction::getRawKb( e );
-	/*
-	double kf;
-	double kb;
-	bool isOK = get< double >( e, "kf", kf );
-	assert ( isOK );
-	isOK = get< double >( e, "kb", kb );
-	assert ( isOK );
-	*/
-	assert( !isnan( kf ) );
-	assert( !isnan( kb ) );
+	static const SrcFinfo* toPrd = static_cast< const SrcFinfo* > (
+		ZombieReac::initCinfo()->findFinfo( "toPrd" ) );
 
-	if ( findTargets( e, "sub", sub ) ) {
-		freac = makeHalfReaction( kf, sub );
-	}
-	if ( findTargets( e, "prd", prd ) ) {
-		breac = makeHalfReaction( kb, prd );
-	}
-	if ( freac == 0 || breac == 0 ) {
-		breac = freac = dummyReac;
-		cout << "Stoich::addReac: dummy on " << e.id().path() << "\n";
-	// 	assert( 0 );
-	// 	return;
-	}
-	// cout << "addReac " << e.name() << " kf, kb=" << kf << ", " << kb << endl;
-	/*
-	if ( sub.size() == 0 || prd.size() == 0 ) {
-		if ( sub.size() == 0 )
-			cout << "Warning: Stoich::fillStoich: dangling substrate on " << e.id().path() << ". Reaction ignored.\n";
-		else
-			cout << "Warning: Stoich::fillStoich: dangling product on " << e.id().path() << ". Reaction ignored.\n";
-		// return;
-	}
-	*/
+	assert( toPrd );
+	double volScale = convertConcToNumRateUsingMesh( e, toPrd, 0 );
 
-#ifdef DO_UNIT_TESTS
-	reacMap_[e] = rates_.size();
-#endif
-	send2< unsigned int, Eref >( stoich, 
-			reacConnectionSlot, rates_.size(), e );
-	if ( useOneWayReacs_ ) {
-		if ( freac ) {
-			fillStoich( &S_[0], sub, prd, rates_.size() );
-			rates_.push_back( freac );
-		}
-		if ( breac ) {
-			fillStoich( &S_[0], prd, sub, rates_.size() );
-			rates_.push_back( breac );
-		}
-	} else { 
-		fillStoich( &S_[0], sub, prd, rates_.size() );
-			if ( freac != dummyReac ) {
-				rates_.push_back( 
-					new BidirectionalReaction( freac, breac )
-				);
-			} else {
-				rates_.push_back( dummyReac );
-				// cout << "Stoich::addReac: dummy on " << e.id().path() << "\n";
-			}
-			/*
-			} else if ( freac )  {
-				rates_.push_back( freac );
-			} else if ( breac ) {
-				rates_.push_back( breac );
-			} else {
-				assert( 0 );
-			}
-			*/
-	}
-	++nReacs_;
+
+	if ( useOneWay_ )
+		 rates_[ convertIdToReacIndex( e.id() ) + 1 ]->setR1( v / volScale);
+	else
+		 rates_[ convertIdToReacIndex( e.id() ) ]->setR2( v / volScale );
 }
 
-bool Stoich::checkEnz( Eref e,
-		vector< const double* >& sub,
-		vector< const double* >& prd,
-		vector< const double* >& enz,
-		vector< const double* >& cplx,
-		double& k1, double& k2, double& k3,
-		bool isMM
-	)
+void Stoich::setMMenzKm( const Eref& e, double v ) const
 {
-	/*
-	bool ret;
-	ret = get< double >( e, "k1", k1 );
-	assert( ret );
-	assert( !isnan( k1 ) );
-	ret = get< double >( e, "k2", k2 );
-	assert( ret );
-	assert( !isnan( k2 ) );
-	ret = get< double >( e, "k3", k3 );
-	assert( ret );
-	assert( !isnan( k3 ) );
-	*/
-	k1 = Enzyme::getK1( e );
-	k2 = Enzyme::getK2( e );
-	k3 = Enzyme::getK3( e );
-	assert( !isnan( k1 ) );
-	assert( !isnan( k2 ) );
-	assert( !isnan( k3 ) );
+	static const SrcFinfo* toSub = dynamic_cast< const SrcFinfo* > (
+		ZombieMMenz::initCinfo()->findFinfo( "toSub" ) );
+	// Identify MMenz rate term
+	RateTerm* rt = rates_[ convertIdToReacIndex( e.id() ) ];
+	MMEnzymeBase* enz = dynamic_cast< MMEnzymeBase* >( rt );
+	assert( enz );
+	// Identify MMenz Enzyme substrate. I would have preferred the parent,
+	// but that gets messy.
+	// unsigned int enzMolIndex = enz->getEnzIndex();
 
-	if ( !findTargets( e, "sub", sub ) ) {
-		cerr << "Error: Stoich::addEnz( " << e.name() << " ) : Failed to find subs\n";
-		return 0;
+	// This function can be replicated to handle multiple different voxels.
+	vector< double > vols;
+	getReactantVols( e, toSub, vols );
+	if ( vols.size() == 0 ) {
+		cerr << "Error: Stoich::setMMenzKm: no substrates for enzyme " <<
+			e << endl;
+		return;
 	}
-	if ( !findTargets( e, "enz", enz ) ) {
-		cerr << "Error: Stoich::addEnz( " << e.name() << " ) : Failed to find enzyme\n";
-		return 0;
-	}
-	if ( !isMM ) {
-		if ( !findTargets( e, "cplx", cplx )  ) {  
-			cerr << "Error: Stoich::addEnz( " << e.name() << " ) : Failed to find cplx\n";
-			return 0;
-		}
-	}
-	if ( !findTargets( e, "prd", prd ) ) {
-		cerr << "Error: Stoich::addEnz( " << e.name() << " ) : Failed to find prds\n";
-		return 0;
-	}
-	return 1;
+	// Do scaling and assignment.
+	enz->setR1( v * vols[0] * NA );
 }
 
-void Stoich::addEnz( Eref stoich, Eref e )
+void Stoich::setMMenzKcat( const Eref& e, double v ) const
 {
-	static ZeroOrder* dummyReac = new ZeroOrder( 0.0 );
-	vector< const double* > sub;
-	vector< const double* > prd;
-	vector< const double* > enz;
-	vector< const double* > cplx;
-	class ZeroOrder* freac = 0;
-	class ZeroOrder* breac = 0;
-	class ZeroOrder* catreac = 0;
-	double k1;
-	double k2;
-	double k3;
-	if ( checkEnz( e, sub, prd, enz, cplx, k1, k2, k3, 0 ) ) {
-		sub.push_back( enz[ 0 ] );
-		prd.push_back( enz[ 0 ] );
-		freac = makeHalfReaction( k1, sub );
-		breac = makeHalfReaction( k2, cplx );
-		catreac = makeHalfReaction( k3, cplx );
-		send2< unsigned int, Eref >(
-			stoich, enzConnectionSlot,
-			rates_.size(), e );
-		if ( useOneWayReacs_ ) {
-			fillStoich( &S_[0], sub, cplx, rates_.size() );
-			rates_.push_back( freac );
-			fillStoich( &S_[0], cplx, sub, rates_.size() );
-			rates_.push_back( breac );
-			fillStoich( &S_[0], cplx, prd, rates_.size() );
-			rates_.push_back( catreac );
-		} else { 
-			fillStoich( &S_[0], sub, cplx, rates_.size() );
-			rates_.push_back( 
-				new BidirectionalReaction( freac, breac ) );
-			fillStoich( &S_[0], cplx, prd, rates_.size() );
-			rates_.push_back( catreac );
-		}
-		nEnz_++;
-	} else {
-		if ( useOneWayReacs_ )
-			rates_.push_back( dummyReac );
-		rates_.push_back( dummyReac );
-		rates_.push_back( dummyReac );
-	}
+	RateTerm* rt = rates_[ convertIdToReacIndex( e.id() ) ];
+	MMEnzymeBase* enz = dynamic_cast< MMEnzymeBase* >( rt );
+	assert( enz );
+
+	enz->setR2( v );
 }
 
-void Stoich::addMmEnz( Eref stoich, Eref e )
+/// Later handle all the volumes when this conversion is done.
+void Stoich::setEnzK1( const Eref& e, double v ) const
 {
-	vector< const double* > sub;
-	vector< const double* > prd;
-	vector< const double* > enz;
-	vector< const double* > cplx;
-	class ZeroOrder* sublist = 0;
-	double k1;
-	double k2;
-	double k3;
-	if ( checkEnz( e, sub, prd, enz, cplx, k1, k2, k3, 1 ) ) {
-		double Km = 1.0;
-		if ( k1 > EPSILON ) {
-			Km = ( k2 + k3 ) / k1;
-		} else {
-			cerr << "Error: Stoich::addMMEnz: zero k1\n";
-			return;
-		}
-		fillStoich( &S_[0], sub, prd, rates_.size() );
-		send2< unsigned int, Eref >(
-			stoich, mmEnzConnectionSlot,
-			rates_.size(), e );
-		if ( sub.size() == 1 ) {
-			// cout << "Making MMEnzyme1\n" << flush;
-			rates_.push_back( new MMEnzyme1( Km, k3, enz[0], sub[0] ) );
-		} else {
-			// cout << "Making general MMEnzyme\n" << flush;
-			sublist = makeHalfReaction( 1.0, sub );
-			rates_.push_back( new MMEnzyme( Km, k3, enz[0], sublist ) );
-		}
-		nMmEnz_++;
-	}
+	static const SrcFinfo* toSub = dynamic_cast< const SrcFinfo* > (
+		ZombieEnz::initCinfo()->findFinfo( "toSub" ) );
+	assert( toSub );
+
+	double volScale = convertConcToNumRateUsingMesh( e, toSub, 1 );
+
+	rates_[ convertIdToReacIndex( e.id() ) ]->setR1( v / volScale );
 }
 
-void Stoich::addTab( Eref stoich, Eref e )
+void Stoich::setEnzK2( const Eref& e, double v ) const
 {
-	// nothing to do here. It is handled by keeping the tab as an external,
-	// unmanaged object.
-	// cout << "Don't yet know how to addTab for " << e->name() << "\n";
+	if ( useOneWay_ )
+		rates_[ convertIdToReacIndex( e.id() ) + 1 ]->setR1( v );
+	else
+		rates_[ convertIdToReacIndex( e.id() ) ]->setR2( v );
 }
 
-void Stoich::addRate( Eref stoich, Eref e )
+void Stoich::setEnzK3( const Eref& e, double v ) const
 {
-	// cout << "Don't yet know how to addRate for " << e->name() << "\n";
+	if ( useOneWay_ )
+		rates_[ convertIdToReacIndex( e.id() ) + 2 ]->setR1( v );
+	else
+		rates_[ convertIdToReacIndex( e.id() ) + 1 ]->setR1( v );
 }
 
-void Stoich::setupReacSystem( Eref stoich )
+/**
+ * Looks up the matching rate for R1. Later we may have additional 
+ * scaling terms for the specified voxel.
+ */
+double Stoich::getR1( unsigned int reacIndex, unsigned int voxel ) const
 {
-	// At this point the Stoich has sent out all info to the target
-	// objects and the Hubs. It now requests them to do something with it.
-	// Since these objects may have to do stuff the stoich doesn't know
-	// about, it also sends them the path to work on.
-	send1< string >( stoich, completeSetupSlot, path_ );
+	return rates_[ reacIndex ]->getR1();
 }
+
+/**
+ * Looks up the matching rate for R2. Later we may have additional 
+ * scaling terms for the specified voxel.
+ */
+double Stoich::getR2( unsigned int reacIndex, unsigned int voxel ) const
+{
+	return rates_[ reacIndex ]->getR2();
+}
+
+void Stoich::innerSetN( unsigned int meshIndex, Id id, double v )
+{
+	unsigned int poolIndex = convertIdToPoolIndex( id );
+	assert( poolIndex < S_[meshIndex].size() );
+	S_[ meshIndex ][ poolIndex ] = v;
+	if ( poolIndex < numVarPools_ )
+		y_[ meshIndex ][ poolIndex ] = v;
+}
+
+void Stoich::innerSetNinit( unsigned int meshIndex, Id id, double v )
+{
+	Sinit_[ meshIndex ][ convertIdToPoolIndex( id ) ] = v;
+}
+
+//////////////////////////////////////////////////////////////
+// Model running functions
+//////////////////////////////////////////////////////////////
 
 // Update the v_ vector for individual reac velocities.
-void Stoich::updateV( )
+void Stoich::updateV( unsigned int meshIndex, vector< double >& v )
 {
 	// Some algorithm to assign the values from the computed rates
 	// to the corresponding v_ vector entry
 	// for_each( rates_.begin(), rates_.end(), assign);
 
 	vector< RateTerm* >::const_iterator i;
-	vector< double >::iterator j = v_.begin();
+	vector< double >::iterator j = v.begin();
+	const double* S = &S_[meshIndex][0];
 
 	for ( i = rates_.begin(); i != rates_.end(); i++)
 	{
-		*j++ = (**i)();
+		*j++ = (**i)( S );
 		assert( !isnan( *( j-1 ) ) );
 	}
 
-	// I should use foreach here.
+	// I should use forall here.
+	/*
 	vector< SumTotal >::const_iterator k;
 	for ( k = sumTotals_.begin(); k != sumTotals_.end(); k++ )
 		k->sum();
+	*/
 }
 
-void Stoich::updateRates( vector< double>* yprime, double dt  )
+void Stoich::updateRates( vector< double>* yprime, double dt, 
+	unsigned int meshIndex, vector< double >& v )
 {
-	updateV();
+	updateV( meshIndex, v );
 
 	// Much scope for optimization here.
 	vector< double >::iterator j = yprime->begin();
-	assert( yprime->size() >= nVarMols_ );
-	for (unsigned int i = 0; i < nVarMols_; i++) {
-		*j++ = dt * N_.computeRowRate( i , v_ );
+	assert( yprime->size() >= numVarPools_ );
+	for (unsigned int i = 0; i < numVarPools_; i++) {
+		*j++ = dt * N_.computeRowRate( i , v );
 	}
 }
+
+// Update the function-computed molecule terms. These are not integrated,
+// but their values may be used by molecules that are.
+// The molecule vector S_ has a section for FuncTerms. In this section
+// there is a one-to-one match between entries in S_ and FuncTerm entries.
+void Stoich::updateFuncs( double t, unsigned int meshIndex )
+{
+	vector< FuncTerm* >::const_iterator i;
+	vector< double >::iterator j = S_[meshIndex].begin() + numVarPools_ + numBufPools_;
+
+	for ( i = funcs_.begin(); i != funcs_.end(); i++)
+	{
+		*j++ = (**i)( &( S_[meshIndex][0] ), t );
+		assert( !isnan( *( j-1 ) ) );
+	}
+}
+
+/////////////////////////////////////////////////////////////////
+// 
+/////////////////////////////////////////////////////////////////
+void Stoich::updateDiffusion( 
+	unsigned int meshIndex, const vector< const Stencil* >& stencil)
+{
+	for ( unsigned int i = 0; i < stencil.size(); ++i ) {
+		stencil[i]->addFlux( meshIndex, flux_[meshIndex], S_, diffConst_ );
+	}
+}
+
+// void Stoich::clearFlux( unsigned int meshIndex )
+// This variant also sends out the data for the current node.
+// Problem here: I need to restrict myself to this thread's meshindices.
+// Or pick the meshIndex == 0 and on that thread alone send out all the
+// stuff. At this phase it should be safe as all the calculations are done,
+// so none of the S_ vectors is changing.
+void Stoich::clearFlux( unsigned int meshIndex, unsigned int threadNum )
+{
+	if ( meshIndex == 0 ) {
+		for( vector< unsigned int >::iterator i = diffNodes_.begin(); 
+			i != diffNodes_.end(); ++i )
+		{
+			vector< double > buf;
+			for ( unsigned int j = 0; j < outgoing_.size(); ++j ) {
+				buf.insert( buf.end(), S_[ outgoing_[*i][j] ].begin(),
+					S_[ outgoing_[*i][j] ].end() );
+			}
+			nodeDiffBoundary()->send( stoichId_.eref(), threadNum, 
+				*i, outgoing_[*i], buf );
+		}
+	}
+
+	vector< double >& f = flux_[meshIndex];
+
+	for ( vector< double >::iterator j = f.begin(); j != f.end(); ++j)
+		*j = 0.0;
+}
+
+//// This belongs up in the destMsgs, but I'll put it here to help coding.
+// It is the recipient function for the message sent at the node boundary.
+// It can handle messages even if they are not destined for this node, it
+// just ignores them.
+
+void Stoich::handleNodeDiffBoundary( unsigned int nodeNum, 
+	vector< unsigned int > meshEntries, vector< double > remoteS )
+{
+	vector< double >::iterator begin = remoteS.begin();
+	for ( unsigned int i = 0; i < incoming_[ nodeNum ].size(); ++i ) {
+		unsigned int meshIndex = incoming_[nodeNum][i];
+		/// Check the syntax of assign.
+		S_[meshIndex].assign( begin, begin + numVarPools_ );
+		begin += numVarPools_;
+	}
+}
+
+void Stoich::clearFlux()
+{
+	for ( unsigned int i = 0; i < flux_.size(); ++i )
+		clearFlux( i, ScriptThreadNum );
+}
+
+// Put in a similar updateVals() function to handle Math expressions.
+// Might update molecules, possibly even reac rates at some point.
 
 /**
  * Assigns n values for all molecules that have had their slave-enable
  * flag set _after_ the run started. Ugly hack, but convenient for 
  * simulations. Likely to be very few, if any.
- */
 void Stoich::updateDynamicBuffers()
 {
 	// Here we handle dynamic buffering by simply writing over S_.
@@ -1140,6 +1024,71 @@ void Stoich::updateDynamicBuffers()
 	for ( vector< unsigned int >::const_iterator 
 		i = dynamicBuffers_.begin(); i != dynamicBuffers_.end(); ++i )
 		S_[ *i ] = Sinit_[ *i ];
+}
+ */
+
+unsigned int Stoich::numMeshEntries() const
+{
+	return concInit_.size();
+}
+
+const double* Stoich::S( unsigned int meshIndex ) const
+{
+	return &S_[meshIndex][0];
+}
+
+double* Stoich::varS( unsigned int meshIndex )
+{
+	return &S_[meshIndex][0];
+}
+
+const double* Stoich::Sinit( unsigned int meshIndex ) const
+{
+	return &Sinit_[meshIndex][0];
+}
+
+void Stoich::setConcInit( unsigned int poolIndex, double conc )
+{
+	assert( conc >= 0 );
+	assert( poolIndex < concInit_.size() );
+	concInit_[poolIndex] = conc;
+}
+
+double Stoich::getDiffConst( unsigned int p ) const
+{
+	assert( p < diffConst_.size() );
+	return diffConst_[p];
+}
+
+void Stoich::setDiffConst( unsigned int p, double d )
+{
+	assert( p < diffConst_.size() );
+	if ( d < 0 ) {
+		cout << "Warning: Stoich::setDiffConst: D[" << p << 
+			"] cannot be -ve: " << d << endl;
+		return;
+	}
+	diffConst_[p] = d;
+}
+
+SpeciesId Stoich::getSpecies( unsigned int poolIndex ) const
+{
+	return species_[ poolIndex ];
+}
+
+void Stoich::setSpecies( unsigned int poolIndex, SpeciesId s )
+{
+	species_[ poolIndex ] = s;
+}
+
+double* Stoich::getY( unsigned int meshIndex )
+{
+	return &y_[meshIndex][0];
+}
+
+void Stoich::print() const
+{
+	N_.print();
 }
 
 #ifdef USE_GSL
@@ -1166,36 +1115,42 @@ void Stoich::updateDynamicBuffers()
 // Static function passed in as the stepper for GSL
 int Stoich::gslFunc( double t, const double* y, double* yprime, void* s )
 {
-	return static_cast< Stoich* >( s )->innerGslFunc( t, y, yprime );
+	StoichThread* st = static_cast< StoichThread* >( s );
+	return st->stoich()->innerGslFunc( t, y, yprime, st->meshIndex() );
+	// return static_cast< Stoich* >( s )->innerGslFunc( t, y, yprime );
 }
 
 
-int Stoich::innerGslFunc( double t, const double* y, double* yprime )
+int Stoich::innerGslFunc( double t, const double* y, double* yprime, 
+	unsigned int meshIndex )
 {
-	nCall_++;
-//	if ( lasty_ != y ) { // should count to see how often this copy happens
-		// Copy the y array into the y_ vector.
-		memcpy( &S_[0], y, nVarMolsBytes_ );
-		lasty_ = y;
-		nCopy_++;
-//	}
+	vector< double > v( numReac_ );
+	// Copy the y array into the S_ vector.
+	// Sometimes GSL passes in its own allocated version of y.
+	/*
+	unsigned int begin = ( numMeshEntries_ * p->threadIndexInGroup ) /
+		p->numThreadsInGroup;
+	unsigned int end = ( numMeshEntries_ * ( 1 + p->threadIndexInGroup ) ) /
+		p->numThreadsInGroup;
+		*/
+	memcpy( &S_[meshIndex][0], y, numVarPoolsBytes_ );
 
-	updateDynamicBuffers();
+	//	updateDynamicBuffers();
+	updateFuncs( t, meshIndex );
 
-	updateV();
+	updateV( meshIndex, v );
+
+	// updateDiffusion happens in the previous Process Tick, coordinated
+	// by the MeshEntries. At this point the new values are there in the
+	// flux_ matrix.
 
 	// Much scope for optimization here.
-	for (unsigned int i = 0; i < nVarMols_; i++) {
-		*yprime++ = N_.computeRowRate( i , v_ );
+	const vector< double >& f = flux_[ meshIndex ];
+	for (unsigned int i = 0; i < numVarPools_; i++) {
+		*yprime++ = N_.computeRowRate( i , v ) + f[i];
 	}
 	// cout << t << ": " << y[0] << ", " << y[1] << endl;
 	return GSL_SUCCESS;
 }
-
-void Stoich::runStats()
-{
-	cout << "Copy:Call=	" << nCopy_ << ":" << nCall_ << endl;
-}
-
 
 #endif // USE_GSL

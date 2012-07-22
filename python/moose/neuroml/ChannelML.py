@@ -1,16 +1,27 @@
-from xml.etree import ElementTree as ET
+## Description: class ChannelML for loading ChannelML from file or xml element into MOOSE
+## Version 1.0 by Aditya Gilra, NCBS, Bangalore, India, 2011 for serial MOOSE
+## Version 1.5 by Niraj Dudani, NCBS, Bangalore, India, 2012, ported to parallel MOOSE
+## Version 1.6 by Aditya Gilra, NCBS, Bangalore, India, 2012, minor changes for parallel MOOSE
+
+"""
+NeuroML.py is the preferred interface. Use this only if NeuroML L1,L2,L3 files are misnamed/scattered.
+Instantiate ChannelML class, and thence use method:
+readChannelMLFromFile(...) to load a standalone ChannelML file (synapse/channel), OR
+readChannelML(...) / readSynapseML to load from an xml.etree xml element (could be part of a larger NeuroML file).
+"""
+
+from xml.etree import cElementTree as ET
 import string
 import os, sys
-from math import *
+import math
 
 import moose
-from neuroml_utils import *
+from moose.neuroml import utils
 
 class ChannelML():
 
     def __init__(self,nml_params):
         self.cml='http://morphml.org/channelml/schema'
-        self.context = moose.PyMooseBase.getContext()
         self.nml_params = nml_params
         self.temperature = nml_params['temperature']
 
@@ -39,7 +50,8 @@ class ChannelML():
         else:
             print "wrong units", units,": exiting ..."
             sys.exit(1)
-        print "loading synapse :",synapseElement.attrib['name'],"into /library ."
+        moose.Neutral('/library') # creates /library in MOOSE tree; elif present, wraps
+        if utils.neuroml_debug: print "loading synapse :",synapseElement.attrib['name'],"into /library ."
         moosesynapse = moose.SynChan('/library/'+synapseElement.attrib['name'])
         doub_exp_syn = synapseElement.find('./{'+self.cml+'}doub_exp_syn')
         moosesynapse.Ek = float(doub_exp_syn.attrib['reversal_potential'])*Vfactor
@@ -48,10 +60,8 @@ class ChannelML():
         moosesynapse.tau2 = float(doub_exp_syn.attrib['decay_time'])*Tfactor # seconds
         ### The delay and weight can be set only after connecting a spike event generator.
         ### delay and weight are arrays: multiple event messages can be connected to a single synapse
-        moosesynapse.addField('graded')
-        moosesynapse.setField('graded','False')
-        moosesynapse.addField('mgblock')
-        moosesynapse.setField('mgblock','False')
+        moosesynapse.graded = False
+        moosesynapse.mgblock = False
       
     def readChannelML(self,channelElement,params={},units="SI units"):
         ## I first calculate all functions assuming a consistent system of units.
@@ -70,29 +80,30 @@ class ChannelML():
         else:
             print "wrong units", units,": exiting ..."
             sys.exit(1)
+        moose.Neutral('/library') # creates /library in MOOSE tree; elif present, wraps
         channel_name = channelElement.attrib['name']
-        print "loading channel :", channel_name,"into /library ."
+        if utils.neuroml_debug: print "loading channel :", channel_name,"into /library ."
         IVrelation = channelElement.find('./{'+self.cml+'}current_voltage_relation')
         concdep = IVrelation.find('./{'+self.cml+'}conc_dependence')
         if concdep is None:
             moosechannel = moose.HHChannel('/library/'+channel_name)
         else:
             moosechannel = moose.HHChannel2D('/library/'+channel_name)
+        
         if IVrelation.attrib['cond_law']=="ohmic":
             moosechannel.Gbar = float(IVrelation.attrib['default_gmax']) * Gfactor
             moosechannel.Ek = float(IVrelation.attrib['default_erev']) * Vfactor
-            moosechannel.addField('ion')
-            moosechannel.setField('ion',IVrelation.attrib['ion'])
+            moosechannelIon = moose.Mstring(moosechannel.path+'/ion')
+            moosechannelIon.value = IVrelation.attrib['ion']
             if concdep is not None:
-                moosechannel.addField('ionDependency')
-                moosechannel.setField('ionDependency',concdep.attrib['ion'])
-                
-            
+                moosechannelIonDependency = moose.Mstring(moosechannel.path+'/ionDependency')
+                moosechannelIonDependency.value = concdep.attrib['ion']
+        
         gates = IVrelation.findall('./{'+self.cml+'}gate')
         if len(gates)>3:
             print "Sorry! Maximum x, y, and z (three) gates are possible in MOOSE/Genesis"
             sys.exit()
-        moosegates = [['Xpower','xGate'],['Ypower','yGate'],['Zpower','zGate']]
+        gate_full_name = [ 'gateX', 'gateY', 'gateZ' ] # These are the names that MOOSE uses to create gates.
         ## if impl_prefs tag is present change VMIN, VMAX and NDIVS
         impl_prefs = channelElement.find('./{'+self.cml+'}impl_prefs')
         if impl_prefs is not None:
@@ -106,10 +117,10 @@ class ChannelML():
             ## default VMIN, VMAX and dv are in SI
             ## convert them to current calculation units used by channel definition
             ## while loading into tables, convert them back to SI
-            VMIN_here = VMIN/Vfactor
-            VMAX_here = VMAX/Vfactor
-            NDIVS_here = NDIVS
-            dv_here = dv/Vfactor
+            VMIN_here = utils.VMIN/Vfactor
+            VMAX_here = utils.VMAX/Vfactor
+            NDIVS_here = utils.NDIVS
+            dv_here = utils.dv/Vfactor
         offset = IVrelation.find('./{'+self.cml+'}offset')
         if offset is None: vNegOffset = 0.0
         else: vNegOffset = float(offset.attrib['value'])
@@ -124,7 +135,7 @@ class ChannelML():
             self.q10factor = 1.0
             self.gate_name = gate.attrib['name']
             for q10settings in IVrelation.findall('./{'+self.cml+'}q10_settings'):
-                ## self.temperature from neuro_utils.py
+                ## self.temperature from neuro.utils
                 if 'gate' in q10settings.attrib.keys():
                     if q10settings.attrib['gate'] == self.gate_name:
                         self.setQ10(q10settings)
@@ -132,33 +143,37 @@ class ChannelML():
                 else:
                     self.setQ10(q10settings)
 
-            ## only if you create moosechannel.Xpower will the xGate be created, so do that first below
-            ## I cannot use the below single-line list-based way of setting Xpower, etc.
-            ## because the getters and setters of swig don't get called this way!!!
-            ## complicated way to do moosechannel.Xpower = 1.0 ! but doesn't work as written above
-            #vars(moosechannel)[moosegates[num][0]] = float(gate.attrib['instances'])  
-            if num==0:
-                moosechannel.Xpower = float(gate.attrib['instances'])
+            ############### HHChannel2D crashing on setting Xpower!
+            #### temperamental! If you print something before, it gives cannot creategate from copied channel, else crashes
+            ## Setting power first. This is necessary because it also
+            ## initializes the gate's internal data structures as a side
+            ## effect. Alternatively, gates can be initialized explicitly
+            ## by calling HHChannel.createGate().
+            gate_power = float( gate.get( 'instances' ) )
+            if num == 0:
+                moosechannel.Xpower = gate_power
                 if concdep is not None: moosechannel.Xindex = "VOLT_C1_INDEX"
-            elif num==1:
-                moosechannel.Ypower = float(gate.attrib['instances'])
+            elif num == 1:
+                moosechannel.Ypower = gate_power
                 if concdep is not None: moosechannel.Yindex = "VOLT_C1_INDEX"
-            elif num==2:
-                moosechannel.Zpower = float(gate.attrib['instances'])
+            elif num == 2:
+                moosechannel.Zpower = gate_power
                 if concdep is not None: moosechannel.Zindex = "VOLT_C1_INDEX"
-            ## wrap the xGate, yGate or zGate
+            
+            ## Getting handle to gate using the gate's path.
+            gate_path = moosechannel.path + '/' + gate_full_name[ num ]
             if concdep is None:
-                moosegate = moose.HHGate(moosechannel.path+'/'+moosegates[num][1])
+                moosegate = moose.HHGate( gate_path )
+                ## set SI values inside MOOSE
+                moosegate.min = VMIN_here*Vfactor
+                moosegate.max = VMAX_here*Vfactor
+                moosegate.divs = NDIVS_here
+                ## V.IMP to get smooth curves, else even with 3000 divisions
+                ## there are sudden transitions.
+                moosegate.useInterpolation = True
             else:
-                moosegate = moose.HHGate2D(moosechannel.path+'/'+moosegates[num][1])
-            ## set SI values inside MOOSE
-            moosegate.A.xmin = VMIN_here*Vfactor
-            moosegate.A.xmax = VMAX_here*Vfactor
-            moosegate.A.xdivs = NDIVS_here
-            moosegate.B.xmin = VMIN_here*Vfactor
-            moosegate.B.xmax = VMAX_here*Vfactor
-            moosegate.B.xdivs = NDIVS_here
-          
+                moosegate = moose.HHGate2D( gate_path )
+                        
             for transition in gate.findall('./{'+self.cml+'}transition'):
                 ## make python functions with names of transitions...
                 fn_name = transition.attrib['name']
@@ -191,64 +206,78 @@ class ChannelML():
 
                 ## while calculating, use the units used in xml defn,
                 ## while filling in table, I convert to SI units.
-                v = VMIN_here - vNegOffset
-                for i in range(NDIVS_here+1):
+                v0 = VMIN_here - vNegOffset
+                n_entries = NDIVS_here+1
+                tableA = [ 0.0 ] * n_entries
+                tableB = [ 0.0 ] * n_entries
+                for i in range(n_entries):
+                    v = v0 + i * dv_here
+                    
                     inf = self.inf(v)
                     tau = self.tau(v)
+                    
                     ## convert to SI before writing to table
-                    moosegate.A[i] = inf/tau / Tfactor
-                    moosegate.B[i] = 1.0/tau / Tfactor
-                    v += dv_here
+                    tableA[i] = inf/tau / Tfactor
+                    tableB[i] = 1.0/tau / Tfactor
+                
+                moosegate.tableA = tableA
+                moosegate.tableB = tableB
             
             ## Ca dependent channel
             else:
-                ## HHGate2D is not wrapped properly in pyMOOSE.
-                ## ymin, ymax and ydivs are not exposed.
-                ## Setting them creates new and useless attributes within python HHGate2D without warning!
-                ## Hence use runG to set these via Genesis command
                 ## UNITS: while calculating, use the units used in xml defn,
                 ##        while filling in table, I convert to SI units.
-                self.context.runG("setfield "+moosegate.path+"/A"+\
-                    #" ydivs "+str(CaNDIVS)+\ # these get overridden by the number of values in the table
-                    " ymin "+str(float(concdep.attrib['min_conc'])*concfactor)+\
-                    " ymax "+str(float(concdep.attrib['max_conc'])*concfactor))
-                self.context.runG("setfield "+moosegate.path+"/B"+\
-                    #" ydivs "+str(CaNDIVS)+\ # these get overridden by the number of values in the table
-                    " ymin "+str(float(concdep.attrib['min_conc'])*concfactor)+\
-                    " ymax "+str(float(concdep.attrib['max_conc'])*concfactor))
-                ## for Ca dep channel, I expect only generic alpha and beta functions
-                ## these have already been made above
-                ftableA = open("CaDepA.dat","w")
-                ftableB = open("CaDepB.dat","w")
                 v = VMIN_here - vNegOffset
                 CaMIN = float(concdep.attrib['min_conc'])
                 CaMAX = float(concdep.attrib['max_conc'])
                 CaNDIVS = 100
                 dCa = (CaMAX-CaMIN)/CaNDIVS
+                ## CAREFUL!: tableA = [[0.0]*(CaNDIVS+1)]*(NDIVS_here+1) will not work!
+                ## * does a shallow copy, same list will get repeated 200 times!
+                ## Thus setting tableA[35][1] = 5.0 will set all rows, 1st col to 5.0!!!!
+                tableA = [[0.0]*(CaNDIVS+1) for i in range(NDIVS_here+1)]
+                tableB = [[0.0]*(CaNDIVS+1) for i in range(NDIVS_here+1)]
                 for i in range(NDIVS_here+1):
                     Ca = CaMIN
                     for j in range(CaNDIVS+1):
-                        ## convert to SI before writing to table
+                        ## convert to SI (Tfactor) before writing to table
                         ## in non-Ca channels, I put in q10factor into tau,
                         ## which percolated to A and B
                         ## Here, I do not calculate tau, so put q10factor directly into A and B.
                         alpha = self.alpha(v,Ca)*self.q10factor/Tfactor
-                        ftableA.write(str(alpha)+" ")
-                        ftableB.write(str(alpha+self.beta(v,Ca)*self.q10factor/Tfactor)+" ")
+                        tableA[i][j] = alpha
+                        tableB[i][j] = alpha+self.beta(v,Ca)*self.q10factor/Tfactor
                         Ca += dCa
-                    ftableA.write("\n")
-                    ftableB.write("\n")
                     v += dv_here
-                ftableA.close()
-                ftableB.close()
 
-                ### PRESENTLY, Interpol2D.cpp in MOOSE only allows loading via a data file,
-                ### one cannot set individual entries A[0][0] etc.
-                ### Thus pyMOOSE also has not wrapped Interpol2D
-                self.context.runG("call "+moosegate.path+"/A load CaDepA.dat 0")
-                self.context.runG("call "+moosegate.path+"/B load CaDepB.dat 0")
-                os.remove('CaDepA.dat')
-                os.remove('CaDepB.dat')
+                ## Presently HHGate2D doesn't allow the setting of tables as 2D vectors directly
+                #moosegate.tableA = tableA
+                #moosegate.tableB = tableB
+
+                ## Instead, I wrap the interpol2D objects inside HHGate2D and set the tables
+                moosegate_tableA = moose.Interpol2D(moosegate.path+'/tableA')
+                ## set SI values inside MOOSE
+                moosegate_tableA.xmin = VMIN_here*Vfactor
+                moosegate_tableA.xmax = VMAX_here*Vfactor
+                moosegate_tableA.xdivs = NDIVS_here
+                #moosegate_tableA.dx = dv_here*Vfactor
+                moosegate_tableA.ymin = CaMIN*concfactor
+                moosegate_tableA.ymax = CaMAX*concfactor
+                moosegate_tableA.ydivs = CaNDIVS
+                #moosegate_tableA.dy = dCa*concfactor
+                moosegate_tableA.tableVector2D = tableA
+
+                moosegate_tableB = moose.Interpol2D(moosegate.path+'/tableB')
+                ## set SI values inside MOOSE
+                moosegate_tableB.xmin = VMIN_here*Vfactor
+                moosegate_tableB.xmax = VMAX_here*Vfactor
+                moosegate_tableB.xdivs = NDIVS_here
+                #moosegate_tableB.dx = dv_here*Vfactor
+                moosegate_tableB.ymin = CaMIN*concfactor
+                moosegate_tableB.ymax = CaMAX*concfactor
+                moosegate_tableB.ydivs = CaNDIVS
+                #moosegate_tableB.dy = dCa*concfactor
+                moosegate_tableB.tableVector2D = tableB
 
     def setQ10(self,q10settings):
         if 'q10_factor' in q10settings.attrib.keys():
@@ -271,6 +300,7 @@ class ChannelML():
             Gfactor = 1.0
             concfactor = 1.0
             Lfactor = 1.0
+        moose.Neutral('/library') # creates /library in MOOSE tree; elif present, wraps
         ionSpecies = ionConcElement.find('./{'+self.cml+'}ion_species')
         if ionSpecies is not None:
             if not 'ca' in ionSpecies.attrib['name']:
@@ -286,8 +316,8 @@ class ChannelML():
         volInfo = poolModel.find('./{'+self.cml+'}pool_volume_info')
         caPool.thick = float(volInfo.attrib['shell_thickness']) * Lfactor
         ## Put a high ceiling and floor for the Ca conc
-        self.context.runG('setfield ' + caPool.path + ' ceiling 1e6')
-        self.context.runG('setfield ' + caPool.path + ' floor 0.0')
+        #~ self.context.runG('setfield ' + caPool.path + ' ceiling 1e6')
+        #~ self.context.runG('setfield ' + caPool.path + ' floor 0.0')
 
     def make_cml_function(self, element, fn_name, concdep=None):
         fn_type = element.attrib['expr_form']
@@ -315,23 +345,23 @@ class ChannelML():
         If fin_type is generic, **kwargs is a dict having key expr_string """
         if fn_type == 'exponential':
             def fn(self,v):
-                return kwargs['rate']*exp((v-kwargs['midpoint'])/kwargs['scale'])
+                return kwargs['rate']*math.exp((v-kwargs['midpoint'])/kwargs['scale'])
         elif fn_type == 'sigmoid':
             def fn(self,v):
-                return kwargs['rate'] / ( 1 + exp((v-kwargs['midpoint'])/kwargs['scale']) )
+                return kwargs['rate'] / ( 1 + math.exp((v-kwargs['midpoint'])/kwargs['scale']) )
         elif fn_type == 'exp_linear':
             def fn(self,v):
                 if v-kwargs['midpoint'] == 0.0: return kwargs['rate']
                 else:
                     return kwargs['rate'] * ((v-kwargs['midpoint'])/kwargs['scale']) \
-                        / ( 1 - exp((kwargs['midpoint']-v)/kwargs['scale']) )
+                        / ( 1 - math.exp((kwargs['midpoint']-v)/kwargs['scale']) )
         elif fn_type == 'generic':
             ## python cannot evaluate the ternary operator ?:, so evaluate explicitly
             ## for security purposes eval() is not allowed any __builtins__
-            ## but only safe functions in safe_dict (from neuroml_utils.py) and
+            ## but only safe functions in utils.safe_dict and
             ## only the local variables/functions v, self
             allowed_locals = {'self':self}
-            allowed_locals.update(safe_dict)
+            allowed_locals.update(utils.safe_dict)
             def fn(self,v,ca=None):
                 expr_str = kwargs['expr_string']
                 allowed_locals['v'] = v

@@ -73,41 +73,38 @@ struct SpikeGenStruct
 {
 	// Index of parent compartment
 	unsigned int compt_;
-	Eref elm_;
+	Id elm_;
 };
 
 struct SynChanStruct
 {
 	// Index of parent compartment
 	unsigned int compt_;
-	Eref elm_;
+	Id elm_;
 };
 
 struct CaConcStruct
 {
 	double c_;
 	double CaBasal_;
-	double ca_;
-	
 	double factor1_;
 	double factor2_;
+	double ceiling_;
+	double floor_;
 	
-	void process( double activation );
-};
-
-struct CaTractStruct
-{
-	CaTractStruct()
-		:
-		type( 0 ),
-		length( 0 ),
-		nPools( 0 )
-	{ ; }
-	
-	unsigned int    type;
-	unsigned int    length;
-	unsigned int    nPools;
-	vector< int >   nConnections;
+	CaConcStruct();
+	CaConcStruct(
+		double Ca,
+		double CaBasal,
+		double tau,
+		double B,
+		double ceiling,
+		double floor,
+		double dt );
+	void setCa( double Ca );
+	void setCaBasal( double CaBasal );
+	void setTauB( double tau, double B, double dt );
+	double process( double activation );
 };
 
 #endif // _HSOLVE_STRUCT_H

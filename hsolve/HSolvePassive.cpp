@@ -7,8 +7,10 @@
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
-#include "biophysics/BioScan.h"
+#include "header.h"
+#include "../biophysics/Compartment.h"
+using namespace moose; // For moose::Compartment from 'Compartment.h'
+#include "HSolveUtils.h"
 #include "HSolveStruct.h"
 #include "HinesMatrix.h"
 #include "HSolvePassive.h"
@@ -16,52 +18,52 @@
 extern ostream& operator <<( ostream& s, const HinesMatrix& m );
 
 void HSolvePassive::setup( Id seed, double dt ) {
-	clear( );
-
+	clear();
+	
 	dt_ = dt;
 	walkTree( seed );
-	initialize( );
-	storeTree( );
+	initialize();
+	storeTree();
 	
 	HinesMatrix::setup( tree_, dt_ );
 }
 
-void HSolvePassive::solve( ) {
-	updateMatrix( );
-	forwardEliminate( );
-	backwardSubstitute( );
+void HSolvePassive::solve() {
+	updateMatrix();
+	forwardEliminate();
+	backwardSubstitute();
 }
 
 //////////////////////////////////////////////////////////////////////
-// Setup of data structures
+// Setup of data structures.
 //////////////////////////////////////////////////////////////////////
 
-void HSolvePassive::clear( ) {
+void HSolvePassive::clear() {
 	dt_ = 0.0;
-	compartment_.clear( );
-	compartmentId_.clear( );
-	V_.clear( );
-	tree_.clear( );
-	inject_.clear( );
+	compartment_.clear();
+	compartmentId_.clear();
+	V_.clear();
+	tree_.clear();
+	inject_.clear();
 }
 
 void HSolvePassive::walkTree( Id seed ) {
-	// Dirty call to explicitly call the compartments reinitFunc.
-	// Should be removed eventually, and replaced with a cleaner way to
-	// initialize the model being read.
-	BioScan::initialize( seed );
+	//~ // Dirty call to explicitly call the compartments reinitFunc.
+	//~ // Should be removed eventually, and replaced with a cleaner way to
+	//~ // initialize the model being read.
+	//~ HSolveUtils::initialize( seed );
 	
 	// Find leaf node
 	Id previous;
-	vector< Id > recent;
-	BioScan::adjacent( seed, recent );
-	if ( recent.size() != 1 )
-		while ( !recent.empty() ) {
+	vector< Id > adjacent;
+	HSolveUtils::adjacent( seed, adjacent );
+	if ( adjacent.size() > 1 )
+		while ( !adjacent.empty() ) {
 			previous = seed;
-			seed = recent[ 0 ];
+			seed = adjacent[ 0 ];
 			
-			recent.clear();
-			BioScan::adjacent( seed, previous, recent );
+			adjacent.clear();
+			HSolveUtils::adjacent( seed, previous, adjacent );
 		}
 	
 	// Depth-first search
@@ -85,7 +87,7 @@ void HSolvePassive::walkTree( Id seed ) {
 			compartmentId_.push_back( current );
 			
 			cstack.resize( cstack.size() + 1 );
-			BioScan::adjacent( current, above, cstack.back() );
+			HSolveUtils::adjacent( current, above, cstack.back() );
 		}
 	}
 	
@@ -94,51 +96,61 @@ void HSolvePassive::walkTree( Id seed ) {
 	reverse( compartmentId_.begin(), compartmentId_.end() );
 }
 
-void HSolvePassive::initialize( ) {
+void HSolvePassive::initialize() {
 	nCompt_ = compartmentId_.size();
 	
 	double Vm, Cm, Em, Rm, inject;
-        double tempE, tempG, ethev_rthev, rThevenin;
-	vector< Id > leakageId;
-        vector< Id >::iterator leakageIter;
+	double EmLeak, GmLeak;
+	double EmGmThev, GmThev, RmThev;
+	
+	vector< Id > leakage;
+	vector< Id >::iterator ileakage;
+	
 	for ( unsigned int ic = 0; ic < compartmentId_.size(); ++ic ) {
-		Eref e = compartmentId_[ ic ]();
+		Id cc = compartmentId_[ ic ];
 		
-		get< double >( e, "Vm", Vm );
-		get< double >( e, "Cm", Cm );
-		get< double >( e, "Em", Em );
-		get< double >( e, "Rm", Rm );
-		get< double >( e, "inject", inject );
+		Vm = HSolveUtils::get< Compartment, double >( cc, "Vm" );
+		Cm = HSolveUtils::get< Compartment, double >( cc, "Cm" );
+		Em = HSolveUtils::get< Compartment, double >( cc, "Em" );
+		Rm = HSolveUtils::get< Compartment, double >( cc, "Rm" );
+		inject = HSolveUtils::get< Compartment, double >( cc, "inject" );
 		
 		V_.push_back( Vm );
-                /*
-                  If there are n leakage channels with reversal
-                  potentials: E[1] ... E[n] and resistance R[1] ... R[n]
-                  respectively, then the membrane circuit can be represented by the
-                  Thevenin equivalent circuit with:
-
-                  R_thevenin = 1 / sum( 1 / R[i] )
-                             = 1 / sum(G[i])
-                  E_thevenin = sum(E[i] / R[i]) * R_thevenin
-                             = sum(E[i] * G[i]) * R_thevenin
-                  
-                  Here we have to add original membrane potential Em as E[0] and
-                  resistance Rm as R[0].
-                */
-                ethev_rthev = Em / Rm;
-                rThevenin = 1.0 / Rm;
-              
-                BioScan::leakageChannels( compartmentId_[ ic ], leakageId );
-                for (leakageIter = leakageId.begin(); leakageIter != leakageId.end(); ++ leakageIter){
-                    get<double>( (*leakageIter)(), "Ek", tempE);
-                    get<double>( (*leakageIter)(), "Gk", tempG);
-                    ethev_rthev += tempE * tempG;
-                    rThevenin += tempG;                    
-                }
-                rThevenin = 1.0 / rThevenin;
+		
+		/*
+		 *  If there are 'n' leakage channels with reversal potentials:
+		 *       E[ 1 ] ... E[ n ]
+		 *  and resistances:
+		 *       R[ 1 ] ... R[ n ]
+		 *  respectively, then the membrane circuit can be represented by the
+		 *  Thevenin equivalent circuit with:
+		 *  
+		 *  R_thevenin = 1 / sum( 1 / R[ i ] )
+		 *             = 1 / sum( G[ i ] )
+		 *  E_thevenin = sum( E[ i ] / R[ i ] ) * R_thevenin
+		 *             = sum( E[ i ] * G[ i ] ) * R_thevenin
+		 *  
+		 *  Here we have to add original membrane potential Em as E[ 0 ] and
+		 *  resistance Rm as R[ 0 ].
+		 */
+		GmThev   = 1.0 / Rm;
+		EmGmThev = Em / Rm;
+		
+		HSolveUtils::leakageChannels( compartmentId_[ ic ], leakage );
+		for ( ileakage = leakage.begin();
+		      ileakage != leakage.end();
+		      ileakage++ )
+		{
+			EmLeak = HSolveUtils::get< Compartment, double >( *ileakage, "Ek" );
+			GmLeak = HSolveUtils::get< Compartment, double >( *ileakage, "Gk" );
+			GmThev   += GmLeak;
+			EmGmThev += EmLeak * GmLeak;
+		}
+		RmThev = 1.0 / GmThev;
+		
 		CompartmentStruct compartment;
 		compartment.CmByDt = 2.0 * Cm / dt_;
-		compartment.EmByRm = ethev_rthev;
+		compartment.EmByRm = EmGmThev;
 		compartment_.push_back( compartment );
 		
 		if ( inject != 0.0 ) {
@@ -148,8 +160,8 @@ void HSolvePassive::initialize( ) {
 	}
 }
 
-void HSolvePassive::storeTree( ) {
-	double Ra, Rm, Cm;
+void HSolvePassive::storeTree() {
+	double Ra, Rm, Cm, Em, initVm;
 	
 	// Create a map from the MOOSE Id to Hines' index.
 	map< Id, unsigned int > hinesIndex;
@@ -163,10 +175,12 @@ void HSolvePassive::storeTree( ) {
 	for ( ic = compartmentId_.begin(); ic != compartmentId_.end(); ++ic ) {
 		childId.clear();
 		
-		BioScan::children( *ic, childId );
-		get< double >( ( *ic )(), "Ra", Ra );
-		get< double >( ( *ic )(), "Cm", Cm );
-		get< double >( ( *ic )(), "Rm", Rm );
+		HSolveUtils::children( *ic, childId );
+		Ra = HSolveUtils::get< Compartment, double >( *ic, "Ra" );
+		Cm = HSolveUtils::get< Compartment, double >( *ic, "Cm" );
+		Rm = HSolveUtils::get< Compartment, double >( *ic, "Rm" );
+		Em = HSolveUtils::get< Compartment, double >( *ic, "Em" );
+		initVm = HSolveUtils::get< Compartment, double >( *ic, "initVm" );
 		
 		TreeNodeStruct node;
 		// Push hines' indices of children
@@ -176,16 +190,18 @@ void HSolvePassive::storeTree( ) {
 		node.Ra = Ra;
 		node.Rm = Rm;
 		node.Cm = Cm;
+		node.Em = Em;
+		node.initVm = initVm;
 		
 		tree_.push_back( node );
 	}
 }
 
 //////////////////////////////////////////////////////////////////////
-// Numerical integration
+// Numerical integration.
 //////////////////////////////////////////////////////////////////////
 
-void HSolvePassive::updateMatrix( ) {
+void HSolvePassive::updateMatrix() {
 	/*
 	 * Copy contents of HJCopy_ into HJ_. Cannot do a vector assign() because
 	 * iterators to HJ_ get invalidated in MS VC++
@@ -217,7 +233,7 @@ void HSolvePassive::updateMatrix( ) {
 	stage_ = 0;    // Update done.
 }
 
-void HSolvePassive::forwardEliminate( ) {
+void HSolvePassive::forwardEliminate() {
 	unsigned int ic = 0;
 	vector< double >::iterator ihs = HS_.begin();
 	vector< vdIterator >::iterator iop = operand_.begin();
@@ -227,7 +243,10 @@ void HSolvePassive::forwardEliminate( ) {
 	double division;
 	unsigned int index;
 	unsigned int rank;
-	for ( junction = junction_.begin(); junction != junction_.end(); ++junction ) {
+	for ( junction = junction_.begin();
+	      junction != junction_.end();
+	      junction++ )
+	{
 		index = junction->index;
 		rank = junction->rank;
 		
@@ -243,7 +262,7 @@ void HSolvePassive::forwardEliminate( ) {
 			vdIterator j = *iop;
 			vdIterator s = *( iop + 1 );
 			
-			division = *( j + 1 ) / pivot;
+			division    = *( j + 1 ) / pivot;
 			*( s )     -= division * *j;
 			*( s + 3 ) -= division * *( ihs + 3 );
 			
@@ -252,14 +271,14 @@ void HSolvePassive::forwardEliminate( ) {
 			vdIterator j = *iop;
 			vdIterator s;
 			
-			s = *( iop + 1 );
-			division = *( j + 1 ) / pivot;
+			s           = *( iop + 1 );
+			division    = *( j + 1 ) / pivot;
 			*( s )     -= division * *j;
 			*( j + 4 ) -= division * *( j + 2 );
 			*( s + 3 ) -= division * *( ihs + 3 );
 			
-			s = *( iop + 3 );
-			division = *( j + 3 ) / pivot;
+			s           = *( iop + 3 );
+			division    = *( j + 3 ) / pivot;
 			*( j + 5 ) -= division * *j;
 			*( s )     -= division * *( j + 2 );
 			*( s + 3 ) -= division * *( ihs + 3 );
@@ -285,7 +304,7 @@ void HSolvePassive::forwardEliminate( ) {
 	stage_ = 1;    // Forward elimination done.
 }
 
-void HSolvePassive::backwardSubstitute( ) {
+void HSolvePassive::backwardSubstitute() {
 	int ic = nCompt_ - 1;
 	vector< double >::reverse_iterator ivmid = VMid_.rbegin();
 	vector< double >::reverse_iterator iv = V_.rbegin();
@@ -300,7 +319,10 @@ void HSolvePassive::backwardSubstitute( ) {
 	
 	int index;
 	int rank;
-	for ( junction = junction_.rbegin(); junction != junction_.rend(); ++junction ) {
+	for ( junction = junction_.rbegin();
+	      junction != junction_.rend();
+	      junction++ )
+	{
 		index = junction->index;
 		rank = junction->rank;
 		
@@ -352,10 +374,10 @@ void HSolvePassive::backwardSubstitute( ) {
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// Public interface
+// Public interface.
 ///////////////////////////////////////////////////////////////////////////
 
-double HSolvePassive::getV( unsigned int row )
+double HSolvePassive::getV( unsigned int row ) const
 {
 	return V_[ row ];
 }
@@ -364,15 +386,48 @@ double HSolvePassive::getV( unsigned int row )
 
 #ifdef DO_UNIT_TESTS
 
-#include "../element/Neutral.h"
-#include "../utility/utility.h"
-#include <sstream>
-#include "TestHSolve.h"
+//~ #include "../element/Neutral.h"
+//~ #include "../utility/utility.h"
+//~ #include <sstream>
 
+#include <limits>
+/**
+ * Check 2 floating-point numbers for "equality".
+ * Algorithm (from Knuth) 'a' and 'b' are close if:
+ *      | ( a - b ) / a | < e AND | ( a - b ) / b | < e
+ * where 'e' is a small number.
+ * 
+ * In this function, 'e' is computed as:
+ * 	    e = tolerance * machine-epsilon
+ */
+template< class T >
+bool isClose( T a, T b, T tolerance )
+{
+	T epsilon = std::numeric_limits< T >::epsilon();
+	
+	if ( a == b )
+		return true;
+	
+	if ( a == 0 || b == 0 )
+		return ( fabs( a - b ) < tolerance * epsilon );
+	
+	return (
+		fabs( ( a - b ) / a ) < tolerance * epsilon
+		&&
+		fabs( ( a - b ) / b ) < tolerance * epsilon
+	);
+}
+
+#include <sstream>
+#include "../shell/Shell.h"
+#include "TestHSolve.h"
 void testHSolvePassive()
 {
-	cout << "\nTesting HSolvePassive" << flush;
-	vector< int > N;
+	return;
+	//~ cout << "\nTesting HSolvePassive" << flush;
+	
+	Shell* shell = reinterpret_cast< Shell* >( Id().eref().data() );
+	
 	vector< int* > childArray;
 	vector< unsigned int > childArraySize;
 	
@@ -395,8 +450,6 @@ void testHSolvePassive()
 	 *  child of compartment Y if X is one level further away from the soma (#15)
 	 *  than Y. So #17 is the parent of #'s 2, 9 and 18.
 	 */
-	
-	N.push_back( 20 );
 	
 	int childArray_1[ ] =
 	{
@@ -437,8 +490,6 @@ void testHSolvePassive()
 	 * 
 	 */
 	
-	N.push_back( 4 );
-	
 	int childArray_2[ ] =
 	{
 		/* c0  */  -1, 
@@ -461,8 +512,6 @@ void testHSolvePassive()
 	 *          1     0  <--- Soma
 	 * 
 	 */
-	
-	N.push_back( 4 );
 	
 	int childArray_3[ ] =
 	{
@@ -487,8 +536,6 @@ void testHSolvePassive()
 	 * 
 	 */
 	
-	N.push_back( 4 );
-	
 	int childArray_4[ ] =
 	{
 		/* c0  */  -1,
@@ -512,8 +559,6 @@ void testHSolvePassive()
 	 *         3   5
 	 * 
 	 */
-	
-	N.push_back( 6 );
 	
 	int childArray_5[ ] =
 	{
@@ -541,8 +586,6 @@ void testHSolvePassive()
 	 * 
 	 */
 	
-	N.push_back( 7 );
-	
 	int childArray_6[ ] =
 	{
 		/* c0  */  -1,
@@ -561,8 +604,6 @@ void testHSolvePassive()
 	 *  Cell 7: Single compartment
 	 */
 	
-	N.push_back( 1 );
-	
 	int childArray_7[ ] =
 	{
 		/* c0  */  -1,
@@ -574,8 +615,6 @@ void testHSolvePassive()
 	/**
 	 *  Cell 8: 3 compartments; soma is in the middle.
 	 */
-	
-	N.push_back( 3 );
 	
 	int childArray_8[ ] =
 	{
@@ -590,8 +629,6 @@ void testHSolvePassive()
 	/**
 	 *  Cell 9: 3 compartments; first compartment is soma.
 	 */
-	
-	N.push_back( 3 );
 	
 	int childArray_9[ ] =
 	{
@@ -632,14 +669,14 @@ void testHSolvePassive()
 	 */
 	int i;
 	int j;
-	bool success;
+	//~ bool success;
 	int nCompt;
 	int* array;
 	unsigned int arraySize;
 	for ( unsigned int cell = 0; cell < childArray.size(); cell++ ) {
-		nCompt = N[ cell ];
 		array = childArray[ cell ];
 		arraySize = childArraySize[ cell ];
+		nCompt = count( array, array + arraySize, -1 );
 		
 		//////////////////////////////////////////
 		// Prepare local information on cell
@@ -660,34 +697,34 @@ void testHSolvePassive()
 		for ( unsigned int a = 0; a < arraySize; a++ )
 			if ( array[ a ] == -1 )
 				count++;
-			else		
+			else
 				tree[ count ].children.push_back( array[ a ] );
 		
 		//////////////////////////////////////////
 		// Create cell inside moose; setup solver.
 		//////////////////////////////////////////
-		Element* n =
-			Neutral::create( "Neutral", "n", Element::root()->id(), Id::scratchId() );
+		Id n = shell->doCreate( "Neutral", Id(), "n" );
 		
 		vector< Id > c( nCompt );
 		for ( i = 0; i < nCompt; i++ ) {
 			ostringstream name;
 			name << "c" << i;
-			c[ i ] = Neutral::create( "Compartment", name.str(), n->id(),
-				Id::scratchId() )->id();
+			c[ i ] = shell->doCreate( "Compartment", n, name.str() );
 			
-			set< double >( c[ i ](), "Ra", tree[ i ].Ra );
-			set< double >( c[ i ](), "Rm", tree[ i ].Rm );
-			set< double >( c[ i ](), "Cm", tree[ i ].Cm );
-			set< double >( c[ i ](), "Em", Em[ i ] );
-			set< double >( c[ i ](), "initVm", V[ i ] );
+			Field< double >::set( c[ i ], "Ra", tree[ i ].Ra );
+			Field< double >::set( c[ i ], "Rm", tree[ i ].Rm );
+			Field< double >::set( c[ i ], "Cm", tree[ i ].Cm );
+			Field< double >::set( c[ i ], "Em", Em[ i ] );
+			Field< double >::set( c[ i ], "initVm", V[ i ] );
+			Field< double >::set( c[ i ], "Vm", V[ i ] );
 		}
 		
 		for ( i = 0; i < nCompt; i++ ) {
 			vector< unsigned int >& child = tree[ i ].children;
 			for ( j = 0; j < ( int )( child.size() ); j++ ) {
-				success = Eref( c[ i ]() ).add( "axial", c[ child[ j ] ](), "raxial" );
-				ASSERT( success, "Creating test model" );
+				MsgId mid = shell->doAddMsg(
+					"Single", c[ i ], "axial", c[ child[ j ] ], "raxial" );
+				ASSERT( mid != Msg::bad, "Creating test model" );
 			}
 		}
 		
@@ -787,7 +824,7 @@ void testHSolvePassive()
 			 */
 			
 			// Do so in the solver..
-			HP.updateMatrix( );
+			HP.updateMatrix();
 			
 			// ..locally..
 			matrix.assign( matrixCopy.begin(), matrixCopy.end() );
@@ -815,7 +852,7 @@ void testHSolvePassive()
 			 */
 			
 			// ..in solver..
-			HP.forwardEliminate( );
+			HP.forwardEliminate();
 			
 			// ..and locally..
 			int k;
@@ -859,7 +896,7 @@ void testHSolvePassive()
 			 */
 			
 			// ..in solver..
-			HP.backwardSubstitute( );
+			HP.backwardSubstitute();
 			
 			// ..and full back-sub on local matrix equation..
 			for ( i = nCompt - 1; i >= 0; i-- ) {
@@ -898,9 +935,12 @@ void testHSolvePassive()
 				);
 			}
 		}
+		
 		// cleanup
-		set( n, "destroy" );
+		shell->doDelete( n );
 	}
+	
+	cout << ".";
 }
 
 #endif // DO_UNIT_TESTS
