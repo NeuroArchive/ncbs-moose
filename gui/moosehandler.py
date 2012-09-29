@@ -6,9 +6,9 @@
 # Maintainer: 
 # Created: Thu Jan 28 15:08:29 2010 (+0530)
 # Version: 
-# Last-Updated: Wed Nov  2 16:22:58 2011 (+0530)
+# Last-Updated: Fri Feb 25 11:18:27 2011 (+0530)
 #           By: Subhasis Ray
-#     Update #: 872
+#     Update #: 868
 # URL: 
 # Keywords: 
 # Compatibility: 
@@ -57,13 +57,11 @@ import xml.sax.handler as saxhandler
 import xml.sax.xmlreader as saxreader
 import xml.sax.saxutils as saxutils
 
+from moose.neuroml.NeuroML import NeuroML
 from PyQt4 import QtCore
 import moose
 import config
-#from glclient import GLClient
 
-## for python neuroml import
-from moose import neuroml
 
 class MooseXMLHandler(saxhandler.ContentHandler):
     def __init__(self):
@@ -95,36 +93,34 @@ class MooseHandler(QtCore.QObject):
     type_neuroml = 'NEUROML'
     type_sbml = 'SBML'
     type_python = 'PYTHON'
+    type_all = 'allType'
     # Map between file extension and known broad filetypes.
     fileExtensionMap = {
+        'All Supported(*.g *.xml *.bz2 *.zip *.gz)': type_all,
         'Genesis Script(*.g)': type_genesis,
-        'neuroML/SBML(*.xml *.nml *.bz2 *.zip *.gz)': type_xml,
+        'neuroML/SBML(*.xml *.bz2 *.zip *.gz)': type_xml,
         'Python script(*.py)': type_python
         }
-    DEFAULT_SIMDT = 2.5e-5
-    DEFAULT_PLOTDT = 2.5e-5
-    #DEFAULT_GLDT = 50e-3
+    DEFAULT_SIMDT = 2e-5
+    DEFAULT_PLOTDT = 2e-5
     DEFAULT_RUNTIME = 1.0
-    DEFAULT_PLOTUPDATE_DT = 1e-1
+    DEFAULT_PLOTUPDATE_DT = 1e-2
 
     DEFAULT_SIMDT_KKIT = 0.1
-    DEFAULT_RUNTIME_KKIT = 100.0
+    DEFAULT_RUNTIME_KKIT = 10.0
     DEFAULT_PLOTDT_KKIT = 1.0
     DEFAULT_PLOTUPDATE_DT_KKIT = 5.0
-    DEFAULT_GLDT_KKIT = 5.0
     
     simdt = DEFAULT_SIMDT
     plotdt = DEFAULT_PLOTDT
-    #gldt = DEFAULT_GLDT
     runtime = DEFAULT_RUNTIME
     plotupdate_dt = DEFAULT_PLOTUPDATE_DT
     def __init__(self):
         QtCore.QObject.__init__(self)
-	self._context = moose.PyMooseBase.getContext()
+	self._context = moose
 	self._lib = moose.Neutral('/library')
-	self._proto = moose.Neutral('/proto')
-	self._data = moose.Neutral('/data')
-        self._gl = moose.Neutral('/gl')
+	#self._proto = moose.Neutral('/proto')
+	#self._data = moose.Neutral('/data')
         self._current_element = moose.Neutral('/')
         self._xmlreader = sax.make_parser()
         self._saxhandler = MooseXMLHandler()
@@ -141,11 +137,13 @@ class MooseHandler(QtCore.QObject):
         self._portPathMap = {}
         self._pathPortMap = defaultdict(set)
         self._portServerMap = {}
-        self.runcount = -1
+        self.stopSimulation = 0
+    
     def getCurrentTime(self):
-        clock = moose.ClockJob('/sched/cj')
-        return clock.currentTime
+        clock = moose.element('/clock')
+        return clock.getField('currentTime')
 
+        
     def getCurrentElement(self):
         return self._current_element
 
@@ -154,23 +152,52 @@ class MooseHandler(QtCore.QObject):
 	self._context.runG(cmd)
         return 'In current PyMOOSE implementation running a GENESIS command does not return anything.'
 
-    def loadModel(self, filename, filetype, target='/'):
+    def clearPreviousModel(self,modelpathTypeDict):
+        for path in modelpathTypeDict.keys():
+            if modelpathTypeDict[path] == 'NEUROML':
+                if moose.exists('/cells'):
+                    moose.delete(moose.ematrix('/cells'))
+                if moose.exists('/elec'):
+                    moose.delete(moose.ematrix('/elec'))
+            elif modelpathTypeDict[path] == 'KKIT':
+                if moose.exists('/KKIT'):
+                    moose.delete(moose.ematrix('/KKIT'))
+            else:
+                print 'Did not delete previously loaded file. Restart moose instead'
+            '''Harsha Dict is also cleaned up '''
+            modelpathTypeDict = {}
+
+        for child in moose.element('/library').getField('children'):
+            moose.delete(child)
+
+    """ Added: Harsha """
+    def saveGenesisModel(self,modelpath,filename):
+        """ Saving model to Genesis File Format"""
+        """ Default clock runtime is set to runtime in Genesis, but runtime has changed for 100sec during simulation.
+            Reason: moose is stopped for every 100s and plot data is pulled, during the simulation or end of the simulation, the clock would be 100 sec,
+            so while writing the genesis clock is set to original runtime from kkit so that writekkit.cpp would pickup runtime from clock, 
+            once model is saved its setback to 100s"""
+        running_runtime = self._context.element('/clock').runTime
+        self._context.element('/clock').setField('runTime',MooseHandler.runtime)
+        self._context.saveModel(modelpath,str(filename))
+        self._context.element('/clock').setField('runTime',running_runtime)
+        print "Model is saved in",filename
+        
+    def loadModel(self, filename, filetype, target='/', solver='rk5'):
         """Load a model from file."""
         directory = os.path.dirname(filename)
         os.chdir(directory)
         filename = os.path.basename(filename) # ideally this should not be required - but neuroML reader has a bug and gets a segmentation fault when given abosolute path.
-        moose.Property.addSimPath(directory)
+        #moose.Property.addSimPath(directory)
         if filetype == MooseHandler.type_genesis:
-            return self.loadGenesisModel(filename, target)
+            return self.loadGenesisModel(filename, target, solver)
         elif filetype == MooseHandler.type_xml:
             return self.loadXMLModel(filename, target)
         elif filetype == MooseHandler.type_python:
             sys.path.append(directory)
             return self.loadPythonScript(filename)
-        
 
-
-    def loadGenesisModel(self, filename, target):
+    def loadGenesisModel(self, filename, target, solver):
         """Load a model specified in a GENESIS Script.
 
         If the file is a kinetikit model (the criterion is 'include
@@ -218,10 +245,14 @@ class MooseHandler(QtCore.QObject):
                 # print iskkit, sentence
                 if iskkit:
                     filetype = MooseHandler.type_kkit                    
+                    self._context.Neutral('/KKIT')
                     break
         current = self._context.getCwe()
-        self._context.setCwe(target)
-        self._context.loadG(filename)
+        #self._context.setCwe(target)
+        if filetype == MooseHandler.type_kkit:
+            self._context.loadModel(filename,'/KKIT/'+target, solver) #add solver here
+        else:
+            self._context.loadModel(filename,target)
         self._context.setCwe(current)        
         return filetype
         
@@ -244,21 +275,21 @@ class MooseHandler(QtCore.QObject):
         self._saxhandler.model_type = None
         self._xmlreader.reset()
         if ret == MooseHandler.type_neuroml:
-            #self._context.readNeuroML(filename, target)
-            nmlReader = neuroml.NeuroML()
-            ## I need to allow arbitrary targets,
-            ## presently '/' by default - Aditya.
-            nmlReader.readNeuroMLFromFile(filename)
+            #self._context.loadModel(filename, target)
+            neuromlR = NeuroML()
+            populationDict, projectionDict = neuromlR.readNeuroMLFromFile(filename)
         elif ret == MooseHandler.type_sbml:
-            self._context.readSBML(filename, target)
-        
-        return ret    
+            print 'Unsupported in GUI Mode'
+        return ret
 
     def loadPythonScript(self, filename):
         """Evaluate a python script."""
         extension_start = filename.rfind('.py')
         script = filename[:extension_start]
         exec 'import %s' % (script)
+        #exec 'import %s as hello' % (script)
+        #hello.loadGran98NeuroML_L123("Generated.net.xml")
+        return MooseHandler.type_python
 
     def addFieldTable(self, full_field_path):
         """
@@ -274,8 +305,8 @@ class MooseHandler(QtCore.QObject):
             objPath =  full_field_path[:fstart]
             # tableName = '%s_%d_%d' % (fieldName, self._tableSuffix, self._tableIndex)
             tableName = full_field_path[1:].replace('/', '_')
-	    #print "###",full_field_path,names,tableName
-            table = moose.Table(tableName, self._data)
+            dataNeutral = moose.Neutral(full_field_path+'/data')
+            table = moose.Table(tableName, dataNeutral)
             self.fieldTableMap[full_field_path] = table
             table.stepMode = 3
             target = moose.Neutral(objPath)
@@ -284,35 +315,39 @@ class MooseHandler(QtCore.QObject):
             self._tableIndex += 1
         return table
 
-    #def doReset(self, simdt, plotdt, gldt, plotupdate_dt):
-    def doReset(self, simdt, plotdt,  plotupdate_dt):
-        """Reset moose.
+    def updateDefaultsNeural(self,modelpath):
+        MooseHandler.simdt = MooseHandler.DEFAULT_SIMDT
+        MooseHandler.plotdt = MooseHandler.DEFAULT_PLOTDT
+        MooseHandler.plotupdate_dt = MooseHandler.DEFAULT_PLOTUPDATE_DT
+        MooseHandler.runtime = MooseHandler.DEFAULT_RUNTIME
 
-        simdt -- dt for simulation (step size for numerical
-        methods. Clock tick 0, 1 and 2 will have this dt.
+    def updateDefaultsKKIT(self,modelpath):
+        t = moose.element('/clock').tick
+        MooseHandler.simdt = t[4].dt
+        MooseHandler.plotdt = t[8].dt
+        MooseHandler.runtime = moose.element('/'+modelpath).runTime
+        MooseHandler.plotupdate_dt = MooseHandler.plotdt * 10 #(moose.element('/'+modelpath).runTime/120) 
+        '''
+        MooseHandler.simdt = MooseHandler.DEFAULT_SIMDT_KKIT
+        MooseHandler.plotdt = MooseHandler.DEFAULT_PLOTDT_KKIT
+        MooseHandler.plotupdate_dt = MooseHandler.DEFAULT_PLOTUPDATE_DT_KKIT
+        MooseHandler.runtime = MooseHandler.DEFAULT_RUNTIME_KKIT
+        '''
+    def updateClocks(self, simdt, plotdt):
+        #setclocks 0-3 electircal,4-5kinetics,6plotdt
+        moose.setClock(0, simdt)
+        moose.setClock(1, simdt) 
+        moose.setClock(2, simdt) 
+        moose.setClock(3, simdt)
+        moose.setClock(4, simdt)
+        moose.setClock(5, simdt)
+        moose.setClock(6, plotdt)
 
-        plotdt -- time interval for recording data.
-
-        gldt -- time interval for OpenGL display.
-
-        We put all the table objects under /data on clock 3, all the
-        GLcell and GLview objects under /gl on clock 4.
-        
+    def doReset(self, simdt, plotdt):
+        """update simdt and plot dt and Reinit moose.
         """
-        self._context.setClock(0, simdt)
-        self._context.setClock(1, simdt)
-        self._context.setClock(2, simdt)
-        self._context.setClock(3, plotdt)
-        #self._context.setClock(4, gldt)
-        self._context.useClock(3, self._data.path + '/##[TYPE=Table]')
-        #self._context.useClock(4, self._gl.path + '/##[TYPE=GLcell]')
-        #self._context.useClock(4, self._gl.path + '/##[TYPE=GLview]')
-        MooseHandler.simdt = simdt
-        MooseHandler.plotdt = plotdt
-        #MooseHandler.gldt = gldt
-        MooseHandler.plotupdate_dt = plotupdate_dt
-        self._context.reset()
-        self.runcount += 1
+        self.updateClocks(simdt, plotdt)
+        moose.reinit()
 
     def doRun(self, time):
         """Just runs the simulation. 
@@ -321,19 +356,25 @@ class MooseHandler(QtCore.QObject):
         If an integer, it is the number of time steps.
 
         """
+        #Harsha
+        #continueTime helps to get the total run time required when user clicks on continue button
+        continueTime = self.getCurrentTime()+time 
+ 
         MooseHandler.runtime = time      
         next_stop = MooseHandler.plotupdate_dt
-        while next_stop <= MooseHandler.runtime:
-            self._context.step(MooseHandler.plotupdate_dt)
-            next_stop = next_stop + MooseHandler.plotupdate_dt
-            self.emit(QtCore.SIGNAL('updatePlots(float)'), self._context.getCurrentTime())
-        time_left = MooseHandler.runtime + MooseHandler.plotupdate_dt - next_stop 
         if MooseHandler.runtime < MooseHandler.plotupdate_dt:
-            time_left = MooseHandler.runtime
-        self._context.step(time_left)
-        self.emit(QtCore.SIGNAL('updatePlots(float)'), self._context.getCurrentTime())
-
-    #def doResetAndRun(self, runtime, simdt=None, plotdt=None, gldt=None, plotupdate_dt=None):
+            moose.start(MooseHandler.plotupdate_dt)
+            self.emit(QtCore.SIGNAL('updatePlots(float)'), self.getCurrentTime())
+        else:
+            while (next_stop <= MooseHandler.runtime) and (self.stopSimulation == 0):
+                moose.start(MooseHandler.plotupdate_dt)
+                next_stop = next_stop + MooseHandler.plotupdate_dt
+                self.emit(QtCore.SIGNAL('updatePlots(float)'), self.getCurrentTime())
+            if (self.getCurrentTime() < continueTime) and (self.stopSimulation == 0):
+                time_left = continueTime - self.getCurrentTime()
+                moose.start(time_left)
+                self.emit(QtCore.SIGNAL('updatePlots(float)'), self.getCurrentTime())          
+                
     def doResetAndRun(self, runtime, simdt=None, plotdt=None, plotupdate_dt=None):
         """Reset and run the simulation.
 
@@ -342,273 +383,72 @@ class MooseHandler(QtCore.QObject):
         end-user.
 
         """
-        if simdt is not None and isinstance(simdt, float):
+        if simdt is not None and isinstance(simdt, float): #why only float?
             MooseHandler.simdt = simdt
         if plotdt is not None and isinstance(plotdt, float):
-            MooseHandler.plotdt_err = plotdt
-        #if gldt is not None and isinstance(gldt, float):
-        #    MooseHandler.gldt = gldt
+            MooseHandler.plotdt = plotdt
         if plotupdate_dt is not None and isinstance(plotupdate_dt, float):
             MooseHandler.plotupdate_dt = plotupdate_dt
         if runtime is not None and isinstance(runtime, float):
             MooseHandler.runtime = runtime
-            
-        self._context.setClock(0, MooseHandler.simdt)
-        self._context.setClock(1, MooseHandler.simdt)
-        self._context.setClock(2, MooseHandler.simdt)
-        self._context.setClock(3, MooseHandler.plotdt)
-        #self._context.setClock(4, MooseHandler.gldt)
-        self._context.useClock(3, self._data.path + '/##[TYPE=Table]')
-        if self._context.exists('/graphs'):
-            self._context.useClock(3, '/graphs/##[TYPE=Table]')
-        if self._context.exists('/moregraphs'):
-            self._context.useClock(3, '/moregraphs/##[TYPE=Table]')            
-        #self._context.useClock(4, self._gl.path + '/##[TYPE=GLcell]')
-        #self._context.useClock(4, self._gl.path + '/##[TYPE=GLview]')
-        self._context.reset()
-        MooseHandler.runtime = runtime      
-        next_stop = MooseHandler.plotupdate_dt
-        while next_stop <= MooseHandler.runtime:
-            self._context.step(MooseHandler.plotupdate_dt)
-            next_stop = next_stop + MooseHandler.plotupdate_dt
-            self.emit(QtCore.SIGNAL('updatePlots(float)'), self._context.getCurrentTime())
-        time_left = MooseHandler.runtime + MooseHandler.plotupdate_dt - next_stop 
-        if MooseHandler.runtime < MooseHandler.plotupdate_dt:
-            time_left = MooseHandler.runtime
-        self._context.step(time_left)
-        self.emit(QtCore.SIGNAL('updatePlots(float)'), self._context.getCurrentTime())
 
-    def doConnect(self):
-        ret = False
-        if self._connSrcObj and self._connDestObj and self._connSrcMsg and self._connDestMsg:
-            ret = self._connSrcObj.connect(self._connSrcMsg, self._connDestObj, self._connDestMsg)
-            # print 'Connected %s/%s to %s/%s: ' % (self._connSrcObj.path, self._connSrcMsg, self._connDestObj.path, self._connDestMsg), ret
-            self._connSrcObj = None
-            self._connDestObj = None
-            self._connSrcMsg = None
-            self._connDestMsg = None
-        return ret
+        self.updateClocks(simdt,plotdt)
+        if self.getCurrentTime() == 0.0:
+            moose.reinit()
+        else: pass
+        self.doRun(runtime)
 
-    def setConnSrc(self, fieldPath):
-        pos = fieldPath.rfind('/')
-        moosePath = fieldPath[:pos]
-        field = fieldPath[pos+1:]
-        self._connSrcObj = moose.Neutral(moosePath)
-        self._connSrcMsg = field
+        #if self._context.exists('/graphs'):
+        #    self._context.useClock(3, '/graphs/##[TYPE=Table]')
+        #if self._context.exists('/moregraphs'):
+        #    self._context.useClock(3, '/moregraphs/##[TYPE=Table]')            
+        #self._context.reset()
 
-    def setConnDest(self, fieldPath):
-        pos = fieldPath.rfind('/')
-        moosePath = fieldPath[:pos]
-        field = fieldPath[pos+1:]
-        self._connDestObj = moose.Neutral(moosePath)
-        self._connDestMsg = field
 
-    def getSrcFields(self, mooseObj):
-        srcFields = self._context.getFieldList(mooseObj.id, moose.FTYPE_SOURCE)
-        sharedFields = self._context.getFieldList(mooseObj.id, moose.FTYPE_SHARED)
-        ret = []
-        for field in srcFields:
-            ret.append(field)
-        for field in sharedFields:
-            ret.append(field)
-        return ret
+    # def doConnect(self):
+    #     ret = False
+    #     if self._connSrcObj and self._connDestObj and self._connSrcMsg and self._connDestMsg:
+    #         ret = self._connSrcObj.connect(self._connSrcMsg, self._connDestObj, self._connDestMsg)
+    #         # print 'Connected %s/%s to %s/%s: ' % (self._connSrcObj.path, self._connSrcMsg, self._connDestObj.path, self._connDestMsg), ret
+    #         self._connSrcObj = None
+    #         self._connDestObj = None
+    #         self._connSrcMsg = None
+    #         self._connDestMsg = None
+    #     return ret
 
-    def getDestFields(self, mooseObj):
-        destFields = self._context.getFieldList(mooseObj.id, moose.FTYPE_DEST)
-        sharedFields = self._context.getFieldList(mooseObj.id, moose.FTYPE_SHARED)
-        ret = []
-        for field in destFields:
-            ret.append(field)
-        for field in sharedFields:
-            ret.append(field)
-        return ret
+    # def setConnSrc(self, fieldPath):
+    #     pos = fieldPath.rfind('/')
+    #     moosePath = fieldPath[:pos]
+    #     field = fieldPath[pos+1:]
+    #     self._connSrcObj = moose.Neutral(moosePath)
+    #     self._connSrcMsg = field
 
-    def makeGLCell(self, mooseObjPath, port, field=None, threshold=None, lowValue=None, highValue=None, vscale=None, bgColor=None, sync=None):
-        """Make a GLcell instance.
-        
-        mooseObjPath -- path of the moose object to be monitored
-        
-        port -- string representation of the port number for the client.
-        
-        field -- name of the field to be observed. Vm by default.
+    # def setConnDest(self, fieldPath):
+    #     pos = fieldPath.rfind('/')
+    #     moosePath = fieldPath[:pos]
+    #     field = fieldPath[pos+1:]
+    #     self._connDestObj = moose.Neutral(moosePath)
+    #     self._connDestMsg = field
 
-        threshold -- the % change in the field value that will be
-        taken up for visualization. 1% by default.
+    # def getSrcFields(self, mooseObj):
+    #     srcFields = self._context.getFieldList(mooseObj.id, moose.FTYPE_SOURCE)
+    #     sharedFields = self._context.getFieldList(mooseObj.id, moose.FTYPE_SHARED)
+    #     ret = []
+    #     for field in srcFields:
+    #         ret.append(field)
+    #     for field in sharedFields:
+    #         ret.append(field)
+    #     return ret
 
-        highValue -- value represented by the last line of the
-        colourmap file. Any value of the field above this will be
-        represented by the colour corresponding to this value.
-
-        lowValue -- value represented by the first line of the
-        colourmap file. Any value of the field below this will be
-        represented by the colour corresponding to this value.
-
-        vscale -- Scaling of thickness for visualization of very thin
-        compartments. 
-
-        bgColor -- background colour of the visualization window.
-
-        sync -- Run simulation in sync with the visualization. If on,
-        it may slowdown the simulation.
-        
-        """
-        print 'Parameter types:', 'port:', type(port), 'field:', type(field), 'threshold:', type(threshold), 'highValue:', type(highValue), highValue, 'lowValue:', type(lowValue), 'vscale:', type(vscale), 'bgColor:', type(bgColor), 'sync:', type(sync)
-        print 'Background colour:', bgColor
-        if not self._context.exists(mooseObjPath):
-            return None
-        glCellPath = mooseObjPath.replace('/', '_')  + str(random.randint(0,999))
-        glCell = moose.GLcell(glCellPath, self._gl)
-        glCell.useClock(4)
-        glCell.vizpath = mooseObjPath
-        glCell.port = port
-        self._portPathMap[port] = mooseObjPath
-        self._pathPortMap[mooseObjPath].add(port)        
-        self._portServerMap[port] = glCell
-
-        if field is not None:
-            glCell.attribute = field
-        if threshold is not None and isinstance(threshold, float):
-            glCell.threhold = threshold
-        if highValue is not None and isinstance(highValue, float):
-            glCell.highvalue = highValue
-        if lowValue is not None and isinstance(lowValue, float):
-            glCell.lowvalue = lowValue
-        if vscale is not None and isinstance(vscale, float):
-            glCell.vscale = vscale
-        if bgColor is not None:
-            glCell.bgcolor = bgColor
-        if sync is not None:
-            glCell.sync = sync
-        print 'Created GLCell for object', mooseObjPath, ' on port', port
-        return glCell
-        
-    def makeGLView(self, mooseObjPath, wildcard, port, fieldList, minValueList, maxValueList, colorFieldIndex, morphFieldIndex=None, grid=None, bgColor=None, sync=None):
-        """
-        Make a GLview object to visualize some field of a bunch of
-        moose elements.
-        
-        mooseObjPath -- GENESIS-style path for elements to be
-        observed.
-
-	wildcard -- for selecting sub elements to be viewed
-
-        port -- port to use for communicating with the client.
-
-        fieldList -- list of fields to be observed.
-
-        minValueList -- minimum value for fields in fieldList. 
-
-        maxValueList -- maximum value for fields in fieldList.
-        
-        colorFieldIndex -- index of the field to be represented by the
-        colour of the 3-D shapes in visualization.
-
-        morphFieldIndex -- index of the field to be represented by the
-        size of the 3D shape.
-        
-        grid -- whether to put the 3D shapes in a grid or to use the
-        x, y, z coordinates in the objects for positioning them in
-        space.
-
-        bgColor -- background colour of visualization window.
-
-        sync -- synchronize simulation with visualization.
-
-        """
-        if not self._context.exists(mooseObjPath):
-            return None
-        glViewPath = mooseObjPath.replace('/', '_') + str(random.randint(0,999))
-	print 'Created GLView object',  glViewPath
-        glView = moose.GLview(glViewPath, self._gl)
-        glView.useClock(4)
-        self._portPathMap[port] = mooseObjPath
-        self._pathPortMap[mooseObjPath].add(port)        
-        self._portServerMap[port] = glView
-        glView.vizpath = mooseObjPath
-	if  wildcard:
-	    glView.vizpath = glView.vizpath +  '/' + wildcard
-	print 'Set vizpath to', mooseObjPath
-	print 'client Port: ', port
-        glView.port = port
-        if len(fieldList) > 5:
-            fieldList = fieldList[:5]
-
-        for ii in range(len(fieldList)):
-            visField = 'value%d' % (ii+1)
-	    if (not fieldList[ii]) or (len(fieldList[ii].strip()) == 0):
-		continue
-            setattr(glView, visField, fieldList[ii])
-            try:
-                if isinstance(minValueList[ii], float):
-                    setattr(glView, 'value%dmin' % (ii+1), minValueList[ii])
-                if isinstance(maxValueList[ii], float):
-                    setattr(glView, 'value%dmax' % (ii+1), maxValueList[ii])
-            except IndexError:
-                break
-        glView.color_val = int(colorFieldIndex)
-        if morphFieldIndex is not None:
-            glView.morph_val = int(morphFieldIndex)
-        if grid and (grid != 'off'):
-            glView.grid = 'on'
-
-        if bgColor is not None:
-            glView.bgcolor = bgColor
-
-        if sync and (sync != 'off'):
-            glView.sync = 'on'
-
-        print 'Created GLView', glView.path, 'for object', mooseObjPath, ' on port', port
-        return glView
-
-    def startGLClient(self, executable, port, mode, colormap):
-        """Start the glclient subprocess. 
-
-        executable -- path to the client program.
-
-        port -- network port used to communicate with the server.
-
-        mode -- The kind of moose GL-element to interact with (glcell or
-        glview)
-        
-        colormap -- path to colormap file for 3D rendering.
-        
-        """
-        client = GLClient(executable, port, mode, colormap)
-        ret = client.child.poll()
-        if ret is not None: # The child terminated immediately
-            print 'Child process exited with return code:', ret
-            return None
-        self._portClientMap[port] = client
-        print 'Created GLclient on port', port
-        return client
-        
-
-    def stopGLClientOnPort(self, port):
-        """Stop the glclient process listening to the specified
-        port."""
-        try:
-            client = self._portClientMap.pop(port)
-            client.stop()
-        except KeyError:
-            config.LOGGER.error('%s: port not used by any client' % (port))
-
-    def stopGLClientsOnObject(self, mooseObject):
-        """Stop the glclient processes listening to glcell/glview
-        objects on the specified moose object."""
-        path = mooseObject.path
-        try:
-            portSet = self._pathPortMap.pop(path)
-            for port in portSet:
-                self.stopGLClientOnPort(port)
-        except KeyError:
-            config.LOGGER.error('%s: no 3D visualization clients for this object.' % (path))
-
-    def stopGL(self):
-        """Make the dt of the clock on GLview and GLcell objects very
-        large. Kill all the GLClient processes"""
-        self._context.setClock(4, 1e10)
-        for port, client in self._portClientMap.items():
-            client.stop()
+    # def getDestFields(self, mooseObj):
+    #     destFields = self._context.getFieldList(mooseObj.id, moose.FTYPE_DEST)
+    #     sharedFields = self._context.getFieldList(mooseObj.id, moose.FTYPE_SHARED)
+    #     ret = []
+    #     for field in destFields:
+    #         ret.append(field)
+    #     for field in sharedFields:
+    #         ret.append(field)
+    #     return ret
         
     def getKKitGraphs(self):
         tableList = []
@@ -626,11 +466,14 @@ class MooseHandler(QtCore.QObject):
                     tableList.append(moose.Table(child))
         return tableList
         
-    def getDataTables(self):
-        tableList = []
-        for table in self._data.children():
-            if moose.Neutral(table).className == 'Table':
-                tableList.append(moose.Table(table))
-        return tableList
+    # def getDataTables(self):
+    #     tableList = []
+    #     for table in self._data.children():
+    #         if moose.Neutral(table).className == 'Table':
+    #             tableList.append(moose.Table(table))
+    #     return tableList
 
     
+    
+# 
+# moosehandler.py ends here

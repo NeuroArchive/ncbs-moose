@@ -7,10 +7,14 @@
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
+#include "header.h"
 #include <set>
-#include <limits>	// Max and min 'double' values needed for lookup table init.
-#include "biophysics/BioScan.h"
+#include <limits> // Max and min 'double' values needed for lookup table init.
+#include "../biophysics/CaConc.h"
+#include "../biophysics/HHGate.h"
+#include "../biophysics/ChanBase.h"
+#include "../biophysics/HHChannel.h"
+#include "HSolveUtils.h"
 #include "HSolveStruct.h"
 #include "HinesMatrix.h"
 #include "HSolvePassive.h"
@@ -22,18 +26,110 @@
 //////////////////////////////////////////////////////////////////////
 
 void HSolveActive::setup( Id seed, double dt ) {
+	//~ cout << ".. HA.setup()" << endl;
+	
 	this->HSolvePassive::setup( seed, dt );
 	
-	readHHChannels( );
-	readGates( );
-	readCalcium( );
-	createLookupTables( );
-	readSynapses( );
-	readExternalChannels( );
-	cleanup( );
+	readHHChannels();
+	readGates();
+	readCalcium();
+	createLookupTables();
+	readSynapses();
+	readExternalChannels();
+	
+	reinit();
+	cleanup();
+	
+	//~ cout << "# of compartments: " << compartmentId_.size() << "." << endl;
+	//~ cout << "# of channels: " << channelId_.size() << "." << endl;
+	//~ cout << "# of gates: " << gateId_.size() << "." << endl;
+	//~ cout << "# of states: " << state_.size() << "." << endl;
+	//~ cout << "# of Ca pools: " << caConc_.size() << "." << endl;
+	//~ cout << "# of SynChans: " << synchan_.size() << "." << endl;
+	//~ cout << "# of SpikeGens: " << spikegen_.size() << "." << endl;
 }
 
-void HSolveActive::readHHChannels( ) {
+void HSolveActive::reinit() {
+	reinitCompartments();
+	reinitCalcium();
+	reinitChannels();
+}
+
+void HSolveActive::reinitCompartments() {
+	for ( unsigned int ic = 0; ic < nCompt_; ++ic )
+		V_[ ic ] = tree_[ ic ].initVm;
+}
+
+void HSolveActive::reinitCalcium() {
+	caActivation_.assign( caActivation_.size(), 0.0 );
+	
+	for ( unsigned int i = 0; i < ca_.size(); ++i ) {
+		caConc_[ i ].c_ = 0.0;
+		ca_[ i ] = caConc_[ i ].CaBasal_;
+	}
+}
+
+void HSolveActive::reinitChannels() {
+	vector< double >::iterator iv;
+	vector< double >::iterator istate = state_.begin();
+	vector< int >::iterator ichannelcount = channelCount_.begin();
+	vector< ChannelStruct >::iterator ichan = channel_.begin();
+	vector< ChannelStruct >::iterator chanBoundary;
+	vector< unsigned int >::iterator icacount = caCount_.begin();
+	vector< double >::iterator ica = ca_.begin();
+	vector< double >::iterator caBoundary;
+	vector< LookupColumn >::iterator icolumn = column_.begin();
+	vector< LookupRow >::iterator icarowcompt;
+	vector< LookupRow* >::iterator icarow = caRow_.begin();
+	
+	LookupRow vRow;
+	double C1, C2;
+	for ( iv = V_.begin(); iv != V_.end(); ++iv ) {
+		vTable_.row( *iv, vRow );
+		icarowcompt = caRowCompt_.begin();
+		caBoundary = ica + *icacount;
+		for ( ; ica < caBoundary; ++ica ) {
+			caTable_.row( *ica, *icarowcompt );
+			++icarowcompt;
+		}
+		
+		chanBoundary = ichan + *ichannelcount;
+		for ( ; ichan < chanBoundary; ++ichan ) {
+			if ( ichan->Xpower_ > 0.0 ) {
+				vTable_.lookup( *icolumn, vRow, C1, C2 );
+				
+				*istate = C1 / C2;
+				
+				++icolumn, ++istate;
+			}
+			
+			if ( ichan->Ypower_ > 0.0 ) {
+				vTable_.lookup( *icolumn, vRow, C1, C2 );
+				
+				*istate = C1 / C2;
+				
+				++icolumn, ++istate;
+			}
+			
+			if ( ichan->Zpower_ > 0.0 ) {
+				LookupRow* caRow = *icarow;
+				if ( caRow ) {
+					caTable_.lookup( *icolumn, *caRow, C1, C2 );
+				} else {
+					vTable_.lookup( *icolumn, vRow, C1, C2 );
+				}
+				
+				*istate = C1 / C2;
+				
+				++icolumn, ++istate, ++icarow;
+			}
+		}
+		
+		++ichannelcount, ++icacount;
+	}
+}
+
+void HSolveActive::readHHChannels() {
 	vector< Id >::iterator icompt;
 	vector< Id >::iterator ichan;
 	int nChannel;
@@ -44,7 +140,7 @@ void HSolveActive::readHHChannels( ) {
 	
 	for ( icompt = compartmentId_.begin(); icompt != compartmentId_.end(); ++icompt )
 	{
-		nChannel = BioScan::hhchannels( *icompt, channelId_ );
+		nChannel = HSolveUtils::hhchannels( *icompt, channelId_ );
 		
 		// todo: discard channels with Gbar = 0.0
 		channelCount_.push_back( nChannel );
@@ -57,16 +153,15 @@ void HSolveActive::readHHChannels( ) {
 			current_.resize( current_.size() + 1 );
 			CurrentStruct& current = current_.back();
 			
-			Eref elm = ( *ichan )();
-			get< double >( elm, "Gbar", Gbar );
-			get< double >( elm, "Ek", Ek );
-			get< double >( elm, "X", X );
-			get< double >( elm, "Y", Y );
-			get< double >( elm, "Z", Z );
-			get< double >( elm, "Xpower", Xpower );
-			get< double >( elm, "Ypower", Ypower );
-			get< double >( elm, "Zpower", Zpower );
-			get< int >( elm, "instant", instant );
+			Gbar    = HSolveUtils::get< ChanBase, double >( *ichan, "Gbar" );
+			Ek      = HSolveUtils::get< ChanBase, double >( *ichan, "Ek" );
+			X       = HSolveUtils::get< HHChannel, double >( *ichan, "X" );
+			Y       = HSolveUtils::get< HHChannel, double >( *ichan, "Y" );
+			Z       = HSolveUtils::get< HHChannel, double >( *ichan, "Z" );
+			Xpower  = HSolveUtils::get< HHChannel, double >( *ichan, "Xpower" );
+			Ypower  = HSolveUtils::get< HHChannel, double >( *ichan, "Ypower" );
+			Zpower  = HSolveUtils::get< HHChannel, double >( *ichan, "Zpower" );
+			instant = HSolveUtils::get< HHChannel, int >( *ichan, "instant" );
 			
 			current.Ek = Ek;
 			
@@ -104,160 +199,96 @@ void HSolveActive::readHHChannels( ) {
 	}
 }
 
-void HSolveActive::readGates( ) {
+void HSolveActive::readGates() {
 	vector< Id >::iterator ichan;
 	unsigned int nGates;
 	int useConcentration;
 	for ( ichan = channelId_.begin(); ichan != channelId_.end(); ++ichan ) {
-		nGates = BioScan::gates( *ichan, gateId_ );
+		nGates = HSolveUtils::gates( *ichan, gateId_ );
 		gCaDepend_.insert( gCaDepend_.end(), nGates, 0 );
-		Eref elm = ( *ichan )();
-		get< int >( elm, "useConcentration", useConcentration );
+		useConcentration =
+			HSolveUtils::get< HHChannel, int >( *ichan, "useConcentration" );
 		if ( useConcentration )
 			gCaDepend_.back() = 1;
 	}
 }
 
-namespace hsolve{
-	/*
-	 * This struct is used in HSolveActive::readCalcium. Since it is
-	 * used as a template argument (vector< CaInfo >), the standard does
-	 * not allow the struct to be placed locally inside the function.
-	 * Hence placing it outside the function, but in a separate
-	 * namespace to avoid polluting the global namespace.
-	 * 
-	 * The structure holds information about Calcium-channel
-	 * interactions in a compartment.
-	 */
-	struct CaInfo
-	{
-		vector< unsigned int > sourceChannelIndex;
-		vector< Id >           targetCaId;
-	};
-}
-
-void HSolveActive::readCalcium( ) {
-	/* Stage 1 */
-	caDependIndex_.resize( channel_.size(), -1 );
-	vector< hsolve::CaInfo > caInfo( nCompt_ );
-	map< Id, unsigned int > caIndex;
+void HSolveActive::readCalcium() {
+	double Ca, CaBasal, tau, B, ceiling, floor;
+	vector< Id > caConcId;
+	vector< int > caTargetIndex;
+	map< Id, int > caConcIndex;
+	int nTarget, nDepend;
+	vector< Id >::iterator iconc;
 	
+	caCount_.resize( nCompt_ );
 	unsigned int ichan = 0;
 	for ( unsigned int ic = 0; ic < nCompt_; ++ic ) {
 		unsigned int chanBoundary = ichan + channelCount_[ ic ];
+		unsigned int nCa = caConc_.size();
+		
 		for ( ; ichan < chanBoundary; ++ichan ) {
-			vector< Id > caTarget;
-			vector< Id > caDepend;
+			caConcId.clear();
 			
-			BioScan::caTarget( channelId_[ ichan ], caTarget );
-			for ( vector< Id >::iterator
-			      ica = caTarget.begin();
-			      ica != caTarget.end();
-			      ++ica )
-			{
-				caInfo[ ic ].sourceChannelIndex.push_back( ichan );
-				caInfo[ ic ].targetCaId.push_back( *ica );
-				
-				if ( caIndex.find( *ica ) == caIndex.end() ) {
-					caIndex[ *ica ] = caConcId_.size();
-					caConcId_.push_back( *ica );
-				}
-			}
+			nTarget = HSolveUtils::caTarget( channelId_[ ichan ], caConcId );
+			if ( nTarget == 0 )
+				// No calcium pools fed by this channel.
+				caTargetIndex.push_back( -1 );
 			
-			BioScan::caDepend( channelId_[ ichan ], caDepend );
+			nDepend = HSolveUtils::caDepend( channelId_[ ichan ], caConcId );
+			if ( nDepend == 0 )
+				// Channel does not depend on calcium.
+				caDependIndex_.push_back( -1 );
 			
-			if ( channel_[ ichan ].Zpower_ == 0.0 ) {
-				if ( caDepend.size() > 0 ) {
-					cerr << "Warning!" << endl;
+			for ( iconc = caConcId.begin(); iconc != caConcId.end(); ++iconc )
+				if ( caConcIndex.find( *iconc ) == caConcIndex.end() ) {
+					caConcIndex[ *iconc ] = caCount_[ ic ];
+					++caCount_[ ic ];
+					
+					Ca =
+						HSolveUtils::get< CaConc, double >( *iconc, "Ca" );
+					CaBasal =
+						HSolveUtils::get< CaConc, double >( *iconc, "CaBasal" );
+					tau =
+						HSolveUtils::get< CaConc, double >( *iconc, "tau" );
+					B =
+						HSolveUtils::get< CaConc, double >( *iconc, "B" );
+					ceiling =
+						HSolveUtils::get< CaConc, double >( *iconc, "ceiling" );
+					floor =
+						HSolveUtils::get< CaConc, double >( *iconc, "floor" );
+					
+					caConc_.push_back(
+						CaConcStruct(
+							Ca, CaBasal,
+							tau, B,
+							ceiling, floor,
+							dt_
+						)
+					);
+					caConcId_.push_back( *iconc );
 				}
-			} else if ( caDepend.size() > 0 ) {
-				if ( caDepend.size() > 1 ) {
-					cerr << "Warning!" << endl;
-				}
-				
-				Id& ca0 = caDepend.front();
-				if ( caIndex.find( ca0 ) == caIndex.end() ) {
-					caIndex[ ca0 ] = caConcId_.size();
-					caConcId_.push_back( ca0 );
-				}
-				
-				caDependIndex_[ ichan ] = caIndex[ ca0 ];
-			}
+			
+			if ( nTarget != 0 )
+				caTargetIndex.push_back( caConcIndex[ caConcId.front() ] + nCa );
+			if ( nDepend != 0 )
+				caDependIndex_.push_back( caConcIndex[ caConcId.back() ] );
 		}
 	}
 	
-	/* Stage 2 */
-	caActivation_.resize( caConcId_.size() );
+	caTarget_.resize( channel_.size() );
+	ca_.resize( caConc_.size() );
+	caActivation_.resize( caConc_.size() );
 	
-	for ( vector< hsolve::CaInfo >::iterator
-	      icainfo = caInfo.begin();
-	      icainfo != caInfo.end();
-	      ++icainfo )
-	{
-		unsigned int nConnections = icainfo->sourceChannelIndex.size();
-		
-		unsigned int type;
-		switch ( nConnections )
-		{
-			case 0:  type = 0; break;
-			case 1:  type = 1; break;
-			default: type = 2; break;
-		}
-		
-		if ( caTract_.empty() || caTract_.back().type != type )
-			caTract_.push_back( CaTractStruct() );
-		CaTractStruct& caTract = caTract_.back();
-		
-		caTract.type = type;
-		caTract.length++;
-		
-		if ( nConnections == 0 )
-			continue;
-		
-		caTract.nConnections.push_back( nConnections );
-		
-		for ( unsigned int iconn = 0; iconn < nConnections; ++iconn ) {
-			CurrentStruct& sourceChannel =
-				current_[ icainfo->sourceChannelIndex[ iconn ] ];
-			caSource_.push_back( &sourceChannel );
-			
-			if ( type == 2 ) {
-				Id targetCaId = icainfo->targetCaId[ iconn ];
-				caTarget_.push_back(
-					&caActivation_[ caIndex[ targetCaId ] ]
-				);
-			}
-		}
-	}
-	
-	/* Stage 3 */
-	double Ca;
-	double CaBasal;
-	double tau;
-	double B;
-	for ( vector< Id >::iterator
-	      ica = caConcId_.begin();
-	      ica != caConcId_.end();
-	      ++ica )
-	{
-		Eref elm = ( *ica )();
-		get< double >( elm, "Ca", Ca );
-		get< double >( elm, "CaBasal", CaBasal );
-		get< double >( elm, "tau", tau );
-		get< double >( elm, "B", B );
-		
-		CaConcStruct caConc;
-		caConc.c_ = Ca - CaBasal;
-		caConc.ca_ = Ca;
-		caConc.factor1_ = 4.0 / ( 2.0 + dt_ / tau ) - 1.0;
-		caConc.factor2_ = 2.0 * B * dt_ / ( 2.0 + dt_ / tau );
-		caConc.CaBasal_ = CaBasal;
-		
-		caConc_.push_back( caConc );
+	for ( unsigned int ichan = 0; ichan < channel_.size(); ++ichan ) {
+		if ( caTargetIndex[ ichan ] == -1 )
+			caTarget_[ ichan ] = 0;
+		else
+			caTarget_[ ichan ] = &caActivation_[ caTargetIndex[ ichan ] ];
 	}
 }
 
-void HSolveActive::createLookupTables( ) {
+void HSolveActive::createLookupTables() {
 	std::set< Id > caSet;
 	std::set< Id > vSet;
 	vector< Id > caGate;
@@ -281,97 +312,131 @@ void HSolveActive::createLookupTables( ) {
 	/*
 	 * Finding the smallest xmin and largest xmax across all gates' lookup
 	 * tables.
+	 * 
+	 * # of divs is determined by finding the smallest dx (highest density).
 	 */
 	vMin_ = numeric_limits< double >::max();
 	vMax_ = numeric_limits< double >::min();
+	double vDx = numeric_limits< double >::max();
 	caMin_ = numeric_limits< double >::max();
 	caMax_ = numeric_limits< double >::min();
+	double caDx = numeric_limits< double >::max();
 	
 	double min;
 	double max;
+	unsigned int divs;
+	double dx;
 	
 	for ( unsigned int ig = 0; ig < caGate.size(); ++ig ) {
-		BioScan::domain( caGate[ ig ], min, max );
+		min = HSolveUtils::get< HHGate, double >( caGate[ ig ], "min" );
+		max = HSolveUtils::get< HHGate, double >( caGate[ ig ], "max" );
+		divs = HSolveUtils::get< HHGate, unsigned int >(
+			caGate[ ig ], "divs" );
+		
+		dx = ( max - min ) / divs;
+		
 		if ( min < caMin_ )
 			caMin_ = min;
 		if ( max > caMax_ )
 			caMax_ = max;
+		if ( dx < caDx )
+			caDx = dx;
 	}
+	double caDiv = ( caMax_ - caMin_ ) / caDx;
+	caDiv_ = static_cast< int >( caDiv + 0.5 ); // Round-off to nearest int.
 	
 	for ( unsigned int ig = 0; ig < vGate.size(); ++ig ) {
-		BioScan::domain( vGate[ ig ], min, max );
+		min = HSolveUtils::get< HHGate, double >( vGate[ ig ], "min" );
+		max = HSolveUtils::get< HHGate, double >( vGate[ ig ], "max" );
+		divs = HSolveUtils::get< HHGate, unsigned int >(
+			vGate[ ig ], "divs" );
+		
+		dx = ( max - min ) / divs;
+		
 		if ( min < vMin_ )
 			vMin_ = min;
 		if ( max > vMax_ )
 			vMax_ = max;
+		if ( dx < vDx )
+			vDx = dx;
 	}
+	double vDiv = ( vMax_ - vMin_ ) / vDx;
+	vDiv_ = static_cast< int >( vDiv + 0.5 ); // Round-off to nearest int.
 	
 	caTable_ = LookupTable( caMin_, caMax_, caDiv_, caGate.size() );
 	vTable_ = LookupTable( vMin_, vMax_, vDiv_, vGate.size() );
 	
-	vector< double > grid;
 	vector< double > A, B;
 	vector< double >::iterator ia, ib;
 	double a, b;
-	int AMode, BMode;
-	bool interpolate;
+	//~ int AMode, BMode;
+	//~ bool interpolate;
 	
 	// Calcium-dependent lookup tables
-	if ( caGate.size() ) {
-		grid.resize( 1 + caDiv_ );
-		double dca = ( caMax_ - caMin_ ) / caDiv_;
-		for ( int igrid = 0; igrid <= caDiv_; ++igrid )
-			grid[ igrid ] = caMin_ + igrid * dca;
-	}
+	HSolveUtils::Grid caGrid( caMin_, caMax_, caDiv_ );
+	//~ if ( !caGate.empty() ) {
+		//~ grid.resize( 1 + caDiv_ );
+		//~ double dca = ( caMax_ - caMin_ ) / caDiv_;
+		//~ for ( int igrid = 0; igrid <= caDiv_; ++igrid )
+			//~ grid[ igrid ] = caMin_ + igrid * dca;
+	//~ }
 	
 	for ( unsigned int ig = 0; ig < caGate.size(); ++ig ) {
-		BioScan::rates( caGate[ ig ], grid, A, B );
-		BioScan::modes( caGate[ ig ], AMode, BMode );
-		interpolate = ( AMode == 1 ) || ( BMode == 1 );
+		HSolveUtils::rates( caGate[ ig ], caGrid, A, B );
+		//~ HSolveUtils::modes( caGate[ ig ], AMode, BMode );
+		//~ interpolate = ( AMode == 1 ) || ( BMode == 1 );
 		
 		ia = A.begin();
 		ib = B.begin();
-		for ( unsigned int igrid = 0; igrid < grid.size(); ++igrid ) {
+		for ( unsigned int igrid = 0; igrid < caGrid.size(); ++igrid ) {
+			// Use one of the optimized forms below, instead of A and B
+			// directly. Also updated reinit() accordingly (for gate state).
 			a = *ia;
 			b = *ib;
 			
-			//~ *ia = ( 2.0 - dt_ * b ) / ( 2.0 + dt_ * b );
-			//~ *ib = dt_ * a / ( 1.0 + dt_ * b / 2.0 );
-			//~ *ia = dt_ * a;
-			//~ *ib = 1.0 + dt_ * b / 2.0;
+			// *ia = ( 2.0 - dt_ * b ) / ( 2.0 + dt_ * b );
+			// *ib = dt_ * a / ( 1.0 + dt_ * b / 2.0 );
+			// *ia = dt_ * a;
+			// *ib = 1.0 + dt_ * b / 2.0;
 			++ia, ++ib;
 		}
 		
-		caTable_.addColumns( ig, A, B, interpolate );
+		//~ caTable_.addColumns( ig, A, B, interpolate );
+		caTable_.addColumns( ig, A, B );
 	}
 	
 	// Voltage-dependent lookup tables
-	if ( vGate.size() ) {
-		grid.resize( 1 + vDiv_ );
-		double dv = ( vMax_ - vMin_ ) / vDiv_;
-		for ( int igrid = 0; igrid <= vDiv_; ++igrid )
-			grid[ igrid ] = vMin_ + igrid * dv;
-	}
+	HSolveUtils::Grid vGrid( vMin_, vMax_, vDiv_ );
+	//~ if ( !vGate.empty() ) {
+		//~ grid.resize( 1 + vDiv_ );
+		//~ double dv = ( vMax_ - vMin_ ) / vDiv_;
+		//~ for ( int igrid = 0; igrid <= vDiv_; ++igrid )
+			//~ grid[ igrid ] = vMin_ + igrid * dv;
+	//~ }
 	
 	for ( unsigned int ig = 0; ig < vGate.size(); ++ig ) {
-		BioScan::rates( vGate[ ig ], grid, A, B );
-		BioScan::modes( vGate[ ig ], AMode, BMode );
-		interpolate = ( AMode == 1 ) || ( BMode == 1 );
+		//~ interpolate = HSolveUtils::get< HHGate, bool >( vGate[ ig ], "useInterpolation" );
+		HSolveUtils::rates( vGate[ ig ], vGrid, A, B );
+		//~ HSolveUtils::modes( vGate[ ig ], AMode, BMode );
+		//~ interpolate = ( AMode == 1 ) || ( BMode == 1 );
 		
 		ia = A.begin();
 		ib = B.begin();
-		for ( unsigned int igrid = 0; igrid < grid.size(); ++igrid ) {
+		for ( unsigned int igrid = 0; igrid < vGrid.size(); ++igrid ) {
+			// Use one of the optimized forms below, instead of A and B
+			// directly. Also updated reinit() accordingly (for gate state).
 			a = *ia;
 			b = *ib;
 			
-			//~ *ia = ( 2.0 - dt_ * b ) / ( 2.0 + dt_ * b );
-			//~ *ib = dt_ * a / ( 1.0 + dt_ * b / 2.0 );
-			//~ *ia = dt_ * a;
-			//~ *ib = 1.0 + dt_ * b / 2.0;
+			// *ia = ( 2.0 - dt_ * b ) / ( 2.0 + dt_ * b );
+			// *ib = dt_ * a / ( 1.0 + dt_ * b / 2.0 );
+			// *ia = dt_ * a;
+			// *ib = 1.0 + dt_ * b / 2.0;
 			++ia, ++ib;
 		}
 		
-		vTable_.addColumns( ig, A, B, interpolate );
+		//~ vTable_.addColumns( ig, A, B, interpolate );
+		vTable_.addColumns( ig, A, B );
 	}
 	
 	column_.reserve( gateId_.size() );
@@ -387,37 +452,21 @@ void HSolveActive::createLookupTables( ) {
 		column_.push_back( column );
 	}
 	
-	/*
-	 * Setting up caRow_: Resizing it appropriately, and initializing
-	 * it with appropriate values for the first time-step in HSolve.
-	 * 
-	 * Later HSolve takes care of updating caRow_ with new values as
-	 * Ca values evolve.
-	 */
-	caRow_.resize( caConc_.size() );
-	vector< CaConcStruct >::iterator icaconc = caConc_.begin();
-	for ( vector< LookupRow >::iterator
-	      icarow = caRow_.begin();
-	      icarow != caRow_.end();
-	      ++icarow )
-	{
-		caTable_.row( icaconc->ca_, *icarow );
-		
-		++icaconc;
-	}
-	
+	///////////////////!!!!!!!!!!
+	unsigned int maxN = *( max_element( caCount_.begin(), caCount_.end() ) );
+	caRowCompt_.resize( maxN );
 	for ( unsigned int ichan = 0; ichan < channel_.size(); ++ichan ) {
 		if ( channel_[ ichan ].Zpower_ > 0.0 ) {
 			int index = caDependIndex_[ ichan ];
 			if ( index == -1 )
-				caRowChan_.push_back( 0 );
+				caRow_.push_back( 0 );
 			else
-				caRowChan_.push_back( &caRow_[ index ] );
+				caRow_.push_back( &caRowCompt_[ index ] );
 		}
 	}
 }
 
-void HSolveActive::readSynapses( ) {
+void HSolveActive::readSynapses() {
 	vector< Id > spikeId;
 	vector< Id > synId;
 	vector< Id >::iterator syn;
@@ -426,47 +475,46 @@ void HSolveActive::readSynapses( ) {
 	SynChanStruct synchan;
 	
 	for ( unsigned int ic = 0; ic < nCompt_; ++ic ) {
-		synId.clear( );
-		BioScan::synchans( compartmentId_[ ic ], synId );
+		synId.clear();
+		HSolveUtils::synchans( compartmentId_[ ic ], synId );
 		for ( syn = synId.begin(); syn != synId.end(); ++syn ) {
 			synchan.compt_ = ic;
-			synchan.elm_ = ( *syn )();
+			synchan.elm_ = *syn;
 			synchan_.push_back( synchan );
 		}
 		
-		spikeId.clear( );
-		BioScan::spikegens( compartmentId_[ ic ], spikeId );
+		spikeId.clear();
+		HSolveUtils::spikegens( compartmentId_[ ic ], spikeId );
 		// Very unlikely that there will be >1 spikegens in a compartment,
 		// but lets take care of it anyway.
 		for ( spike = spikeId.begin(); spike != spikeId.end(); ++spike ) {
 			spikegen.compt_ = ic;
-			spikegen.elm_ = ( *spike )();
+			spikegen.elm_ = *spike;
 			spikegen_.push_back( spikegen );
 		}
 	}
 }
 
-void HSolveActive::readExternalChannels( ) {
-	vector< string > include;
-	vector< string > exclude;
-	exclude.push_back( "HHChannel" );
-	exclude.push_back( "SynChan" );
+void HSolveActive::readExternalChannels() {
+	vector< string > filter;
+	filter.push_back( "HHChannel" );
+	//~ filter.push_back( "SynChan" );
 	
-	externalChannelId_.resize( compartmentId_.size() );
+	//~ externalChannelId_.resize( compartmentId_.size() );
 	externalCurrent_.resize( 2 * compartmentId_.size(), 0.0 );
 	
-	for ( unsigned int ic = 0; ic < compartmentId_.size(); ++ic )
-		BioScan::targets(
-			compartmentId_[ ic ],
-			"channel",
-			externalChannelId_[ ic ],
-			include,
-			exclude
-		);
+	//~ for ( unsigned int ic = 0; ic < compartmentId_.size(); ++ic )
+		//~ HSolveUtils::targets(
+			//~ compartmentId_[ ic ],
+			//~ "channel",
+			//~ externalChannelId_[ ic ],
+			//~ filter,
+			//~ false    // include = false. That is, use filter to exclude.
+		//~ );
 }
 
-void HSolveActive::cleanup( ) {
-//	compartmentId_.clear( );
+void HSolveActive::cleanup() {
+//	compartmentId_.clear();
 	gCaDepend_.clear();
 	caDependIndex_.clear();
 }

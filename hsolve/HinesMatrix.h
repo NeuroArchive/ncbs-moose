@@ -10,17 +10,29 @@
 #ifndef _HINES_MATRIX_H
 #define _HINES_MATRIX_H
 
+#ifdef DO_UNIT_TESTS
+# define ASSERT( isOK, message ) \
+	if ( !(isOK) ) { \
+		cerr << "\nERROR: Assert '" << #isOK << "' failed on line " << __LINE__ << "\nin file " << __FILE__ << ": " << message << endl; \
+		exit( 1 ); \
+	} else { \
+		cout << ""; \
+	}
+#else
+# define ASSERT( unused, message ) do {} while ( false )
+#endif
+
 struct JunctionStruct
 {
 	JunctionStruct( unsigned int i, unsigned int r ) :
 		index( i ),
 		rank( r )
 	{ ; }
-
+	
 	bool operator< ( const JunctionStruct& other ) const {
 		return ( index < other.index );
 	}
-
+	
 	unsigned int index;
 	unsigned int rank;
 };
@@ -31,6 +43,8 @@ struct TreeNodeStruct
 	double Ra;
 	double Rm;
 	double Cm;
+	double Em;
+	double initVm;
 };
 
 class HinesMatrix
@@ -38,11 +52,11 @@ class HinesMatrix
 public:
 	void setup( const vector< TreeNodeStruct >& tree, double dt );
 	
-	unsigned int getSize( ) const;
+	unsigned int getSize() const;
 	double getA( unsigned int row, unsigned int col ) const;
 	double getB( unsigned int row ) const;
 	double getVMid( unsigned int row ) const;
-
+	
 protected:
 	typedef vector< double >::iterator vdIterator;
 	
@@ -57,13 +71,13 @@ protected:
 	vector< vdIterator >      operand_;
 	vector< vdIterator >      backOperand_;
 	int                       stage_;
-
+	
 private:
-	void clear( );
-	void makeJunctions( );
-	void makeMatrix( );
-	void makeOperands( );
-
+	void clear();
+	void makeJunctions();
+	void makeMatrix();
+	void makeOperands();
+	
 	const vector< TreeNodeStruct >          *tree_;
 	vector< double >                         Ga_;
 	vector< vector< unsigned int > >         coupled_;
