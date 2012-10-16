@@ -7,83 +7,138 @@
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
-#include <math.h>
+#include "header.h"
 
 #include "Compartment.h"
 #include "SymCompartment.h"
 
+static SrcFinfo2< double, double > *raxialOut() {
+	static SrcFinfo2< double, double > raxialOut( "raxialOut", 
+			"Sends out Ra and Vm on each timestep" );
+	return &raxialOut;
+}
 
-/**
- * The initCompartmentCinfo() function sets up the Compartment class.
- * This function uses the common trick of having an internal
- * static value which is created the first time the function is called.
- * There are several static arrays set up here. The ones which
- * use SharedFinfos are for shared messages where multiple kinds
- * of information go along the same connection.
- */
-const Cinfo* initSymCompartmentCinfo()
+static SrcFinfo1< double > *sumRaxialOut() {
+	static SrcFinfo1< double > sumRaxialOut( "sumRaxialOut",
+		"Sends out Ra" );
+	return &sumRaxialOut;
+}
+
+static SrcFinfo0 *requestSumAxial() {
+	static SrcFinfo0 requestSumAxial( "requestSumAxial",
+			"Sends out request for Ra." );
+	return &requestSumAxial;
+}
+
+static SrcFinfo2< double, double > *raxial2Out() {
+	static SrcFinfo2< double, double > raxial2Out( "Raxial2Out", 
+			"Sends out Ra and Vm");
+	return &raxial2Out;
+}
+
+static SrcFinfo1< double > *sumRaxial2Out() {
+	static SrcFinfo1< double> sumRaxial2Out( "sumRaxial2Out", 
+			"Sends out Ra" );
+	return &sumRaxial2Out;
+}
+
+static SrcFinfo0 *requestSumAxial2() {
+	static SrcFinfo0 requestSumAxial2( "requestSumAxial2",
+			"Sends out request for Ra." );
+	return &requestSumAxial2;
+}
+
+const Cinfo* SymCompartment::initCinfo()
 {
-	/**
-	 * This is a shared message to receive Init messages from
-	 * the scheduler objects.
-	 * Its job is to separate the compartmental calculations from
-	 * the inter-compartment message passing.
-	 * It uses the same init function as the regular compartment.
-	 * Unlike the regular compartment, it is important at the reinit
-	 * stage, because we need to tally up Ra values to calculate the
-	 * coeffs.
-	 *
-	static Finfo* initShared[] =
-	{
-		new DestFinfo( "init", Ftype1< ProcInfo >::global(),
-				RFCAST( &Compartment::initFunc ) ),
-		new DestFinfo( "initReinit", Ftype1< ProcInfo >::global(),
-				RFCAST( &SymCompartment::initReinit ) ),
-	};
-	static Finfo* init = new SharedFinfo( "init", initShared,
-			sizeof( initShared ) / sizeof( Finfo* ) );
-	 */
+	/////////////////////////////////////////////////////////////////////
+	static DestFinfo raxialSym( "raxialSym", 
+		"Expects Ra and Vm from other compartment.",
+		new OpFunc2< SymCompartment, double, double >( 
+			&SymCompartment::raxialSym )
+	);
+	static DestFinfo sumRaxial( "sumRaxial", 
+		"Expects Ra from other compartment.",
+		new OpFunc1< SymCompartment, double >( 
+		&SymCompartment::sumRaxial )
+	);
+	static DestFinfo handleSumRaxialRequest( "handleSumRaxialRequest",
+		"Handle request to send back Ra to originating compartment.",
+		new EpFunc0< SymCompartment >( 
+		&SymCompartment::handleSumRaxialRequest )
+	);
 
-	static Finfo* raxialShared[] =
+	// The SrcFinfos raxialOut, sumRaxialOut and requestSumAxial
+	// are defined above to get them into file-wide scope.
+
+	static Finfo* raxial1Shared[] =
 	{
-		new DestFinfo( "Raxial", Ftype2< double, double >::global(),
-			RFCAST( &SymCompartment::raxialFunc ),
-			"Expects Ra and Vm from other compartment." ),
-		new DestFinfo( "sumRaxial", Ftype1< double >::global(),
-			RFCAST( &SymCompartment::sumRaxial ),
-			"Expects Ra from other compartment." ),
-		new DestFinfo( "sumRaxialRequest", Ftype0::global(),
-			RFCAST( &SymCompartment::sumRaxialRequest ),
-			"Handles a request to send back Ra to originating compartment." ),
-		new SrcFinfo( "RaxialSrc", Ftype2< double, double >::global(),
-			"Sends out Ra and Vm" ),
-		new SrcFinfo( "sumRaxialSrc", Ftype1< double >::global(), 
-			"Sends out Ra" ),
-		new SrcFinfo( "sumRaxialRequestSrc", Ftype0::global(), 
-			"Sends out request for Ra." ),
+		&raxialSym, &sumRaxial, &handleSumRaxialRequest, 
+		raxialOut(), sumRaxialOut(), requestSumAxial()
 	};
+
+	static SharedFinfo raxial1( "raxial1",
+		"This is a raxial shared message between symmetric compartments."
+		"It goes from the tail of the current compartment to one "
+		"closer to the soma.",
+		raxial1Shared, sizeof( raxial1Shared ) / sizeof( Finfo* )
+	);
+	static SharedFinfo connecttail( "CONNECTTAIL", 
+		"This is a raxial shared message between symmetric compartments."
+		"It is an alias for raxial1.",
+		raxial1Shared, sizeof( raxial1Shared ) / sizeof( Finfo* )
+	);
+	/////////////////////////////////////////////////////////////////////
+
+	static DestFinfo raxial2sym( "raxial2sym", 
+			"Expects Ra and Vm from other compartment.",
+			new OpFunc2< SymCompartment, double, double >( 
+			&SymCompartment::raxial2Sym )
+	);
+	static DestFinfo sumRaxial2( "sumRaxial2", 
+			"Expects Ra from other compartment.",
+			new OpFunc1< SymCompartment, double >( 
+			&SymCompartment::sumRaxial2 )
+	);
+	static DestFinfo handleSumRaxial2Request( "handleSumRaxial2Request",
+			"Handles a request to send back Ra to originating compartment.",
+			new EpFunc0< SymCompartment >(
+				&SymCompartment::handleSumRaxial2Request )
+	);
+	// The SrcFinfos raxial2Out, sumRaxial2Out and requestSumAxial2
+	// are defined above to get them into file-wide scope.
 
 	static Finfo* raxial2Shared[] =
 	{
+		&raxial2sym, &sumRaxial2, &handleSumRaxial2Request,
+		raxial2Out(), sumRaxial2Out(), requestSumAxial2()
 		
-		new DestFinfo( "Raxial2", Ftype2< double, double >::global(),
-			RFCAST( &SymCompartment::raxial2Func ),
-			"Expects Ra and Vm from other compartment." ),
-		new DestFinfo( "sumRaxial2", Ftype1< double >::global(),
-			RFCAST( &SymCompartment::sumRaxial2 ),
-			"Expects Ra from other compartment." ),
-		new DestFinfo( "sumRaxial2Request", Ftype0::global(),
-			RFCAST( &SymCompartment::sumRaxial2Request ),
-			"Handles a request to send back Ra to originating compartment." ),
-		new SrcFinfo( "Raxial2Src", Ftype2< double, double >::global(),
-			"Sends out Ra and Vm"),
-		new SrcFinfo( "sumRaxial2Src", Ftype1< double >::global(),
-			"Sends out Ra" ),
-		new SrcFinfo( "sumRaxial2RequestSrc", Ftype0::global(),
-			"Sends out request for Ra." ),
 	};
 
+	static SharedFinfo raxial2( "raxial2", 
+		"This is a raxial2 shared message between symmetric compartments."
+		"It goes from the head of the current compartment to "
+		"a compartment further away from the soma",
+		raxial2Shared, sizeof( raxial2Shared ) / sizeof( Finfo* )
+	);
+
+	static SharedFinfo connecthead( "CONNECTHEAD", 
+		"This is a raxial2 shared message between symmetric compartments."
+		"It is an alias for raxial2."
+		"It goes from the current compartment to one further from the soma",
+		raxial2Shared, sizeof( raxial2Shared ) / sizeof( Finfo* )
+	);
+
+	static SharedFinfo connectcross( "CONNECTCROSS", 
+		"This is a raxial2 shared message between symmetric compartments."
+		"It is an alias for raxial2."
+		"Conceptually, this goes from the tail of the current "
+		"compartment to the tail of a sibling compartment. However,"
+		"this works out to the same as CONNECTHEAD in terms of equivalent"
+		"circuit.",
+		raxial2Shared, sizeof( raxial2Shared ) / sizeof( Finfo* )
+	);
+
+	//////////////////////////////////////////////////////////////////
 	static Finfo* symCompartmentFinfos[] = 
 	{
 
@@ -92,21 +147,11 @@ const Cinfo* initSymCompartmentCinfo()
 	//////////////////////////////////////////////////////////////////
 	    // The inherited process and init messages do not need to be
 		// overridden.
-		
-		// Lots of aliases for raxial and raxial2.
-		new SharedFinfo( "raxial1", raxialShared,
-			sizeof( raxialShared ) / sizeof( Finfo* ),
-			"This is a raxial shared message between symmetric compartments." ),
-		new SharedFinfo( "CONNECTTAIL", raxialShared,
-			sizeof( raxialShared ) / sizeof( Finfo* ),
-			"This is a raxial shared message between symmetric compartments." ),
-		new SharedFinfo( "raxial2", raxial2Shared,
-			sizeof( raxial2Shared ) / sizeof( Finfo* ),
-			"This is a raxial2 shared message between symmetric compartments." ),
-		new SharedFinfo( "CONNECTHEAD", raxial2Shared,
-			sizeof( raxial2Shared ) / sizeof( Finfo* ) ),
-		new SharedFinfo( "CONNECTCROSS", raxial2Shared,
-			sizeof( raxial2Shared ) / sizeof( Finfo* ) ),
+		&raxial1,
+		&connecttail,
+		&raxial2,
+		&connecthead,
+		&connectcross
 
 	///////////////////////////////////////////////////////
 	// MsgSrc definitions
@@ -126,34 +171,17 @@ const Cinfo* initSymCompartmentCinfo()
 		"Description", "SymCompartment object, for branching neuron models.",
 	};
 	static Cinfo symCompartmentCinfo(
-				doc,
-				sizeof( doc ) / sizeof( string ),
-				initCompartmentCinfo(),
-				symCompartmentFinfos,
-				sizeof( symCompartmentFinfos ) / sizeof( Finfo* ),
-				ValueFtype1< SymCompartment >::global()
-				// I wonder if these are inherited properly?
-				// schedInfo, 2
+			"SymCompartment",
+			moose::Compartment::initCinfo(),
+			symCompartmentFinfos,
+			sizeof( symCompartmentFinfos ) / sizeof( Finfo* ),
+			new Dinfo< SymCompartment >()
 	);
 
 	return &symCompartmentCinfo;
 }
 
-static const Cinfo* symCompartmentCinfo = initSymCompartmentCinfo();
-
-static const Slot raxialSlot =
-	initSymCompartmentCinfo()->getSlot( "raxial1.RaxialSrc" );
-static const Slot sumRaxialSlot =
-	initSymCompartmentCinfo()->getSlot( "raxial1.sumRaxialSrc" );
-static const Slot sumRaxialSlotRequest =
-	initSymCompartmentCinfo()->getSlot( "raxial1.sumRaxialRequestSrc");
-
-static const Slot raxial2Slot =
-	initSymCompartmentCinfo()->getSlot( "raxial2.Raxial2Src" );
-static const Slot sumRaxial2Slot =
-	initSymCompartmentCinfo()->getSlot( "raxial2.sumRaxial2Src" );
-static const Slot sumRaxial2SlotRequest =
-	initSymCompartmentCinfo()->getSlot( "raxial2.sumRaxial2RequestSrc" );
+static const Cinfo* symCompartmentCinfo = SymCompartment::initCinfo();
 
 //////////////////////////////////////////////////////////////////
 // Here we put the SymCompartment class functions.
@@ -193,14 +221,17 @@ void SymCompartment::innerProcessFunc( Element* e, ProcInfo p )
 }
 */
 
-void SymCompartment::innerReinitFunc( Eref e, ProcInfo p )
+// Alternates with the 'process' message
+void SymCompartment::innerInitProc( const Eref& e, ProcPtr p )
 {
-	moose::Compartment::innerReinitFunc( e, p );
-	coeff_ = 0.0;
-	coeff2_ = 0.0;
+	raxialOut()->send( e, p->threadIndexInGroup, Ra_, Vm_ ); // to kids
+	raxial2Out()->send( e, p->threadIndexInGroup, Ra_, Vm_ ); // to parent and sibs.
+}
 
-	send0( e, sumRaxialSlotRequest );
-	send0( e, sumRaxial2SlotRequest );
+// Virtual func. Must be called after the 'init' phase.
+void SymCompartment::innerReinit( const Eref& e, ProcPtr p )
+{
+	moose::Compartment::innerReinit( e, p );
 
 	coeff_ *= Ra_;
 	coeff_ = ( 1 + coeff_ ) / 2.0;
@@ -209,39 +240,38 @@ void SymCompartment::innerReinitFunc( Eref e, ProcInfo p )
 	coeff2_ = ( 1 + coeff2_ ) / 2.0;
 }
 
-void SymCompartment::sumRaxialRequest( const Conn* c )
+// The Compartment and Symcompartment go through an 'init' and then a 'proc'
+// during each clock tick. Same sequence applies during reinit.
+// This funciton is called during 'init' phase to send Raxial info around.
+void SymCompartment::innerInitReinit( const Eref& e, ProcPtr p )
 {
-	double Ra = static_cast< SymCompartment* >( c->data() )->Ra_;
-	send1< double >( c->target(), sumRaxialSlot, Ra );
+	coeff_ = 0.0;
+	coeff2_ = 0.0;
+	requestSumAxial()->send( e, p->threadIndexInGroup );
+	requestSumAxial2()->send( e, p->threadIndexInGroup );
 }
 
-void SymCompartment::sumRaxial2Request( const Conn* c )
+void SymCompartment::handleSumRaxialRequest( const Eref& e, const Qinfo* q )
 {
-	double Ra = static_cast< SymCompartment* >( c->data() )->Ra_;
-	send1< double >( c->target(), sumRaxial2Slot, Ra );
+	sumRaxialOut()->send( e, q->threadNum(), Ra_ );
 }
 
-void SymCompartment::sumRaxial( const Conn* c, double Ra )
+void SymCompartment::handleSumRaxial2Request( const Eref& e, const Qinfo* q)
 {
-	static_cast< SymCompartment* >( c->data() )->coeff_ += 1.0 / Ra;
+	sumRaxial2Out()->send( e, q->threadNum(), Ra_ );
 }
 
-void SymCompartment::sumRaxial2( const Conn* c, double Ra )
+void SymCompartment::sumRaxial( double Ra )
 {
-	static_cast< SymCompartment* >( c->data() )->coeff2_ += 1.0 / Ra;
+	coeff_ += 1.0 / Ra;
 }
 
-// Alternates with the 'process' message
-void SymCompartment::innerInitFunc( Eref e, ProcInfo p )
+void SymCompartment::sumRaxial2( double Ra )
 {
-	// Send out the raxial messages
-	send2< double >( e, raxialSlot, Ra_, Vm_ );
-	// Send out the raxial2 messages
-	send2< double >( e, raxial2Slot, Ra_, Vm_ );
+	coeff2_ += 1.0 / Ra;
 }
 
-// This is called by the RaxialFunc, which is already defined in Compartment
-void SymCompartment::innerRaxialFunc( double Ra, double Vm)
+void SymCompartment::raxialSym( double Ra, double Vm)
 {
 	Ra *= coeff_;
 	A_ += Vm / Ra;
@@ -249,7 +279,7 @@ void SymCompartment::innerRaxialFunc( double Ra, double Vm)
 	Im_ += ( Vm - Vm_ ) / Ra;
 }
 
-void SymCompartment::innerRaxial2Func( double Ra, double Vm)
+void SymCompartment::raxial2Sym( double Ra, double Vm)
 {
 	Ra *= coeff2_;
 	A_ += Vm / Ra;
@@ -257,40 +287,5 @@ void SymCompartment::innerRaxial2Func( double Ra, double Vm)
 	Im_ += ( Vm - Vm_ ) / Ra;
 }
 
-void SymCompartment::raxial2Func( const Conn* c, double Ra, double Vm)
-{
-	static_cast< SymCompartment* >( c->data() )->
-			innerRaxial2Func( Ra, Vm );
-}
-
 /////////////////////////////////////////////////////////////////////
 
-#ifdef DO_UNIT_TESTS
-// Comment out this define if it takes too long (about 5 seconds on
-// a modest machine, but could be much longer with valgrind)
-// #define DO_SPATIAL_TESTS
-#include "../element/Neutral.h"
-
-void testSymCompartment()
-{
-	cout << "\nTesting SymCompartment" << flush;
-
-	Element* n = Neutral::create( "Neutral", "n", Element::root()->id(), 
-		Id::scratchId() );
-	Element* c0 = Neutral::create( "SymCompartment", "c0", n->id(), 
-		Id::scratchId() );
-	ASSERT( c0 != 0, "creating symCompartment" );
-	ProcInfoBase p;
-	SetConn c( c0, 0 );
-	p.dt_ = 0.002;
-	moose::Compartment::setInject( &c, 1.0 );
-	moose::Compartment::setRm( &c, 1.0 );
-	moose::Compartment::setRa( &c, 0.0025 );
-	moose::Compartment::setCm( &c, 1.0 );
-	moose::Compartment::setEm( &c, 0.0 );
-	moose::Compartment::setVm( &c, 0.0 );
-
-	// Get rid of all the compartments.
-	set( n, "destroy" );
-}
-#endif

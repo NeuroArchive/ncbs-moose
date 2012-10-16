@@ -1,14 +1,4 @@
 # objectedit.py --- 
-# 
-# Filename: objectedit.py
-# Description: 
-# Author: Subhasis Ray
-# Maintainer: 
-# Created: Wed Jun 30 11:18:34 2010 (+0530)
-# Version: 
-# Last-Updated: Tue Nov 15 11:17:54 2011 (+0530)
-#           By: Subhasis Ray
-#     Update #: 522
 # URL: 
 # Keywords: 
 # Compatibility: 
@@ -61,32 +51,19 @@ from PyQt4 import QtGui
 import moose
 import config
 
+import defaults
+#app = QtGui.QApplication([])
+
 class ObjectFieldsModel(QtCore.QAbstractTableModel):
     """Model the fields list for MOOSE objects.
     
     extra_fields -- list of fields that are of no use in the fields
                     editor.
 
-    sys_fields -- list of fields that carry system information. This
-                  is for future - so that we can restrict the
-                  visibility of these fields to advanced mode.
-
     """
-    extra_fields = ['parent', 'childList', 'fieldList', 'index', 'xtree_textfg_req', 'xtree_fg_req','nInitComplex','concInitComplex', 'step_mode', 'tableVector','x','y','z','x0','y0','z0']
-    sys_fields = ['node', 'cpu', 'dataMem', 'msgMem', 'class']
-    moose_py_fieldname_map = {'step_mode': 'stepMode',
-                              'stepmode': 'stepMode',
-                              'lambda': 'lambda_',
-                              'calc_mode': 'calcMode',
-                              'abs_refract':'absRefractT',
-                              'stepsize': 'stepSize'}
-    py_moose_fieldname_map = {'stepMode': 'step_mode',
-                              'calcMode': 'calc_mode',
-                              'lambda_': 'lambda',
-                              'absRefractT': 'abs_refract',
-                              'stepSize': 'stepsize'
-                              }
-    
+    extra_fields = ['this','me','parent','path','class','children','linearSize','objectDimensions','lastDimension','localNumField','pathIndices','msgOut','msgIn','diffConst','speciesId','Coordinates','neighbors','DiffusionArea','DiffusionScaling','x','x0','x1','dx','nx','y','y0','y1','dy','ny','z','z0','z1','dz','nz','coords','isToroid','preserveNumEntries','numKm','numSubstrates','concK1']
+    py_moose_fieldname_map = {}	
+                              
     def __init__(self, mooseObject, parent=None):
         """Set up the model. 
 
@@ -110,46 +87,39 @@ class ObjectFieldsModel(QtCore.QAbstractTableModel):
         """
         QtCore.QAbstractTableModel.__init__(self, parent)
         self.mooseObject = mooseObject
-        self._header = ('Field', 'Value', 'Plot')
+        self._header = ('Field', 'Value')
         self.fields = []
         self.plotNames = ['None']
         self.fieldFlags = {}
         self.fieldPlotNameMap = {}
         try:
-            className = 'moose.' + mooseObject.className
-            classObject = eval(className)
-            self.mooseObject = classObject(mooseObject.id)
+            self.mooseObject = moose.element(mooseObject.getId())
 
         except AttributeError:
             config.LOGGER.error('Could not wrap object %s into class %s' % (mooseObject.path, className))
             return
+        
+        for fieldName in self.mooseObject.getFieldNames('valueFinfo'):
+			#print fieldName
+			if(fieldName in ObjectFieldsModel.extra_fields):
+				continue
+			else:
+			    value = self.mooseObject.getField(fieldName)
+			    #print value
+			flag = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+			srchField = 'set_'+fieldName
+			try:	
+			    for fn in (fn for fn in moose.getFieldDict(self.mooseObject.class_,'destFinfo').keys() if fn.startswith(srchField)):
+				    flag = flag | Qt.ItemIsEditable
+			    value = mooseObject.getField(fieldName)
+				
+			except Exception, e:
+				config.LOGGER.error("%s" % (e))
 
-        for fieldName in self.mooseObject.getFieldList(moose.FTYPE_VALUE):
-            if (fieldName in ObjectFieldsModel.extra_fields) or (fieldName in ObjectFieldsModel.sys_fields):
-                continue
-            if fieldName in ObjectFieldsModel.moose_py_fieldname_map.keys():
-                pyFieldName = ObjectFieldsModel.moose_py_fieldname_map[fieldName]
-            else:
-                pyFieldName = fieldName
-            flag = Qt.ItemIsEnabled | Qt.ItemIsSelectable
-            try:
-                prop = eval('moose.' + self.mooseObject.__class__.__name__ + '.' + pyFieldName)
-                if (type(prop) is property) and prop.fset:
-                    flag = flag | Qt.ItemIsEditable
-                value = mooseObject.getField(fieldName)
-                try:
-                    dummy = float(value)
-                    flag = flag | Qt.ItemIsDragEnabled
-                    self.fieldPlotNameMap[fieldName] = self.plotNames[0]
-                except ValueError:
-                    pass
-            except Exception, e:
-                config.LOGGER.error("%s" % (e))
-
-            self.fieldFlags[pyFieldName] = flag
-            self.fields.append(pyFieldName)            
+			self.fieldFlags[fieldName] = flag	
+			self.fields.append(fieldName)            	
         self.insertRows(0, len(self.fields))
-
+        
     def setData(self, index, value, role=Qt.EditRole):
         """Set field value or set plot flag.
 
@@ -160,7 +130,7 @@ class ObjectFieldsModel(QtCore.QAbstractTableModel):
         if not index.isValid() and index.row () >= len(self.fields):
             return False
         ret = True
-        value = str(value.toString()) # convert Qt datastructure to
+        value = (value.toString()) # convert Qt datastructure to
                                       # Python datastructure
         #add_chait
         if value =='':
@@ -174,9 +144,16 @@ class ObjectFieldsModel(QtCore.QAbstractTableModel):
                 field = ObjectFieldsModel.py_moose_fieldname_map[field]
             except KeyError:
                 pass
-            self.mooseObject.setField(field, value)
             if field == 'name':
+                self.mooseObject.setField(field,str(value))
                 self.emit(QtCore.SIGNAL('objectNameChanged(PyQt_PyObject)'), self.mooseObject)
+            else:    
+                try: 
+                    self.mooseObject.setField(field,float(value))
+                except ValueError: #folks entering text instead of numerals here!
+                    print "Numeric value should be entered";
+                    pass
+            
         elif index.column() == 2 and role ==Qt.EditRole:
             try:
                 self.fieldPlotNameMap[self.fields[index.row()]] = str(value)
@@ -194,18 +171,30 @@ class ObjectFieldsModel(QtCore.QAbstractTableModel):
         """
         if not index.isValid() or index.row() >= len(self.fields):
             return None
+        
         ret = None
         field = self.fields[index.row()]        
-        if role == Qt.ToolTipRole:
-            return self.tr('<html>' + moose.context.doc(self.mooseObject.className + '.' + str(field)).replace(chr(27) + '[1m', '<b>').replace(chr(27) + '[0m', '</b>') + '</html>') # This is to remove special characters used for pretty printing in terminals
+        #if role == Qt.ToolTipRole:
+            #print "$$",field,str(field)
+            #return self.tr('<html>' + moose.doc(self.mooseObject.class_ + '.' + str(field)).replace(chr(27) + '[1m', '<b>').replace(chr(27) + '[0m', '</b>') + '</html>') # This is to remove special characters used for pretty printing in terminals
+         #   return self.tr('<html>' + moose.doc(self.mooseObject.class_ + '.' + str(field)) + '</html>') # This is to remove special characters used for pretty printing in terminals
         if index.column() == 0 and role == Qt.DisplayRole:
-            ret = QtCore.QVariant(QtCore.QString(field))
+            try:
+                ret = QtCore.QVariant(QtCore.QString(field)+' ('+defaults.FIELD_UNITS[field]+')')
+            except KeyError:
+                ret = QtCore.QVariant(QtCore.QString(field))
         elif index.column() == 1 and (role == Qt.DisplayRole or role == Qt.EditRole):
             try:
                 field = ObjectFieldsModel.py_moose_fieldname_map[field]
             except KeyError:
                 pass
-            ret = QtCore.QVariant(QtCore.QString(self.mooseObject.getField(field)))
+            #print self.mooseObject
+            try: 
+                ret = self.mooseObject.getField(field)
+            except (ValueError,AttributeError):
+                pass
+            #print 'Field', field, 'value', ret
+            ret = QtCore.QVariant(QtCore.QString(str(ret)))            
         elif index.column() == 2 and role == Qt.DisplayRole:
             try:
                 ret = QtCore.QVariant(self.fieldPlotNameMap[field])
@@ -334,3 +323,7 @@ if __name__ == '__main__':
     sys.exit(app.exec_())
             
 
+
+# 
+# objectedit.py ends here
+	

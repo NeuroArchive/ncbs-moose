@@ -13,43 +13,64 @@
  * using the Stoich class as a base. 
  */
 
-#ifndef _gssaStoich_h
-#define _gssaStoich_h
+#ifndef _GssaStoich_h
+#define _GssaStoich_h
 class GssaStoich: public Stoich
 {
 	public:
 		GssaStoich();
+		~GssaStoich();
 
 		///////////////////////////////////////////////////
 		// Msg Dest function definitions
 		///////////////////////////////////////////////////
-		static void reinitFunc( const Conn* c );
-		static void processFunc( const Conn* c, ProcInfo info );
-/*
-		static void integrateFunc( 
-			const Conn* c, vector< double >* v, double dt );
-*/
-		//void clear( Eref stoich );
+		void process( const Eref& e, ProcPtr p );
+		void reinit( const Eref& e, ProcPtr p );
 
 		///////////////////////////////////////////////////
 		// Field access functions.
 		///////////////////////////////////////////////////
-		static string getMethod( Eref e );
-		static void setMethod( const Conn* c, string method );
-		void innerSetMethod( const string& method );
-		//static string getPath( Eref e );
-		//static void setPath( const Conn* c, string value );
-		//void localSetPath( Eref stoich, const string& value );
+		string getMethod() const;
+		void setMethod( string method );
+
+		// Overrides the Stoich version.
+		void setPath( const Eref& e, const Qinfo* q, string path );
+
+		// Overrides the Stoich version, which is virtual
+		void innerSetN( unsigned int meshIndex, Id id, double v );
+
+		// Overrides the Stoich version, which is virtual
+		void innerSetNinit( unsigned int meshIndex, Id id, double v );
+
 		///////////////////////////////////////////////////
 		// Functions used by the GillespieIntegrator
 		///////////////////////////////////////////////////
-		void rebuildMatrix( Eref stoich, vector< Id >& ret );
-		void updateDependentRates( const vector< unsigned int >& deps );
-		void updateDependentMathExpn( 
+		void rebuildMatrix();
+		/**
+		 * Used to update rate terms and atot whenever a reaction has
+		 * fired. We precompute a set of dependencies from each reaction
+		 * to all affected downstream reactions.
+		 */
+		void updateDependentRates( unsigned int meshIndex,
 			const vector< unsigned int >& deps );
-		void updateAllRates();
-		unsigned int pickReac();
-		void innerProcessFunc( Eref e, ProcInfo info );
+		/**
+		 * Used to update rate terms and atot whenever the 'n' of a pool
+		 * has changed. This may be due to field assignment, alteration
+		 * of concInit of a buffered molecule, or through a FuncTerm.
+		 */
+		void updateDependentRates( unsigned int meshIndex, 
+			unsigned int molIndex );
+		void updateDependentMathExpn( double t, unsigned int meshIndex,
+			const vector< unsigned int >& deps );
+		void updateAllRates( unsigned int meshIndex );
+		unsigned int pickReac( unsigned int meshIndex, gsl_rng* r );
+
+		bool execThreadForZombie( ThreadId thread, DataId di ) const;
+
+		static bool internalThreadBalancer( 
+			const char* data, ThreadId thread, DataId di );
+
+		static const Cinfo* initCinfo();
 	private:
 
 		/**
@@ -83,15 +104,23 @@ class GssaStoich: public Stoich
 		// These functions control the updates of state
 		// variables by calling the functions in the StoichMatrix.
 		///////////////////////////////////////////////////
-		void updateV( );
-		void updateRates( vector< double>* yprime, double dt  );
+		// void updateV( );
+		// void updateRates( vector< double>* yprime, double dt  );
 
 		// virtual func to handle externally imposed changes in mol N
-		void innerSetMolN( const Conn* c, double y, unsigned int i );
+		// void innerSetMolN( double y, unsigned int i );
 		
 		///////////////////////////////////////////////////
 		// Internal fields.
 		///////////////////////////////////////////////////
+
+		/**
+		 * Vector of rates of reactions. This is a state vector because
+		 * we don't recalculate it each time, only the subset that are
+		 * changed by the last reaction.
+		 * One vector of v per mesh entry.
+		 */
+		vector< vector< double > > v_;
 
 		/**
 		 * Specifies method to use for calculation. Currently
@@ -119,9 +148,20 @@ class GssaStoich: public Stoich
 		vector< vector< unsigned int > > dependentMathExpn_; 
 
 		/**
-		 * atot is the total propensity of all the reacns in the system
+		 * Yet another dependency graph. Here every pool indicates
+		 * which reac is dependent on it. Used whenever there is a
+		 * forcible change in 'n' or 'conc' of regular or buffered
+		 * or function molecules. The case for function molecules also lets
+		 * us update whenever a function calculation gives a new
+		 * value.
 		 */
-		double atot_;
+		vector< vector< unsigned int > > ratesDependentOnPool_; 
+
+		/**
+		 * atot is the total propensity of all the reacns in the system
+		 * One per mesh entry.
+		 */
+		vector< double > atot_;
 
 		/**
 		 * Here we make a nested structure to handle quick lookup
@@ -134,7 +174,7 @@ class GssaStoich: public Stoich
 		 * when the current calculation has been interrupted by a 
 		 * checkpoint before time t is reached.
 		 */
-		double t_;
+		vector< double > t_;
 
 		/**
 		 * Whenever an external input has invalidated the
@@ -153,5 +193,11 @@ class GssaStoich: public Stoich
 		 */
 		KinSparseMatrix transN_; 
 
+		/**
+		 * meshIndex_[thread][i] has a vector of meshIndices allocated to
+		 * each thread.
+		 */
+		vector< vector< unsigned int > > meshIndex_;
+		vector< gsl_rng* > randNumGenerators_;
 };
-#endif // _Stoich_h
+#endif // _GssaStoich_h

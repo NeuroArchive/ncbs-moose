@@ -52,31 +52,23 @@ import logging
 from PyQt4.Qt import Qt
 from PyQt4 import QtGui, QtCore
 
-moose_version = '1.4'
 settings = None
 TEMPDIR = tempfile.gettempdir()
 KEY_FIRSTTIME = 'firsttime'
+# KEY_STATE_FILE = 'statefile'
 
+KEY_WINDOW_GEOMETRY = 'main/geometry'
+KEY_WINDOW_LAYOUT = 'main/layout'
+KEY_RUNTIME_AUTOHIDE = 'main/rtautohide'
+KEY_DEMOS_DIR = 'main/demosdir'
 KEY_HOME_DIR = os.path.abspath(__file__).rstrip('config.py')
-KEY_MAIN_DIR = os.path.abspath(os.path.join(KEY_HOME_DIR,'..'))
 KEY_ICON_DIR = os.path.join(KEY_HOME_DIR,'icons')
-
-user_home = os.path.expanduser('~')
-user_moose_dir = os.path.join(user_home, 'moose%s' % (moose_version))    
-KEY_DEMOS_DIR = os.path.join(user_moose_dir,'DEMOS','pymoose')
-
-KEY_WINDOW_GEOMETRY = os.path.join(KEY_HOME_DIR,'geometry')
-KEY_WINDOW_LAYOUT = os.path.join(KEY_HOME_DIR,'layout')
-KEY_RUNTIME_AUTOHIDE = os.path.join(KEY_HOME_DIR,'rtautohide')
-KEY_GL_COLORMAP = os.path.join(KEY_HOME_DIR,'oglfunc','colors')
-
-KEY_GL_BACKGROUND_COLOR = 'glclient/bgcolor'
 
 QT_VERSION = str(QtCore.QT_VERSION_STR).split('.')
 QT_MAJOR_VERSION = int(QT_VERSION[0])
 QT_MINOR_VERSION = int(QT_VERSION[1])
 
-MOOSE_DOC_FILE = os.path.abspath(os.path.join(KEY_HOME_DIR,'documentation.pdf'))
+MOOSE_DOC_URL = 'http://moose.ncbs.res.in/content/view/5/6/'
 MOOSE_REPORT_BUG_URL = 'http://sourceforge.net/tracker/?func=add&group_id=165660&atid=836272'
 
 def get_settings():
@@ -96,3 +88,6 @@ logging.basicConfig(stream=sys.stdout, level=LOG_LEVEL, filemode='w', format='%(
 LOGGER = logging.getLogger('moose')
 BENCHMARK_LOGGER = logging.getLogger('moose.benchmark')
 BENCHMARK_LOGGER.setLevel(logging.INFO)
+
+# 
+# config.py ends here

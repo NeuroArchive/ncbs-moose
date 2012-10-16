@@ -7,240 +7,498 @@
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
-#include "element/Neutral.h"
+#include "header.h"
+#include "ElementValueFinfo.h"
 #include "HSolveStruct.h"
 #include "HinesMatrix.h"
 #include "HSolvePassive.h"
 #include "RateLookup.h"
 #include "HSolveActive.h"
 #include "HSolve.h"
+#include "../biophysics/Compartment.h"
+#include "ZombieCompartment.h"
+#include "../biophysics/CaConc.h"
+#include "ZombieCaConc.h"
+#include "../biophysics/HHGate.h"
+#include "../biophysics/ChanBase.h"
+#include "../biophysics/HHChannel.h"
+#include "ZombieHHChannel.h"
 
-const Cinfo* initHSolveCinfo()
+const Cinfo* HSolve::initCinfo()
 {
+	static DestFinfo process(
+		"process",
+		"Handles 'process' call: Solver advances by one time-step.",
+		new ProcOpFunc< HSolve >( &HSolve::process )
+	);
+	
+	static DestFinfo reinit(
+		"reinit",
+		"Handles 'reinit' call: Solver reads in model.",
+		new ProcOpFunc< HSolve >( &HSolve::reinit )
+	);
+	
 	static Finfo* processShared[] =
 	{
-		new DestFinfo( "process", Ftype1< ProcInfo >::global(),
-			RFCAST( &HSolve::processFunc ) ),
-		new DestFinfo( "reinit", Ftype1< ProcInfo >::global(),
-			dummyFunc ),
+		&process,
+		&reinit
 	};
-	static Finfo* process = new SharedFinfo( "process", processShared,
-		sizeof( processShared ) / sizeof( Finfo* ) );
 	
-	static Finfo* cellShared[] =
-	{
-		new DestFinfo( "integSetup",
-			Ftype2< Id, double >::global(),
-			RFCAST( &HSolve::setupFunc ) ),
-		new SrcFinfo( "comptList",
-			Ftype1< const vector< Id >* >::global() ),
-	};
+	static SharedFinfo proc(
+		"proc",
+		"Handles 'reinit' and 'process' calls from a clock.",
+		processShared,
+		sizeof( processShared ) / sizeof( Finfo* )
+	);
+	
+	static ValueFinfo< HSolve, Id > seed(
+		"seed",
+		"Use this field to specify path to a 'seed' compartment, that is, "
+		"any compartment within a neuron. The HSolve object uses this seed as "
+		"a handle to discover the rest of the neuronal model, which means all "
+		"the remaining compartments, channels, synapses, etc.",
+		&HSolve::setSeed,
+		&HSolve::getSeed
+	);
+	
+	static ElementValueFinfo< HSolve, string > target(
+		"target",
+		"Specifies the path to a compartmental model to be taken over. "
+		"This can be the path to any container object that has the model "
+		"under it (found by performing a deep search). Alternatively, this "
+		"can also be the path to any compartment within the neuron. This "
+		"compartment will be used as a handle to discover the rest of the "
+		"model, which means all the remaining compartments, channels, "
+		"synapses, etc.",
+		&HSolve::setPath,
+		&HSolve::getPath
+	);
+	
+	static ValueFinfo< HSolve, double > dt(
+		"dt",
+		"The time-step for this solver.",
+		&HSolve::setDt,
+		&HSolve::getDt
+	);
+	
+	static ValueFinfo< HSolve, int > caAdvance(
+		"caAdvance",
+		"This flag determines how current flowing into a calcium pool "
+		"is computed. A value of 0 means that the membrane potential at the "
+		"beginning of the time-step is used for the calculation. This is how "
+		"GENESIS does its computations. A value of 1 means the membrane "
+		"potential at the middle of the time-step is used. This is the "
+		"correct way of integration, and is the default way.",
+		&HSolve::setCaAdvance,
+		&HSolve::getCaAdvance
+	);
+	
+	static ValueFinfo< HSolve, int > vDiv(
+		"vDiv",
+		"Specifies number of divisions for lookup tables of voltage-sensitive "
+		"channels.",
+		&HSolve::setVDiv,
+		&HSolve::getVDiv
+	);
+	
+	static ValueFinfo< HSolve, double > vMin(
+		"vMin",
+		"Specifies the lower bound for lookup tables of voltage-sensitive "
+		"channels. Default is to automatically decide based on the tables of "
+		"the channels that the solver reads in.",
+		&HSolve::setVMin,
+		&HSolve::getVMin
+	);
+	
+	static ValueFinfo< HSolve, double > vMax(
+		"vMax",
+		"Specifies the upper bound for lookup tables of voltage-sensitive "
+		"channels. Default is to automatically decide based on the tables of "
+		"the channels that the solver reads in.",
+		&HSolve::setVMax,
+		&HSolve::getVMax
+	);
+	
+	static ValueFinfo< HSolve, int > caDiv(
+		"caDiv",
+		"Specifies number of divisions for lookup tables of calcium-sensitive "
+		"channels.",
+		&HSolve::setCaDiv,
+		&HSolve::getCaDiv
+	);
+	
+	static ValueFinfo< HSolve, double > caMin(
+		"caMin",
+		"Specifies the lower bound for lookup tables of calcium-sensitive "
+		"channels. Default is to automatically decide based on the tables of "
+		"the channels that the solver reads in.",
+		&HSolve::setCaMin,
+		&HSolve::getCaMin
+	);
+	
+	static ValueFinfo< HSolve, double > caMax(
+		"caMax",
+		"Specifies the upper bound for lookup tables of calcium-sensitive "
+		"channels. Default is to automatically decide based on the tables of "
+		"the channels that the solver reads in.",
+		&HSolve::setCaMax,
+		&HSolve::getCaMax
+	);
 	
 	static Finfo* hsolveFinfos[] = 
 	{
-	//////////////////////////////////////////////////////////////////
-	// Field definitions
-	//////////////////////////////////////////////////////////////////
-		new ValueFinfo( "path", ValueFtype1< string >::global(),
-			GFCAST( &HSolve::getPath ),
-			dummyFunc
-		),
-		new ValueFinfo( "CaAdvance", ValueFtype1< int >::global(),
-			GFCAST( &HSolve::getCaAdvance ),
-			RFCAST( &HSolve::setCaAdvance )
-		),		
-		new ValueFinfo( "VDiv", ValueFtype1< int >::global(),
-			GFCAST( &HSolve::getVDiv ),
-			RFCAST( &HSolve::setVDiv )
-		),
-		new ValueFinfo( "VMin", ValueFtype1< double >::global(),
-			GFCAST( &HSolve::getVMin ),
-			RFCAST( &HSolve::setVMin )
-		),
-		new ValueFinfo( "VMax", ValueFtype1< double >::global(),
-			GFCAST( &HSolve::getVMax ),
-			RFCAST( &HSolve::setVMax )
-		),
-		new ValueFinfo( "CaDiv", ValueFtype1< int >::global(),
-			GFCAST( &HSolve::getCaDiv ),
-			RFCAST( &HSolve::setCaDiv )
-		),
-		new ValueFinfo( "CaMin", ValueFtype1< double >::global(),
-			GFCAST( &HSolve::getCaMin ),
-			RFCAST( &HSolve::setCaMin )
-		),
-		new ValueFinfo( "CaMax", ValueFtype1< double >::global(),
-			GFCAST( &HSolve::getCaMax ),
-			RFCAST( &HSolve::setCaMax )
-		),
-	//////////////////////////////////////////////////////////////////
-	// MsgSrc definitions
-	//////////////////////////////////////////////////////////////////
-		new SrcFinfo( "integ-hub",
-			Ftype1< HSolveActive* >::global() ),
-	
-	//////////////////////////////////////////////////////////////////
-	// MsgDest definitions
-	//////////////////////////////////////////////////////////////////
-	
-	//////////////////////////////////////////////////////////////////
-	// Shared definitions
-	//////////////////////////////////////////////////////////////////
-		new SharedFinfo( "cell-integ", cellShared,
-			sizeof( cellShared ) / sizeof( Finfo* ),
-			"Shared message from Cell" ),
-		process,
+		&seed,              // Value
+		&target,              // Value
+		&dt,                // Value
+		&caAdvance,         // Value
+		&vDiv,              // Value
+		&vMin,              // Value
+		&vMax,              // Value
+		&caDiv,             // Value
+		&caMin,             // Value
+		&caMax,             // Value
+		&proc,              // Shared
 	};
-	
-	static SchedInfo schedInfo[] = { { process, 0, 2 } };
 	
 	static string doc[] =
 	{
-		"Name", "HSolve",
-		"Author", "Niraj Dudani, 2007, NCBS",
-		"Description", "HSolve: Hines solver, for solving branching neuron models.",
+		"Name",             "HSolve",
+		"Author",           "Niraj Dudani, 2007, NCBS",
+		"Description",      "HSolve: Hines solver, for solving "
+		                    "branching neuron models.",
 	};
+	
 	static Cinfo hsolveCinfo(
-		doc,
-		sizeof( doc ) / sizeof( string ),		
-		initNeutralCinfo(),
+		"HSolve",
+		Neutral::initCinfo(),
 		hsolveFinfos,
 		sizeof( hsolveFinfos ) / sizeof( Finfo* ),
-		ValueFtype1< HSolve >::global(),
-		schedInfo, 1
+		new Dinfo< HSolve >()
 	);
 	
 	return &hsolveCinfo;
 }
 
-static const Cinfo* hsolveCinfo = initHSolveCinfo();
+static const Cinfo* hsolveCinfo = HSolve::initCinfo();
 
-static const Slot comptListSlot =
-	initHSolveCinfo()->getSlot( "cell-integ.comptList" );
-static const Slot hubSlot =
-	initHSolveCinfo()->getSlot( "integ-hub" );
+HSolve::HSolve()
+	: dt_( 0.0 )
+{ ; }
+
 
 ///////////////////////////////////////////////////
 // Dest function definitions
 ///////////////////////////////////////////////////
 
-void HSolve::processFunc( const Conn*c, ProcInfo p )
+void HSolve::process( const Eref& hsolve, ProcPtr p )
 {
-	static_cast< HSolve* >( c->data() )->solve( p );
+	this->HSolveActive::step( p );
 }
 
-void HSolve::setupFunc( const Conn* c, Id seed, double dt )
+void HSolve::reinit( const Eref& hsolve, ProcPtr p )
 {
-	static_cast< HSolve* >( c->data() )->
-		setup( c->target(), seed, dt );
+	//~ if ( seed_ == Id() )
+		//~ return;
+	//~ 
+	//~ // Setup solver.
+	//~ this->HSolveActive::setup( seed_, p->dt );
+	//~ 
+	//~ zombify( hsolve );
+	//~ mapIds();
 }
 
-void HSolve::setup( Eref integ, Id seed, double dt )
+void HSolve::zombify( Eref hsolve ) const
 {
-	// Set internal field to point to seed's path.
-	path_ = seed.path();
+	vector< Id >::const_iterator i;
 	
+	for ( i = compartmentId_.begin(); i != compartmentId_.end(); ++i )
+		ZombieCompartment::zombify( hsolve.element(), i->eref().element() );
+	
+	for ( i = caConcId_.begin(); i != caConcId_.end(); ++i )
+		ZombieCaConc::zombify( hsolve.element(), i->eref().element() );
+	
+	for ( i = channelId_.begin(); i != channelId_.end(); ++i )
+		ZombieHHChannel::zombify( hsolve.element(), i->eref().element() );
+}
+
+void HSolve::setup( Eref hsolve )
+{
 	// Setup solver.
-	this->HSolveActive::setup( seed, dt );
+	this->HSolveActive::setup( seed_, dt_ );
 	
-	// Setup hub.
-	setupHub( integ );
-}
-
-void HSolve::setupHub( Eref integ )
-{
-	// Create Hub, and link self with it.
-	Id solve = Neutral::getParent( integ );
-	Element* hub = Neutral::create( "HSolveHub", "hub", solve, Id::scratchId() );
-	assert( hub != 0 );
-	bool ret = Eref( integ ).add( "integ-hub", hub, "integ-hub" );
-	assert( ret );
-	
-	send1< HSolveActive* >(
-		integ, hubSlot, dynamic_cast< HSolveActive* >( this ) );
+	zombify( hsolve );
+	mapIds();
 }
 
 ///////////////////////////////////////////////////
 // Field function definitions
 ///////////////////////////////////////////////////
 
-string HSolve::getPath( Eref e )
+void HSolve::setSeed( Id seed )
 {
-	return static_cast< const HSolve* >( e.data() )->path_;
-}
-
-void HSolve::setCaAdvance( const Conn* c, int value )
-{
-	if ( value != 0 && value != 1 ) {
-		cout << "Error: HSolve: caAdvance should be either 0 or 1.\n";
+	if ( seed()->cinfo()->name() != "Compartment" ) {
+		cerr << "Error: HSolve::setSeed(): Seed object '" << seed.path()
+		     << "' is not of type 'Compartment'." << endl;
 		return;
 	}
 	
-	static_cast< HSolve* >( c->data() )->caAdvance_ = value;
+	seed_ = seed;
 }
 
-int HSolve::getCaAdvance( Eref e )
+Id HSolve::getSeed() const
 {
-	return static_cast< const HSolve* >( e.data() )->caAdvance_;
+	return seed_;
 }
 
-void HSolve::setVDiv( const Conn* c, int vDiv )
+void HSolve::setPath( const Eref& hsolve, const Qinfo* q, string path )
 {
-	static_cast< HSolve* >( c->data() )->vDiv_ = vDiv;
+	if ( dt_ == 0.0 ) {
+		cerr << "Error: HSolve::setPath: Must set 'dt' first.\n";
+		return;
+	}
+	
+	seed_ = deepSearchForCompartment( Id( path ) );
+	
+	if ( seed_ == Id() )
+		cerr << "Error: HSolve::setPath: No compartments found at or below '"
+		     << path << "'.\n";
+	else {
+		cout << "HSolve: Seed compartment found at '" << seed_.path() << "'.\n";
+		path_ = path;
+		setup( hsolve );
+	}
 }
 
-int HSolve::getVDiv( Eref e )
+string HSolve::getPath( const Eref& e, const Qinfo* q ) const
 {
-	return static_cast< const HSolve* >( e.data() )->vDiv_;
+	return path_;
 }
 
-void HSolve::setVMin( const Conn* c, double vMin )
+/**
+ * This function performs a depth-first search (for a compartment) in the tree
+ * with its root at 'base'. Returns (Id of) a compartment if found, else a
+ * blank Id.
+ */
+Id HSolve::deepSearchForCompartment( Id base )
 {
-	static_cast< HSolve* >( c->data() )->vMin_ = vMin;
+	/* 
+	 * 'cstack' is a stack-of-stacks used to perform the depth-first search.
+	 *     The 0th entry in 'cstack' is a stack containing simply the base.
+	 *     The i-th entry in 'cstack' contains children of the node at the top
+	 *         of the stack at position ( i - 1 ).
+	 *     Hence, at any time, the top of the i-th stack is the i-th node on
+	 *     the ancestral path from the 'base' node to the 'current' node
+	 *     (more below) which is being examined. Also, the remaining nodes in
+	 *     the i-th stack are the siblings of this ancestor.
+	 * 
+	 * 'current' is the node at the top of the top of 'cstack'. If this node is
+	 *     a Compartment, then the search is completed, returning 'current'.
+	 *     Otherwise, the children of 'current' are pushed onto 'cstack' for a
+	 *     deeper search. If the deeper search yields nothing, then this
+	 *     'current' node is discarded. When an entire stack of siblings is
+	 *     exhausted in this way, then this empty stack is discarded, and
+	 *     the search moves 1 level up.
+	 * 
+	 * 'result' is a blank Id (moose root element) if the search failed.
+	 *     Otherwise, it is a compartment that was found under 'base'.
+	 */
+	vector< vector< Id > > cstack( 1, vector< Id >( 1, base ) );
+	Id current;
+	Id result;
+	
+	while ( !cstack.empty() )
+		if ( cstack.back().empty() ) {
+			cstack.pop_back();
+			
+			if ( !cstack.empty() )
+				cstack.back().pop_back();
+		} else {
+			current = cstack.back().back();
+			
+			if ( current()->cinfo() == moose::Compartment::initCinfo() ) {
+				result = current;
+				break;
+			}
+			
+			cstack.push_back( children( current ) );
+		}
+	
+	return result;
 }
 
-double HSolve::getVMin( Eref e )
+vector< Id > HSolve::children( Id obj )
 {
-	return static_cast< const HSolve* >( e.data() )->vMin_;
+	//~ return Field< vector< Id > >::get( obj, "children" );
+	//~ return Field< vector< Id > >::fastGet( obj.eref(), "children" );
+	//~ return localGet< Neutral, vector< Id > >( obj.eref(), "children" );
+	
+	vector< Id > c;
+	Neutral::children( obj.eref(), c );
+	return c;
 }
 
-void HSolve::setVMax( const Conn* c, double vMax )
+void HSolve::setDt( double dt )
 {
-	static_cast< HSolve* >( c->data() )->vMax_ = vMax;
+	if ( dt < 0.0 ) {
+		cerr << "Error: HSolve: 'dt' must be positive.\n";
+		return;
+	}
+	
+	dt_ = dt;
 }
 
-double HSolve::getVMax( Eref e )
+double HSolve::getDt() const
 {
-	return static_cast< const HSolve* >( e.data() )->vMax_;
+	return dt_;
 }
 
-void HSolve::setCaDiv( const Conn* c, int caDiv )
+void HSolve::setCaAdvance( int caAdvance )
 {
-	static_cast< HSolve* >( c->data() )->caDiv_ = caDiv;
+	if ( caAdvance != 0 && caAdvance != 1 ) {
+		cerr << "Error: HSolve: caAdvance should be either 0 or 1.\n";
+		return;
+	}
+	
+	caAdvance_ = caAdvance;
 }
 
-int HSolve::getCaDiv( Eref e )
+int HSolve::getCaAdvance() const
 {
-	return static_cast< const HSolve* >( e.data() )->caDiv_;
+	return caAdvance_;
 }
 
-void HSolve::setCaMin( const Conn* c, double caMin )
+void HSolve::setVDiv( int vDiv )
 {
-	static_cast< HSolve* >( c->data() )->caMin_ = caMin;
+	vDiv_ = vDiv;
 }
 
-double HSolve::getCaMin( Eref e )
+int HSolve::getVDiv() const
 {
-	return static_cast< const HSolve* >( e.data() )->caMin_;
+	return vDiv_;
 }
 
-void HSolve::setCaMax( const Conn* c, double caMax )
+void HSolve::setVMin( double vMin )
 {
-	static_cast< HSolve* >( c->data() )->caMax_ = caMax;
+	vMin_ = vMin;
 }
 
-double HSolve::getCaMax( Eref e )
+double HSolve::getVMin() const
 {
-	return static_cast< const HSolve* >( e.data() )->caMax_;
+	return vMin_;
 }
+
+void HSolve::setVMax( double vMax )
+{
+	vMax_ = vMax;
+}
+
+double HSolve::getVMax() const
+{
+	return vMax_;
+}
+
+void HSolve::setCaDiv( int caDiv )
+{
+	caDiv_ = caDiv;
+}
+
+int HSolve::getCaDiv() const
+{
+	return caDiv_;
+}
+
+void HSolve::setCaMin( double caMin )
+{
+	caMin_ = caMin;
+}
+
+double HSolve::getCaMin() const
+{
+	return caMin_;
+}
+
+void HSolve::setCaMax( double caMax )
+{
+	caMax_ = caMax;
+}
+
+double HSolve::getCaMax() const
+{
+	return caMax_;
+}
+
+const set<string>& HSolve::handledClasses()
+{
+    static set<string> classes;
+    if (classes.empty()){
+        classes.insert("CaConc");
+        classes.insert("ZombieCaConc");
+        classes.insert("HHChannel");
+        classes.insert("ZombieHHChannel");
+        classes.insert("Compartment");
+        classes.insert("ZombieCompartment");
+    }
+    return classes;
+}
+
+/**
+   Utility function to delete incoming messages on orig.
+   To be used in zombifying elements.
+*/
+void HSolve::deleteIncomingMessages( Element * orig, const string finfo)
+{
+	const DestFinfo * concenDest = dynamic_cast<const DestFinfo*>(orig->cinfo()->findFinfo(finfo));
+    assert(concenDest);
+    MsgId mid = orig->findCaller(concenDest->getFid());
+    while (mid != Msg::bad){
+        const Msg * msg = Msg::getMsg(mid);
+        assert(msg);
+        ObjId other = msg->findOtherEnd(orig->id());
+        Element * otherEl = other.id.element();
+        if (otherEl &&  HSolve::handledClasses().find(otherEl->cinfo()->name()) != HSolve::handledClasses().end()){
+            Msg::deleteMsg(mid);
+        }
+        mid = orig->findCaller(concenDest->getFid());
+    }
+}
+
+#if 0
+
+/// crate test object and push it into the container vector
+Id create_testobject(vector<Id> & container, string classname, Id parent, string name, vector<int> dims)
+{
+    Shell * shell = reinterpret_cast< Shell* >( ObjId( Id(), 0 ).data() );
+    Id nid = shell->doCreate( classname, parent, name, dims );
+    container.push_back(nid);
+    return nid;
+}
+
+void clear_testobjects(vector<Id>& container)
+{
+   Shell * shell = reinterpret_cast< Shell* >( ObjId( Id(), 0 ).data() );
+   while (!container.empty()){
+       Id id = container.back();
+       shell->doDelete(id);
+       container.pop_back();
+   }
+}
+
+
+void testHSolvePassiveSingleComp()
+{
+    Shell * shell = reinterpret_cast< Shell* >( ObjId( Id(), 0 ).data() );
+    vector< int > dims( 1, 1 );
+    vector<Id> to_cleanup;
+	Id nid = create_testobject(to_cleanup, "Neuron", Id(), "n", dims );
+	Id comptId = create_testobject(to_cleanup, "Compartment", nid, "compt", dims );
+    Id hsolve = create_testobject(to_cleanup, "HSolve", nid, "solver", dims);
+    Field<string>::set(hsolve, "target", nid.path());
+    to_cleanup.push_back(nid);
+    clear_testobjects(to_cleanup);
+    cout << "." << flush;
+}
+
+
+
+#endif // if 0
+ 
