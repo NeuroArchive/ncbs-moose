@@ -1,3 +1,12 @@
+/**********************************************************************
+** This program is part of 'MOOSE', the
+** Messaging Object Oriented Simulation Environment.
+**           Copyright (C) 2003-2011 Upinder S. Bhalla. and NCBS
+** It is made available under the terms of the
+** GNU Lesser General Public License version 2.1
+** See the file COPYING.LIB for the full notice.
+**********************************************************************/
+
 #ifndef _GHK_H
 #define _GHK_H
 
@@ -8,55 +17,59 @@
 #define F_OVER_R        1.1605364e4		/* deg/volt */
 
 
-class GHK {
+/**
+ * The GHK class handles the Goldman-Hodgkin-Katz equations for
+ * current for a single ion species.
+ */
+class GHK
+{
 
- public:
+	public:
+		GHK();
 
-  GHK() :
-  Ik_( 0.0 ), Gk_( 0.0 ), Ek_( 0.0 ), p_( 0.0 ), Cin_( 50e-6 ), Cout_( 2 )
-    {
-      ;
-    }
+		double getIk() const;
+		double getGk() const;
+		double getEk() const;
 
-  static double getIk( Eref );
-  static double getGk( Eref );
-  static double getEk( Eref );
+		void setTemperature( double T );
+		double getTemperature() const;
 
-  static void setTemperature( const Conn* c, double T );
-  static double getTemperature( Eref );
-
-  static void setPermeability( const Conn* c, double p );
-  static double getPermeability( Eref );
-  static void addPermeability( const Conn* c, double p );
+		void setPermeability( double p );
+		double getPermeability() const;
+		void addPermeability( double p );
 
 
-  static void setVm( const Conn* c, double Vm );
-  static double getVm( Eref );
+		void setVm( double Vm );
+		double getVm() const;
 
-  static void setCin( const Conn* c, double Cin );
-  static double getCin( Eref );
+		void setCin( double Cin );
+		double getCin() const;
 
-  static void setCout( const Conn* c, double Cout );
-  static double getCout( Eref );
+		void setCout( double Cout );
+		double getCout() const;
 
-  static void setValency( const Conn* c, double valecny );
-  static double getValency( Eref );
+		void setValency( double valecny );
+		double getValency() const;
 
-  static void processFunc( const Conn* c, ProcInfo p );
-  static void reinitFunc( const Conn* c, ProcInfo p );
+		void process( const Eref& e, ProcPtr p );
+		void reinit( const Eref& e, ProcPtr p );
 
-  static void channelFunc( const Conn* c, double Vm );
+		void handleVm( const Eref& e, const Qinfo* q, double Vm );
 
- private:
+		static const Cinfo* initCinfo();
 
-  void innerProcessFunc( Eref e, ProcInfo p );
-  void innerReinitFunc( Eref e, ProcInfo p );
-
-  double Ik_, Gk_, Ek_, p_, T_, Vm_, Cin_, Cout_, valency_,GHKconst_;
-
+	private:
+		double Ik_;
+		double Gk_;
+		double Ek_;
+		double p_;
+		double T_;
+		double Vm_;
+		double Cin_;
+		double Cout_;
+		double valency_;
+		double GHKconst_;
 };
-
-extern const Cinfo* initGHKCinfo();
 
 
 
