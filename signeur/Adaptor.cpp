@@ -1,85 +1,78 @@
 /**********************************************************************
 ** This program is part of 'MOOSE', the
 ** Messaging Object Oriented Simulation Environment.
-**           Copyright (C) 2003-2007 Upinder S. Bhalla. and NCBS
+**           Copyright (C) 2003-2012 Upinder S. Bhalla. and NCBS
 ** It is made available under the terms of the
 ** GNU Lesser General Public License version 2.1
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
+#include "header.h"
 #include "Adaptor.h"
 
 /**
  * This is the adaptor class. It is used in interfacing different kinds
- * of simulation with each other, especially for multiscale models and
- * for connecting between robots and ordinary simulations.
+ * of solver with each other, especially for electrical to chemical
+ * signeur models.
  */
-
-const Cinfo* initAdaptorCinfo()
+///////////////////////////////////////////////////////
+// MsgSrc definitions
+///////////////////////////////////////////////////////
+static SrcFinfo1< double > *outputSrc()
 {
-	static Finfo* processShared[] =
-	{
-		new DestFinfo( "process", Ftype1< ProcInfo >::global(),
-		RFCAST( &Adaptor::process ) ),
-		new DestFinfo( "reinit", Ftype1< ProcInfo >::global(),
-		RFCAST( &Adaptor::reinit ) ),
-	};
-	static Finfo* process = new SharedFinfo( "process", processShared,
-		sizeof( processShared ) / sizeof( Finfo* ),
-		"This is a shared message to receive Process message from the scheduler. " );
+	static SrcFinfo1< double > outputSrc( "outputSrc", 
+			"Sends the output value every timestep."
+	);
+	return &outputSrc;
+}
 
-	static Finfo* inputRequestShared[] =
-	{
-		new SrcFinfo( "requestInput", Ftype0::global(),
-			" Sends out the request. Issued from the process call." ),
-		new DestFinfo( "handleInput", Ftype1< double >::global(),
-				RFCAST( &Adaptor::input ),
-				"Handle the returned value." ),
-	};
+static SrcFinfo0 *requestInput()
+{
+	static SrcFinfo0 requestInput( "requestInput", 
+			"Sends out the request. Issued from the process call."
+	);
+	return &requestInput;
+}
 
-	static Finfo* adaptorFinfos[] =
-	{
+const Cinfo* Adaptor::initCinfo()
+{
 	///////////////////////////////////////////////////////
 	// Field definitions
 	///////////////////////////////////////////////////////
-		new ValueFinfo( "inputOffset", ValueFtype1< double >::global(),
-			GFCAST( &Adaptor::getInputOffset ),
-			RFCAST( &Adaptor::setInputOffset )
-		),
-		new ValueFinfo( "outputOffset", ValueFtype1< double >::global(),
-			GFCAST( &Adaptor::getOutputOffset ),
-			RFCAST( &Adaptor::setOutputOffset )
-		),
-		new ValueFinfo( "scale", ValueFtype1< double >::global(),
-			GFCAST( &Adaptor::getScale ),
-			RFCAST( &Adaptor::setScale )
-		),
-		new ValueFinfo( "output", ValueFtype1< double >::global(),
-			GFCAST( &Adaptor::getOutput ),
-			&dummyFunc
-		),
-	///////////////////////////////////////////////////////
-	// Shared message definitions
-	///////////////////////////////////////////////////////
-		process,
-		new SharedFinfo( "inputRequest", inputRequestShared, 
-			sizeof( inputRequestShared ) / sizeof( Finfo* ),
-			"This is a shared message to request and handle value  messages from fields." ),
-		
-	///////////////////////////////////////////////////////
-	// MsgSrc definitions
-	///////////////////////////////////////////////////////
-		new SrcFinfo( "outputSrc", Ftype1< double >::global(),
-			"Sends the output value every timestep." ),
+	static ValueFinfo< Adaptor, double > inputOffset( 
+			"inputOffset",
+			"Offset to apply to input message, before scaling",
+			&Adaptor::setInputOffset,
+			&Adaptor::getInputOffset
+		);
+	static ValueFinfo< Adaptor, double > outputOffset( 
+			"outputOffset",
+			"Offset to apply at output, after scaling",
+			&Adaptor::setOutputOffset,
+			&Adaptor::getOutputOffset
+		);
+	static ValueFinfo< Adaptor, double > scale( 
+			"scale",
+			"Scaling factor to apply to input",
+			&Adaptor::setScale,
+			&Adaptor::getScale
+		);
+	static ReadOnlyValueFinfo< Adaptor, double > output( 
+			"output",
+			"This is the linearly transformed output.",
+			&Adaptor::getOutput
+		);
 
 	///////////////////////////////////////////////////////
 	// MsgDest definitions
 	///////////////////////////////////////////////////////
-		new DestFinfo( "input", Ftype1< double >::global(), 
-			RFCAST( &Adaptor::input ),
-			"Averages inputs."
-		),
+	static DestFinfo input( 
+			"input",
+			"Input message to the adaptor. If multiple inputs are "
+			"received, the system averages the inputs.",
+		   	new OpFunc1< Adaptor, double >( &Adaptor::input )
+		);
+	/*
 		new DestFinfo( "setup", 
 			Ftype4< string, double, double, double >::global(), 
 			RFCAST( &Adaptor::setup ),
@@ -97,9 +90,61 @@ const Cinfo* initAdaptorCinfo()
 			"Completes connection to previously specified molecule "
 			"on kinetic model."
 		),
-	};
+		*/
 
-	static SchedInfo schedInfo[] = { { process, 0, 0 } };
+	///////////////////////////////////////////////////////
+	// Shared definitions
+	///////////////////////////////////////////////////////
+	static  DestFinfo process( "process", 
+				"Handles 'process' call",
+			new ProcOpFunc< Adaptor>( &Adaptor::process )
+	);
+	static  DestFinfo reinit( "reinit", 
+				"Handles 'reinit' call",
+			new ProcOpFunc< Adaptor>( &Adaptor::reinit )
+	);
+
+	static Finfo* processShared[] =
+	{
+			&process, &reinit
+	};
+	static SharedFinfo proc( "proc", 
+		"This is a shared message to receive Process message "
+		"from the scheduler. ",
+		processShared, sizeof( processShared ) / sizeof( Finfo* )
+	);
+
+	static DestFinfo handleInput( "handleInput", 
+			"Handle the returned value.",
+			new OpFunc1< Adaptor, double >( &Adaptor::input )
+	);
+
+	static Finfo* inputRequestShared[] =
+	{
+		requestInput(),
+		&handleInput
+	};
+	static SharedFinfo inputRequest( "inputRequest",
+		"This is a shared message to request and handle value "
+	   "messages from fields.",
+		inputRequestShared, 
+		sizeof( inputRequestShared ) / sizeof( Finfo* )
+	);
+
+	//////////////////////////////////////////////////////////////////////
+	// Now set it all up.
+	//////////////////////////////////////////////////////////////////////
+	static Finfo* adaptorFinfos[] = 
+	{
+		&inputOffset,				// Value
+		&outputOffset,				// Value
+		&scale,						// Value
+		&output,					// ReadOnlyValue
+		&input,						// DestFinfo
+		outputSrc(),				// SrcFinfo
+		&proc,						// SharedFinfo
+		&inputRequest,				// SharedFinfo
+	};
 	
 	static string doc[] =
 	{
@@ -109,24 +154,19 @@ const Cinfo* initAdaptorCinfo()
 	};
 
 	static Cinfo adaptorCinfo(
-	doc,
-	sizeof( doc ) / sizeof( string ),
-	initNeutralCinfo(),
-	adaptorFinfos,
-	sizeof( adaptorFinfos ) / sizeof( Finfo * ),
-	ValueFtype1< Adaptor >::global(),
-		schedInfo, 1
+		"Adaptor",
+		Neutral::initCinfo(),
+		adaptorFinfos,
+		sizeof( adaptorFinfos ) / sizeof( Finfo * ),
+		new Dinfo< Adaptor >(),
+		doc,
+		sizeof( doc ) / sizeof( string )
 	);
 
 	return &adaptorCinfo;
 }
 
-static const Cinfo* adaptorCinfo = initAdaptorCinfo();
-
-static const Slot outputSlot = 
-	initAdaptorCinfo()->getSlot( "outputSrc" );
-static const Slot inputRequestSlot = 
-	initAdaptorCinfo()->getSlot( "inputRequest.requestInput" );
+static const Cinfo* adaptorCinfo = Adaptor::initCinfo();
 
 ////////////////////////////////////////////////////////////////////
 // Here we set up Adaptor class functions
@@ -147,36 +187,36 @@ Adaptor::Adaptor()
 // Here we set up Adaptor value fields
 ////////////////////////////////////////////////////////////////////
 
-void Adaptor::setInputOffset( const Conn* c, double value ) 
+void Adaptor::setInputOffset( double value ) 
 {
-	static_cast< Adaptor* >( c->data() )->inputOffset_ = value;
+	inputOffset_ = value;
 }
-double Adaptor::getInputOffset( Eref e )
+double Adaptor::getInputOffset() const
 {
-	return static_cast< Adaptor* >( e.data() )->inputOffset_;
-}
-
-void Adaptor::setOutputOffset( const Conn* c, double value ) 
-{
-	static_cast< Adaptor* >( c->data() )->outputOffset_ = value;
-}
-double Adaptor::getOutputOffset( Eref e )
-{
-	return static_cast< Adaptor* >( e.data() )->outputOffset_;
+	return inputOffset_;
 }
 
-void Adaptor::setScale( const Conn* c, double value ) 
+void Adaptor::setOutputOffset( double value ) 
 {
-	static_cast< Adaptor* >( c->data() )->scale_ = value;
+	outputOffset_ = value;
 }
-double Adaptor::getScale( Eref e )
+double Adaptor::getOutputOffset() const
 {
-	return static_cast< Adaptor* >( e.data() )->scale_;
+	return outputOffset_;
 }
 
-double Adaptor::getOutput( Eref e )
+void Adaptor::setScale( double value ) 
 {
-	return static_cast< Adaptor* >( e.data() )->output_;
+	scale_ = value;
+}
+double Adaptor::getScale() const
+{
+	return scale_;
+}
+
+double Adaptor::getOutput() const
+{
+	return output_;
 }
 
 
@@ -184,25 +224,39 @@ double Adaptor::getOutput( Eref e )
 // Here we set up Adaptor Destination functions
 ////////////////////////////////////////////////////////////////////
 
-void Adaptor::input( const Conn* c, double v )
+void Adaptor::input( double v )
 {
-	Adaptor *a = static_cast< Adaptor* >( c->data() );
-	a->sum_ += v;
-	++a->counter_;
+	sum_ += v;
+	++counter_;
 }
 
-
-void Adaptor::process( const Conn* c, ProcInfo p )
+// separated out to help with unit tests.
+void Adaptor::innerProcess()
 {
-	static_cast< Adaptor* >( c->data() )->
-			innerProcess( c->target(), p );
+	if ( counter_ == 0 ) { 
+		output_ = outputOffset_;
+	} else {
+		output_ = outputOffset_ + 
+			scale_ * ( ( sum_ / counter_ ) - inputOffset_ );
+	}
+	sum_ = 0.0;
+	counter_ = 0;
 }
 
-void Adaptor::reinit( const Conn* c, ProcInfo p )
+void Adaptor::process( const Eref& e, ProcPtr p )
 {
-	static_cast< Adaptor* >( c->data() )->innerReinit( c, p );
+	requestInput()->send( e, p->threadIndexInGroup );
+	innerProcess();
+	outputSrc()->send( e, p->threadIndexInGroup, output_ );
 }
 
+void Adaptor::reinit( const Eref& e, ProcPtr p )
+{
+	sum_ = 0.0;
+	counter_ = 0;
+}
+
+/*
 void Adaptor::setup( const Conn* c, 
 		string molName, double scale, 
 		double inputOffset, double outputOffset )
@@ -216,27 +270,4 @@ void Adaptor::setup( const Conn* c,
 void Adaptor::build( const Conn* c )
 {
 }
-
-////////////////////////////////////////////////////////////////////
-// Here we set up private Adaptor class functions.
-////////////////////////////////////////////////////////////////////
-
-void Adaptor::innerProcess( Eref e, ProcInfo p )
-{
-	send0( e, inputRequestSlot );
-	if ( counter_ == 0 ) { 
-		output_ = outputOffset_;
-	} else {
-		output_ = outputOffset_ + 
-			scale_ * ( ( sum_ / counter_ ) - inputOffset_ );
-	}
-	sum_ = 0.0;
-	counter_ = 0;
-	send1< double >( e, outputSlot, output_ );
-}
-
-void Adaptor::innerReinit( const Conn* c, ProcInfo p )
-{
-	sum_ = 0.0;
-	counter_ = 0;
-}
+*/

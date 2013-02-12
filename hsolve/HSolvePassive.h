@@ -15,31 +15,32 @@ class HSolvePassive: public HinesMatrix
 #ifdef DO_UNIT_TESTS
 	friend void testHSolvePassive();
 #endif
-
+	
 public:
 	void setup( Id seed, double dt );
-	void solve( );
+	void solve();
 	
-	double getV( unsigned int row );
-
 protected:
 	// Integration
-	void updateMatrix( );
-	void forwardEliminate( );
-	void backwardSubstitute( );
+	void updateMatrix();
+	void forwardEliminate();
+	void backwardSubstitute();
 	
 	vector< CompartmentStruct >       compartment_;
 	vector< Id >                      compartmentId_;
 	vector< double >                  V_;
 	vector< TreeNodeStruct >          tree_;
 	map< unsigned int, InjectStruct > inject_;
-
+	
 private:
 	// Setting up of data structures
-	void clear( );
+	void clear();
 	void walkTree( Id seed );
-	void initialize( );
-	void storeTree( );
+	void initialize();
+	void storeTree();
+	
+	// Used for unit tests.
+	double getV( unsigned int row ) const;
 };
 
 #endif // _HSOLVE_PASSIVE_H

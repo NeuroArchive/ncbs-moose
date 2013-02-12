@@ -7,26 +7,53 @@
 #** See the file COPYING.LIB for the full notice.
 #**********************************************************************/
 
-TARGET = ksolve.o
+TARGET = _ksolve.o
 
 OBJ = \
-	KinSparseMatrix.o	\
-	KineticHub.o	\
+	Port.o	\
 	Stoich.o	\
+	StoichCore.o	\
+	KinSparseMatrix.o	\
+	ZombiePool.o \
+	ZPool.o \
+	ZombieBufPool.o \
+	ZBufPool.o \
+	ZombieFuncPool.o \
+	ZFuncPool.o \
+	ZombieReac.o \
+	ZReac.o \
+	ZombieEnz.o \
+	ZEnz.o \
+	ZombieMMenz.o \
+	ZMMenz.o \
+	ZombieSumFunc.o \
+	RateTerm.o \
+	SolverBase.o \
+	VoxelPools.o \
+	OdeSystem.o \
 	GssaStoich.o	\
-	InterSolverFlux.o	\
-	Kintegrator.o	\
-	KineticManager.o	\
-	TestKsolve.o	\
+	GslStoich.o	\
+	GslStoichSetup.o	\
+	GslStoichNumerics.o	\
+	GslStoichZombies.o	\
+	EstimateDt.o	\
+	SolverJunction.o	\
+	testKsolve.o	\
+
+	
+	#KineticHub.o	\
+	#Tab.o	\
 
 HEADERS = \
 	../basecode/header.h \
-	../connections/Conn.h \
-	../basecode/Element.h \
-	../kinetics/Molecule.h \
-	../kinetics/Reaction.h \
-	../kinetics/Enzyme.h \
-	../randnum/randnum.h \
+	../basecode/SparseMatrix.h \
+	../basecode/ElementValueFinfo.h \
+	../mesh/VoxelJunction.h \
+	SolverBase.h \
+	RateTerm.h \
+	KinSparseMatrix.h \
+	../kinetics/Pool.h \
+	../kinetics/lookupSizeFromMesh.h \
 
 
 # The GSL library (GNU Scientific Library) provides a range of
@@ -36,36 +63,56 @@ HEADERS = \
 # use it. Should be fine for academic use.
 # Optional: Comment out the following three items if not using GSL
 ifeq ($(USE_GSL),1)
-GSL_OBJ = GslIntegrator.o SteadyState.o StateScanner.o
+GSL_OBJ = \
+	GslIntegrator.o
+
 #GSL_LIBS = -L/usr/lib -lgsl -lgslcblas
-GSL_FLAGS = -DUSE_GSL
+#GSL_FLAGS = -DUSE_GSL
 endif
 
 default: $(TARGET)
 
 $(OBJ)	: $(HEADERS)
-KinSparseMatrix.o:	KinSparseMatrix.h
-KineticHub.o:	RateTerm.h KineticHub.h
-Stoich.o:	RateTerm.h Stoich.h KinSparseMatrix.h InterSolverFlux.h Makefile 
-GssaStoich.o:	RateTerm.h Stoich.h KinSparseMatrix.h GssaStoich.h InterSolverFlux.h Makefile
-InterSolverFlux.o:	InterSolverFlux.h
-Kintegrator.o:	Kintegrator.h
-KineticManager.o:	KineticManager.h ../kinetics/KinCompt.h
-TestKsolve.o:	KineticManager.h RateTerm.h Stoich.h KinSparseMatrix.h KineticHub.h Makefile
+Stoich.o:	../kinetics/PoolBase.h ZombiePool.h ../kinetics/ReacBase.h ZombieReac.h ZombieBufPool.h ../kinetics/EnzBase.h ZombieEnz.h ZombieMMenz.h ../kinetics/Pool.h ../kinetics/Reac.h ../kinetics/BufPool.h ../kinetics/FuncPool.h ../kinetics/Enz.h ../kinetics/MMenz.h ../mesh/Boundary.h ../mesh/ChemMesh.h ../mesh/Stencil.h
+StoichCore.o:	../kinetics/PoolBase.h ZPool.h ../kinetics/ReacBase.h ZReac.h ZBufPool.h ../kinetics/EnzBase.h ZEnz.h ZMMenz.h ../kinetics/Pool.h ../kinetics/Reac.h ../kinetics/BufPool.h ../kinetics/FuncPool.h ../kinetics/Enz.h ../kinetics/MMenz.h ../mesh/Boundary.h ../mesh/ChemMesh.h ../mesh/Stencil.h
+VoxelPools.o: VoxelPools.h
+SolverBase.o: SolverBase.h
+GssaStoich.o:	GssaStoich.h ../kinetics/PoolBase.h ZombiePool.h ../kinetics/ReacBase.h ZombieReac.h ZombieBufPool.h ../kinetics/EnzBase.h ZombieEnz.h ZombieMMenz.h ../kinetics/Pool.h ../kinetics/Reac.h ../kinetics/BufPool.h ../kinetics/FuncPool.h ../kinetics/Enz.h ../kinetics/MMenz.h ../mesh/Boundary.h ../mesh/ChemMesh.h ../randnum/randnum.h
+OdeSystem.o:	OdeSystem.h
+GslStoich.o:	GslStoich.h OdeSystem.h VoxelPools.h
+KinSparseMatrix.o:	KinSparseMatrix.h ../basecode/SparseMatrix.h
+ZombiePool.o:	../kinetics/PoolBase.h ZombiePool.h
+ZPool.o:	../kinetics/PoolBase.h ZPool.h
+ZombieBufPool.o:	../kinetics/PoolBase.h ZombiePool.h ZombieBufPool.h
+ZBufPool.o:	../kinetics/PoolBase.h ZPool.h ZBufPool.h
+ZombieFuncPool.o:	../kinetics/PoolBase.h ZombiePool.h ZombieFuncPool.h ZombieSumFunc.h
+ZFuncPool.o:	../kinetics/PoolBase.h ZPool.h ZFuncPool.h
+ZombieReac.o:	../kinetics/ReacBase.h ../kinetics/Reac.h ZombieReac.h
+ZReac.o:	../kinetics/ReacBase.h ZReac.h
+ZombieEnz.o:	ZombieEnz.h
+ZEnz.o:	ZEnz.h
+ZombieMMenz.o:	ZombieMMenz.h
+ZMMenz.o:	ZMMenz.h
+ZombieSumFunc.o:	../kinetics/SumFunc.h ZombieSumFunc.h
+SolverJunction.o:	../mesh/VoxelJunction.h SolverJunction.h
+testKsolve.o:	../kinetics/ReadKkit.h ../shell/Shell.h
+RateTerm.o:		RateTerm.h
+
+#KineticHub.o:	KineticHub.h
 
 ifeq ($(USE_GSL),1)
 #Optional: Comment out the following two items if not using GSL.
 $(GSL_OBJ) : $(HEADERS)
-GslIntegrator.o:	GslIntegrator.h Stoich.h RateTerm.h KinSparseMatrix.h 
-SteadyState.o:	SteadyState.h RateTerm.h KinSparseMatrix.h 
-StateScanner.o:	StateScanner.h
+GslIntegrator.o:	GslIntegrator.h Stoich.h RateTerm.h KinSparseMatrix.h ../basecode/SparseMatrix.h ../shell/Shell.h
+#SteadyState.o:	SteadyState.h RateTerm.h KinSparseMatrix.h 
+#StateScanner.o:	StateScanner.h
 endif # !USE_GSL
 
 .cpp.o:
-	$(CXX) $(CXXFLAGS) $(GSL_FLAGS) -I.. -I../basecode -I../kinetics -I../randnum $< -c
+	$(CXX) $(CXXFLAGS) $(GSL_FLAGS) $(SMOLDYN_FLAGS) -I.. -I../basecode -I../msg -I../kinetics -I../mesh $< -c
 
-$(TARGET):		$(OBJ) $(GSL_OBJ) $(HEADERS)
-	$(LD) -r -o $(TARGET) $(OBJ) $(GSL_OBJ) $(GSL_LIBS) 
+$(TARGET):		$(OBJ) $(GSL_OBJ) $(SMOLDYN_OBJ) $(HEADERS)
+	$(LD) -r -o $(TARGET) $(OBJ) $(GSL_OBJ) $(GSL_LIBS) $(SMOLDYN_OBJ) $(SMOLDYN_LIB_PATH) $(SMOLDYN_LIBS) 
 
 clean:
 	-rm -f *.o $(TARGET) core core.*
