@@ -18,15 +18,15 @@ struct LookupRow
 
 struct LookupColumn
 {
-	LookupColumn( ) { ; }
+	LookupColumn() { ; }
 	unsigned int column;
-	bool interpolate;
+	//~ bool interpolate;
 };
 
 class LookupTable
 {
 public:
-	LookupTable() { ; } // To keep compiler happy.
+	LookupTable() { ; }
 	
 	LookupTable(
 		double min,
@@ -37,8 +37,9 @@ public:
 	void addColumns(
 		int species,
 		const vector< double >& C1,
-		const vector< double >& C2,
-		bool interpolate );
+		const vector< double >& C2 );
+		//~ const vector< double >& C2,
+		//~ bool interpolate );
 	
 	void column(
 		unsigned int species,
@@ -55,7 +56,7 @@ public:
 		double& C2 );
 	
 private:
-	vector< bool >       interpolate_;
+	//~ vector< bool >       interpolate_;
 	vector< double >     table_;
 	double               min_;
 	double               max_;

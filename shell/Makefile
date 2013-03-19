@@ -1,53 +1,52 @@
 #/**********************************************************************
 #** This program is part of 'MOOSE', the
-#** Messaging Object Oriented Simulation Environment,
-#** also known as GENESIS 3 base code.
+#** Messaging Object Oriented Simulation Environment.
 #**           copyright (C) 2007 Upinder S. Bhalla. and NCBS
 #** It is made available under the terms of the
 #** GNU General Public License version 2
 #** See the file COPYING.LIB for the full notice.
 #**********************************************************************/
-#
-# Here we do extra dependencies to get SWIG to compile. The
-# final stage of compilation and assorted flags are to be set
-# in the moose root Makefile.
-#
 
-TARGET = shell.o
+TARGET = _shell.o
 
 OBJ = \
 	Shell.o	\
-	ParShell.o	\
-	ReadCell.o \
-	SimDump.o \
-	LoadTab.o \
-	TestShell.o	\
+	ShellCopy.o	\
+	ShellSetGet.o	\
+	ShellThreads.o	\
+	ProcessLoop.o	\
+	LoadModels.o \
+	SaveModels.o \
+	Neutral.o	\
+	Wildcard.o	\
+	testShell.o	\
 
 HEADERS = \
 	../basecode/header.h \
-	../connections/Conn.h \
-	../basecode/Element.h \
+	../basecode/FuncBarrier.h \
+	../basecode/ReduceBase.h \
+	../basecode/ReduceMax.h \
+
 
 default: $(TARGET)
 
 $(OBJ)	: $(HEADERS)
-
-Shell.o TestShell.o: Shell.h ../randnum/Probability.h ../randnum/Uniform.h ../randnum/Exponential.h ../randnum/Normal.h
-
-# ifneq (,$(findstring -DCRL_MPI,$(CXXFLAGS)))
-#endif
-
-ParShell.o: Shell.h ParShell.h
-ReadCell.o: ReadCell.h Shell.h
-
+Shell.o:	Shell.h Neutral.h ../scheduling/Clock.h ../sbml/SbmlWriter.h
+ShellCopy.o:	Shell.h Neutral.h
+ShellSetGet.o:	Shell.h
+ShellThreads.o:	Shell.h Neutral.h ../scheduling/Clock.h
+ProcessLoop.o:	Shell.h ../basecode/FuncBarrier.h
+LoadModels.o:	Shell.h Neutral.h ../kinetics/ReadKkit.h ../biophysics/ReadCell.h
+SaveModels.o:	Shell.h Neutral.h
+Neutral.o:	Neutral.h ../basecode/ElementValueFinfo.h
+Wildcard.o:	Wildcard.h Shell.h Neutral.h ../basecode/ElementValueFinfo.h
+testShell.o:	Wildcard.h Shell.h Neutral.h ../scheduling/Tick.h ../scheduling/testScheduling.h ../builtins/Arith.h ../basecode/SparseMatrix.h ../msg/SparseMsg.h ../msg/SingleMsg.h ../basecode/SetGet.h
 
 .cpp.o:
-	$(CXX) $(CXXFLAGS) -I../external/include -I/usr/include/libxml2 -I.. -I../basecode $< -c
+	$(CXX) $(CXXFLAGS) $(SMOLDYN_FLAGS) -I. -I../basecode -I../msg $< -c
 
-$(TARGET):		$(OBJ) $(HEADERS)
-	$(LD) -r -o $(TARGET) $(OBJ)
-
+$(TARGET):		$(OBJ) $(SMOLDYN_OBJ) $(HEADERS)
+	$(LD) -r -o $(TARGET) $(OBJ) $(SMOLDYN_OBJ) $(SMOLDYN_LIB_PATH) $(SMOLDYN_LIBS) 
 
 clean:
-	-rm -f *.o $(TARGET) core core.* 
-
+	-rm -f *.o $(TARGET) core core.*

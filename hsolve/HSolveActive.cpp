@@ -7,24 +7,22 @@
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
-#include "biophysics/Compartment.h"
-#include "biophysics/SpikeGen.h"
-#include "biophysics/CaConc.h"
+#include "header.h"
 #include <queue>
-#include "biophysics/SynInfo.h"
-#include "biophysics/SynChan.h"
 #include "HSolveStruct.h"
 #include "HinesMatrix.h"
 #include "HSolvePassive.h"
 #include "RateLookup.h"
 #include "HSolveActive.h"
+#include "HSolve.h"
+#include "../biophysics/Compartment.h"
+#include "../biophysics/CaConc.h"
+#include "ZombieCaConc.h"
+using namespace moose;
+//~ #include "ZombieCompartment.h"
+//~ #include "ZombieCaConc.h"
 
 extern ostream& operator <<( ostream& s, const HinesMatrix& m );
-
-static const Finfo* synGkFinfo = initSynChanCinfo()->findFinfo( "Gk" );
-static const Finfo* synEkFinfo = initSynChanCinfo()->findFinfo( "Ek" );
-static const Finfo* spikeVmFinfo = initSpikeGenCinfo()->findFinfo( "Vm" );
 
 const int HSolveActive::INSTANT_X = 1;
 const int HSolveActive::INSTANT_Y = 2;
@@ -35,40 +33,42 @@ HSolveActive::HSolveActive()
 	caAdvance_ = 1;
 	
 	// Default lookup table size
-	vDiv_ = 3000;    // for voltage
-	caDiv_ = 3000;   // for calcium
+	//~ vDiv_ = 3000;    // for voltage
+	//~ caDiv_ = 3000;   // for calcium
 }
 
 //////////////////////////////////////////////////////////////////////
 // Solving differential equations
 //////////////////////////////////////////////////////////////////////
-
-void HSolveActive::solve( ProcInfo info ) {
+void HSolveActive::step( ProcPtr info ) {
+	if ( nCompt_ <= 0 )
+		return;
+	
 	if ( !current_.size() ) {
 		current_.resize( channel_.size() );
 	}
 	
-	advanceChannels( info->dt_ );
-	calculateChannelCurrents( );
-	updateMatrix( );
-	HSolvePassive::forwardEliminate( );
-	HSolvePassive::backwardSubstitute( );
-	advanceCalcium( );
+	advanceChannels( info->dt );
+	calculateChannelCurrents();
+	updateMatrix();
+	HSolvePassive::forwardEliminate();
+	HSolvePassive::backwardSubstitute();
+	advanceCalcium();
 	advanceSynChans( info );
 	
-	sendValues( );
+	sendValues( info );
 	sendSpikes( info );
 	
 	externalCurrent_.assign( externalCurrent_.size(), 0.0 );
 }
 
-void HSolveActive::calculateChannelCurrents( ) {
+void HSolveActive::calculateChannelCurrents() {
 	vector< ChannelStruct >::iterator ichan;
 	vector< CurrentStruct >::iterator icurrent = current_.begin();
 	
 	if ( state_.size() != 0 ) {
 		double* istate = &state_[ 0 ];
-		
+			
 		for ( ichan = channel_.begin(); ichan != channel_.end(); ++ichan ) {
 			ichan->process( istate, *icurrent );
 			++icurrent;
@@ -76,7 +76,7 @@ void HSolveActive::calculateChannelCurrents( ) {
 	}
 }
 
-void HSolveActive::updateMatrix( ) {
+void HSolveActive::updateMatrix() {
 	/*
 	 * Copy contents of HJCopy_ into HJ_. Cannot do a vector assign() because
 	 * iterators to HJ_ get invalidated in MS VC++
@@ -115,23 +115,21 @@ void HSolveActive::updateMatrix( ) {
 		value.injectVarying = 0.0;
 	}
 	
-	double Gk, Ek;
-	vector< SynChanStruct >::iterator isyn;
-	for ( isyn = synchan_.begin(); isyn != synchan_.end(); ++isyn ) {
-		get< double >( isyn->elm_, synGkFinfo, Gk );
-		get< double >( isyn->elm_, synEkFinfo, Ek );
-		
-		unsigned int ic = isyn->compt_;
-		HS_[ 4 * ic ] += Gk;
-		HS_[ 4 * ic + 3 ] += Gk * Ek;
-	}
+	// Synapses are being handled as external channels.
+	//~ double Gk, Ek;
+	//~ vector< SynChanStruct >::iterator isyn;
+	//~ for ( isyn = synchan_.begin(); isyn != synchan_.end(); ++isyn ) {
+		//~ get< double >( isyn->elm_, synGkFinfo, Gk );
+		//~ get< double >( isyn->elm_, synEkFinfo, Ek );
+		//~ 
+		//~ unsigned int ic = isyn->compt_;
+		//~ HS_[ 4 * ic ] += Gk;
+		//~ HS_[ 4 * ic + 3 ] += Gk * Ek;
+	//~ }
 	
 	ihs = HS_.begin();
-	for ( vector< double >::iterator
-	      iec = externalCurrent_.begin();
-	      iec != externalCurrent_.end();
-	      iec += 2 )
-	{
+	vector< double >::iterator iec;
+	for ( iec = externalCurrent_.begin(); iec != externalCurrent_.end(); iec += 2 ) {
 		*ihs += *iec;
 		*( 3 + ihs ) += *( iec + 1 );
 		
@@ -141,11 +139,11 @@ void HSolveActive::updateMatrix( ) {
 	stage_ = 0;    // Update done.
 }
 
-void HSolveActive::advanceCalcium( ) {
-	vector< CaTractStruct >::iterator icatract = caTract_.begin();
-	vector< CurrentStruct* >::iterator icasource = caSource_.begin();
-	vector< double >::iterator icaactivation = caActivation_.begin();
+void HSolveActive::advanceCalcium() {
 	vector< double* >::iterator icatarget = caTarget_.begin();
+	vector< double >::iterator ivmid = VMid_.begin();
+	vector< CurrentStruct >::iterator icurrent = current_.begin();
+	vector< currentVecIter >::iterator iboundary = currentBoundary_.begin();
 	
 	caActivation_.assign( caActivation_.size(), 0.0 );
 	
@@ -156,86 +154,43 @@ void HSolveActive::advanceCalcium( ) {
 	 * GENESIS does its computations. A value of 1 means the membrane potential
 	 * at the middle of the time-step is used. This is the correct way of
 	 * integration, and is the default way.
-	 */
-	vector< double > v0;
-	vector< double >::iterator iv;
-	if ( caAdvance_ > 0 ) {
-		iv = VMid_.begin();
-	} else {
-		v0.resize( nCompt_ );
-		iv = v0.begin();
+	 */	
+	if ( caAdvance_ == 1 ) {
+		for ( ; iboundary != currentBoundary_.end(); ++iboundary ) {
+			for ( ; icurrent < *iboundary; ++icurrent ) {
+				if ( *icatarget )
+					**icatarget += icurrent->Gk * ( icurrent->Ek - *ivmid );
+				
+				++icatarget;
+			}
+			
+			++ivmid;
+		}
+	} else if ( caAdvance_ == 0 ) {
+		vector< double >::iterator iv = V_.begin();
+		double v0;
 		
-		/*
-		 * Reconstructing Vm at the beginning of the time-step, by
-		 * extrapolating backwards (using Vm at the middle and end of
-		 * time-step).
-		 */
-		for ( unsigned int ic = 0; ic < nCompt_; ++ic )
-			v0[ ic ] = ( 2 * VMid_[ ic ] - V_[ ic ] );
-	}
-	
-	for ( ; icatract != caTract_.end(); ++icatract ) {
-		switch( icatract->type )
-		{
-			case 0:
-				iv += icatract->length;
-				
-				break;
-			
-			case 1:
-				for ( unsigned int ic = 0;
-					  ic < icatract->length;
-					  ++ic )
-				{
-					*icaactivation +=
-						( *icasource )->Gk *
-						( ( *icasource )->Ek - *iv );
+		for ( ; iboundary != currentBoundary_.end(); ++iboundary ) {
+			for ( ; icurrent < *iboundary; ++icurrent ) {
+				if ( *icatarget ) {
+					v0 = ( 2 * *ivmid - *iv );
 					
-					++icasource, ++icaactivation, ++iv;
+					**icatarget += icurrent->Gk * ( icurrent->Ek - v0 );
 				}
 				
-				break;
+				++icatarget;
+			}
 			
-			case 2:
-				for ( unsigned int ic = 0;
-					  ic < icatract->length;
-					  ++ic )
-				{
-					unsigned int nConnections =
-						icatract->nConnections[ ic ];
-					
-					for ( unsigned int iconn = 0;
-						  iconn < nConnections;
-						  ++iconn )
-					{
-						**icatarget +=
-							( *icasource )->Gk *
-							( ( *icasource )->Ek - *iv );
-						
-						++icasource, ++icatarget, ++iv;
-					}
-				}
-				
-				icaactivation += icatract->nPools;
-				
-				break;
-			
-			default: assert( 0 );
+			++ivmid, ++iv;
 		}
 	}
 	
-	vector< LookupRow >::iterator icarow = caRow_.begin();
-	icaactivation = caActivation_.begin();
-	for ( vector< CaConcStruct >::iterator
-	      icaconc = caConc_.begin();
-	      icaconc != caConc_.end();
-	      ++icaconc )
-	{
-		icaconc->process( *icaactivation );
-		
-		caTable_.row( icaconc->ca_, *icarow );
-		
-		++icaactivation, ++icarow;
+	vector< CaConcStruct >::iterator icaconc;
+	vector< double >::iterator icaactivation = caActivation_.begin();
+	vector< double >::iterator ica = ca_.begin();
+	for ( icaconc = caConc_.begin(); icaconc != caConc_.end(); ++icaconc ) {
+		*ica = icaconc->process( *icaactivation );
+		++ica, ++icaactivation;
 	}
 }
 
@@ -245,18 +200,32 @@ void HSolveActive::advanceChannels( double dt ) {
 	vector< int >::iterator ichannelcount = channelCount_.begin();
 	vector< ChannelStruct >::iterator ichan = channel_.begin();
 	vector< ChannelStruct >::iterator chanBoundary;
+	vector< unsigned int >::iterator icacount = caCount_.begin();
+	vector< double >::iterator ica = ca_.begin();
+	vector< double >::iterator caBoundary;
 	vector< LookupColumn >::iterator icolumn = column_.begin();
-	vector< LookupRow* >::iterator icarowchan = caRowChan_.begin();
-	
-	/*
-	 * \TODO: replace channelCount_ with channelBoundary_.
-	 */
+	vector< LookupRow >::iterator icarowcompt;
+	vector< LookupRow* >::iterator icarow = caRow_.begin();
 	
 	LookupRow vRow;
 	double C1, C2;
 	for ( iv = V_.begin(); iv != V_.end(); ++iv ) {
 		vTable_.row( *iv, vRow );
+		icarowcompt = caRowCompt_.begin();
+		caBoundary = ica + *icacount;
+		for ( ; ica < caBoundary; ++ica ) {
+			caTable_.row( *ica, *icarowcompt );
+			++icarowcompt;
+		}
 		
+		/*
+		 * Optimize by moving "if ( instant )" outside the loop, because it is
+		 * rarely used. May also be able to avoid "if ( power )".
+		 * 
+		 * Or not: excellent branch predictors these days.
+		 * 
+		 * Will be nice to test these optimizations.
+		 */
 		chanBoundary = ichan + *ichannelcount;
 		for ( ; ichan < chanBoundary; ++ichan ) {
 			if ( ichan->Xpower_ > 0.0 ) {
@@ -288,9 +257,9 @@ void HSolveActive::advanceChannels( double dt ) {
 			}
 			
 			if ( ichan->Zpower_ > 0.0 ) {
-				LookupRow* caRowChan = *icarowchan;
-				if ( caRowChan ) {
-					caTable_.lookup( *icolumn, *caRowChan, C1, C2 );
+				LookupRow* caRow = *icarow;
+				if ( caRow ) {
+					caTable_.lookup( *icolumn, *caRow, C1, C2 );
 				} else {
 					vTable_.lookup( *icolumn, vRow, C1, C2 );
 				}
@@ -304,77 +273,47 @@ void HSolveActive::advanceChannels( double dt ) {
 					*istate = ( *istate * ( 2.0 - temp ) + dt * C1 ) / temp;
 				}
 				
-				++icolumn, ++istate, ++icarowchan;
+				++icolumn, ++istate, ++icarow;
 			}
 		}
 		
-		++ichannelcount;
+		++ichannelcount, ++icacount;
 	}
 }
 
 /**
  * SynChans are currently not under solver's control
  */
-void HSolveActive::advanceSynChans( ProcInfo info ) {
+void HSolveActive::advanceSynChans( ProcPtr info ) {
 	return;
 }
 
-void HSolveActive::sendSpikes( ProcInfo info ) {
+void HSolveActive::sendSpikes( ProcPtr info ) {
 	vector< SpikeGenStruct >::iterator ispike;
-	for ( ispike = spikegen_.begin(); ispike != spikegen_.end(); ++ispike ) {
-		/* Scope resolution used here to resolve ambiguity between the "set"
-		 * function (used here for setting element field values) which belongs
-		 * in the global namespace, and the STL "set" container, which is in the
-		 * std namespace.
-		 */
-		::set< double >( ispike->elm_, spikeVmFinfo, V_[ ispike->compt_ ] );
-	}
+	for ( ispike = spikegen_.begin(); ispike != spikegen_.end(); ++ispike )
+		ispike->send( info );
 }
 
 /**
  * This function dispatches state values via any source messages on biophysical
  * objects which have been taken over.
  */
-void HSolveActive::sendValues( ) {
-	static const Slot compartmentVmSrcSlot =
-		initCompartmentCinfo( )->getSlot( "VmSrc" );
-	static const Slot caConcConcSrcSlot =
-		initCaConcCinfo( )->getSlot( "concSrc" );
-	static const Slot compartmentChannelVmSlot =
-		initCompartmentCinfo( )->getSlot( "channel.Vm" );
-	static const Slot compartmentImSrcSlot =
-		initCompartmentCinfo( )->getSlot( "ImSrc" );
+void HSolveActive::sendValues( ProcPtr info ) {
+	vector< unsigned int >::iterator i;
 	
-	for ( unsigned int i = 0; i < compartmentId_.size( ); ++i ) {
-		send1< double > (
-			compartmentId_[ i ].eref(),
-			compartmentVmSrcSlot,
-			V_[ i ]
+	for ( i = outVm_.begin(); i != outVm_.end(); ++i )
+		moose::Compartment::VmOut()->send(
+		//~ ZombieCompartment::VmOut()->send(
+			compartmentId_[ *i ].eref(),
+			info->threadIndexInGroup,
+			V_[ *i ]
 		);
-		send1< double > (
-			compartmentId_[ i ].eref(),
-			compartmentImSrcSlot,
-			getIm( i )
-		);
-		// An advantage of sending from the compartment here is that we can use
-		// as simple 'send' as opposed to 'sendTo'. sendTo requires the conn
-		// index for the target, and that will require extra book keeping.
-		// Disadvantage is that the message will go out to regular HHChannels,
-		// etc. A possibility is to delete those messages.
-		send1< double >(
-			compartmentId_[ i ].eref(),
-			compartmentChannelVmSlot,
-			V_[ i ]
-		);
-	}
 	
-	/*
-	 * Speed up this function by sending only from objects which have targets.
-	 */
-	for ( unsigned int i = 0; i < caConcId_.size( ); ++i )
-		send1< double > (
-			caConcId_[ i ].eref(),
-			caConcConcSrcSlot,
-			caConc_[ i ].ca_
+	for ( i = outCa_.begin(); i != outCa_.end(); ++i )
+		//~ CaConc::concOut()->send(
+		ZombieCaConc::concOut()->send(
+			caConcId_[ *i ].eref(),
+			info->threadIndexInGroup,
+			ca_[ *i ]
 		);
 }

@@ -7,68 +7,150 @@
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
 
-#include "moose.h"
+#include "header.h"
 #include "HSolveStruct.h"
 #include "HinesMatrix.h"
 #include "HSolvePassive.h"
 #include "RateLookup.h"
 #include "HSolveActive.h"
+#include "HSolve.h"
 
-const vector< Id >& HSolveActive::getCompartments( ) const
+
+//////////////////////////////////////////////////////////////////////
+// Mapping global Id to local index.
+//////////////////////////////////////////////////////////////////////
+
+unsigned int HSolve::localIndex( Id id ) const
 {
-	return compartmentId_;
+	map< Id, unsigned int >::const_iterator i;
+	
+	i = localIndex_.find( id );
+	if ( i != localIndex_.end() )
+		return i->second;
+	
+	assert( 0 );
+	
+	return ~0;
 }
 
-const vector< Id >& HSolveActive::getHHChannels( ) const
+void HSolve::mapIds( vector< Id > id )
 {
-	return channelId_;
+	for ( unsigned int i = 0; i < id.size(); ++i ) {
+		// We don't expect these Id's to have been registered already.
+		assert( localIndex_.find( id[ i ] ) == localIndex_.end() );
+		
+		localIndex_[ id[ i ] ] = i;
+	}
 }
 
-const vector< Id >& HSolveActive::getCaConcs( ) const
+void HSolve::mapIds()
 {
-	return caConcId_;
+	mapIds( compartmentId_ );
+	mapIds( caConcId_ );
+	mapIds( channelId_ );
+	//~ mapIds( gateId_ );
+	
+	// Doesn't seem to be needed. Perhaps even the externalChannelId_ vector
+	// is not needed.
+	//~ for ( unsigned int ic = 0; ic < compartmentId_.size(); ++ic )
+		//~ mapIds( externalChannelId_[ ic ] );
 }
 
-const vector< vector< Id > >& HSolveActive::getExternalChannels( ) const
-{
-	return externalChannelId_;
-}
+//////////////////////////////////////////////////////////////////////
+// HSolvePassive interface.
+//////////////////////////////////////////////////////////////////////
 
-double HSolveActive::getVm( unsigned int index ) const
+double HSolve::getVm( Id id ) const
 {
+	unsigned int index = localIndex( id );
 	assert( index < V_.size() );
 	return V_[ index ];
 }
 
-void HSolveActive::setVm( unsigned int index, double value )
+void HSolve::setVm( Id id, double value )
 {
+	unsigned int index = localIndex( id );
 	assert( index < V_.size() );
 	V_[ index ] = value;
 }
 
-double HSolveActive::getInject( unsigned int index ) const
+double HSolve::getCm( Id id ) const
 {
-	// Not assert( index < inject_.size() ), because inject_ is a map.
-	assert( index < nCompt_ );
-	
-	map< unsigned int, InjectStruct >::const_iterator i;
-	
-	i = inject_.find( index );
-	if ( i != inject_.end() )
-		return i->second.injectBasal;
-	
-	return 0.0;
+	unsigned int index = localIndex( id );
+	assert( index < tree_.size() );
+	return tree_[ index ].Cm;
 }
 
-void HSolveActive::setInject( unsigned int index, double value )
+void HSolve::setCm( Id id, double value )
 {
-	// Not assert( index < inject_.size() ), because inject_ is a map.
-	assert( index < nCompt_ );
-	inject_[ index ].injectBasal = value;
+	unsigned int index = localIndex( id );
+	assert( index < tree_.size() );
+	// Also update data structures used for calculations.
+	tree_[ index ].Cm = value;
 }
 
-double HSolveActive::getIm( unsigned int index ) const
+double HSolve::getEm( Id id ) const
 {
+	unsigned int index = localIndex( id );
+	assert( index < tree_.size() );
+	return tree_[ index ].Em;
+}
+
+void HSolve::setEm( Id id, double value )
+{
+	unsigned int index = localIndex( id );
+	assert( index < tree_.size() );
+	// Also update data structures used for calculations.
+	tree_[ index ].Em = value;
+}
+
+double HSolve::getRm( Id id ) const
+{
+	unsigned int index = localIndex( id );
+	assert( index < tree_.size() );
+	return tree_[ index ].Rm;
+}
+
+void HSolve::setRm( Id id, double value )
+{
+	unsigned int index = localIndex( id );
+	assert( index < tree_.size() );
+	// Also update data structures used for calculations.
+	tree_[ index ].Rm = value;
+}
+
+double HSolve::getRa( Id id ) const
+{
+	unsigned int index = localIndex( id );
+	assert( index < tree_.size() );
+	return tree_[ index ].Ra;
+}
+
+void HSolve::setRa( Id id, double value )
+{
+	unsigned int index = localIndex( id );
+	assert( index < tree_.size() );
+	tree_[ index ].initVm = value;
+}
+
+double HSolve::getInitVm( Id id ) const
+{
+	unsigned int index = localIndex( id );
+	assert( index < tree_.size() );
+	return tree_[ index ].initVm;
+}
+
+void HSolve::setInitVm( Id id, double value )
+{
+	unsigned int index = localIndex( id );
+	assert( index < tree_.size() );
+	tree_[ index ].initVm = value;
+}
+
+// Read-only
+double HSolve::getIm( Id id ) const
+{
+	unsigned int index = localIndex( id );
 	assert( index < nCompt_ );
 	
 	double Im =
@@ -87,58 +169,144 @@ double HSolveActive::getIm( unsigned int index ) const
 	return Im;
 }
 
-void HSolveActive::addInject( unsigned int index, double value )
+// Read-only
+double HSolve::getIa( Id id ) const
+{ return 0; }
+
+double HSolve::getInject( Id id ) const
 {
+	unsigned int index = localIndex( id );
+	// Not assert( index < inject_.size() ), because inject_ is a map.
+	assert( index < nCompt_ );
+	
+	map< unsigned int, InjectStruct >::const_iterator i;
+	
+	i = inject_.find( index );
+	if ( i != inject_.end() )
+		return i->second.injectBasal;
+	
+	return 0.0;
+}
+
+void HSolve::setInject( Id id, double value )
+{
+	unsigned int index = localIndex( id );
+	// Not assert( index < inject_.size() ), because inject_ is a map.
+	assert( index < nCompt_ );
+	inject_[ index ].injectBasal = value;
+}
+
+void HSolve::addInject( Id id, double value )
+{
+	unsigned int index = localIndex( id );
 	// Not assert( index < inject_.size() ), because inject_ is a map.
 	assert( index < nCompt_ );
 	inject_[ index ].injectVarying += value;
 }
 
-void HSolveActive::addGkEk( unsigned int index, double Gk, double Ek )
+
+//////////////////////////////////////////////////////////////////////
+// HSolveActive interface.
+//////////////////////////////////////////////////////////////////////
+
+//~ const vector< Id >& HSolve::getCompartments() const
+//~ {
+	//~ return compartmentId_;
+//~ }
+//~ 
+//~ const vector< Id >& HSolve::getHHChannels() const
+//~ {
+	//~ return channelId_;
+//~ }
+//~ 
+//~ const vector< Id >& HSolve::getCaConcs() const
+//~ {
+	//~ return caConcId_;
+//~ }
+//~ 
+//~ const vector< vector< Id > >& HSolve::getExternalChannels() const
+//~ {
+	//~ return externalChannelId_;
+//~ }
+
+void HSolve::addGkEk( Id id, double Gk, double Ek )
 {
+	unsigned int index = localIndex( id );
 	assert( 2 * index + 1 < externalCurrent_.size() );
 	externalCurrent_[ 2 * index ] += Gk;
 	externalCurrent_[ 2 * index + 1 ] += Gk * Ek;
 }
 
-double HSolveActive::getHHChannelGbar( unsigned int index ) const
+void HSolve::setPowers(
+	Id id,
+	double Xpower,
+	double Ypower,
+	double Zpower )
 {
+	unsigned int index = localIndex( id );
+	assert( index < channel_.size() );
+	channel_[ index ].setPowers( Xpower, Ypower, Zpower );
+}
+
+int HSolve::getInstant( Id id ) const
+{
+	unsigned int index = localIndex( id );
+	assert( index < channel_.size() );
+	return channel_[ index ].instant_;
+}
+
+void HSolve::setInstant( Id id, int instant )
+{
+	unsigned int index = localIndex( id );
+	assert( index < channel_.size() );
+	channel_[ index ].instant_ = instant;
+}
+
+double HSolve::getHHChannelGbar( Id id ) const
+{
+	unsigned int index = localIndex( id );
 	assert( index < channel_.size() );
 	return channel_[ index ].Gbar_;
 }
 
-void HSolveActive::setHHChannelGbar( unsigned int index, double value )
+void HSolve::setHHChannelGbar( Id id, double value )
 {
+	unsigned int index = localIndex( id );
 	assert( index < channel_.size() );
 	channel_[ index ].Gbar_ = value;
 }
 
-double HSolveActive::getEk( unsigned int index ) const
+double HSolve::getEk( Id id ) const
 {
+	unsigned int index = localIndex( id );
 	assert( index < current_.size() );
 	return current_[ index ].Ek;
 }
 
-void HSolveActive::setEk( unsigned int index, double value )
+void HSolve::setEk( Id id, double value )
 {
+	unsigned int index = localIndex( id );
 	assert( index < current_.size() );
 	current_[ index ].Ek = value;
 }
 
-double HSolveActive::getGk( unsigned int index ) const
+double HSolve::getGk( Id id ) const
 {
+	unsigned int index = localIndex( id );
 	assert( index < current_.size() );
 	return current_[ index ].Gk;
 }
 
-void HSolveActive::setGk( unsigned int index, double value )
+void HSolve::setGk( Id id, double value )
 {
+	unsigned int index = localIndex( id );
 	assert( index < current_.size() );
 	current_[ index ].Gk = value;
 }
 
-double HSolveActive::getIk( unsigned int index ) const
+double HSolve::getIk( Id id ) const
 {
+	unsigned int index = localIndex( id );
 	assert( index < current_.size() );
 	
 	unsigned int comptIndex = chan2compt_[ index ];
@@ -147,8 +315,9 @@ double HSolveActive::getIk( unsigned int index ) const
 	return ( current_[ index ].Ek - V_[ comptIndex ] ) * current_[ index ].Gk;
 }
 
-double HSolveActive::getX( unsigned int index ) const
+double HSolve::getX( Id id ) const
 {
+	unsigned int index = localIndex( id );
 	assert( index < channel_.size() );
 	
 	if ( channel_[ index ].Xpower_ == 0.0 )
@@ -160,8 +329,9 @@ double HSolveActive::getX( unsigned int index ) const
 	return state_[ stateIndex ];
 }
 
-void HSolveActive::setX( unsigned int index, double value )
+void HSolve::setX( Id id, double value )
 {
+	unsigned int index = localIndex( id );
 	assert( index < channel_.size() );
 	
 	if ( channel_[ index ].Xpower_ == 0.0 )
@@ -173,8 +343,9 @@ void HSolveActive::setX( unsigned int index, double value )
 	state_[ stateIndex ] = value;
 }
 
-double HSolveActive::getY( unsigned int index ) const
+double HSolve::getY( Id id ) const
 {
+	unsigned int index = localIndex( id );
 	assert( index < channel_.size() );
 	
 	if ( channel_[ index ].Ypower_ == 0.0 )
@@ -190,8 +361,9 @@ double HSolveActive::getY( unsigned int index ) const
 	return state_[ stateIndex ];
 }
 
-void HSolveActive::setY( unsigned int index, double value )
+void HSolve::setY( Id id, double value )
 {
+	unsigned int index = localIndex( id );
 	assert( index < channel_.size() );
 	
 	if ( channel_[ index ].Ypower_ == 0.0 )
@@ -207,8 +379,9 @@ void HSolveActive::setY( unsigned int index, double value )
 	state_[ stateIndex ] = value;
 }
 
-double HSolveActive::getZ( unsigned int index ) const
+double HSolve::getZ( Id id ) const
 {
+	unsigned int index = localIndex( id );
 	assert( index < channel_.size() );
 	
 	if ( channel_[ index ].Zpower_ == 0.0 )
@@ -226,8 +399,9 @@ double HSolveActive::getZ( unsigned int index ) const
 	return state_[ stateIndex ];
 }
 
-void HSolveActive::setZ( unsigned int index, double value )
+void HSolve::setZ( Id id, double value )
 {
+	unsigned int index = localIndex( id );
 	assert( index < channel_.size() );
 	
 	if ( channel_[ index ].Zpower_ == 0.0 )
@@ -245,29 +419,71 @@ void HSolveActive::setZ( unsigned int index, double value )
 	state_[ stateIndex ] = value;
 }
 
-double HSolveActive::getCaBasal( unsigned int index ) const
+double HSolve::getCa( Id id ) const
 {
+	unsigned int index = localIndex( id );
+	assert( index < caConc_.size() );
+	return ca_[ index ];
+}
+
+void HSolve::setCa( Id id, double Ca )
+{
+	unsigned int index = localIndex( id );
+	assert( index < caConc_.size() );
+	
+	ca_[ index ] = Ca;
+	caConc_[ index ].setCa( Ca );
+}
+
+double HSolve::getCaBasal( Id id ) const
+{
+	unsigned int index = localIndex( id );
 	assert( index < caConc_.size() );
 	return caConc_[ index ].CaBasal_;
 }
 
-void HSolveActive::setCaBasal( unsigned int index, double value )
+void HSolve::setCaBasal( Id id, double CaBasal )
 {
+	unsigned int index = localIndex( id );
 	assert( index < caConc_.size() );
 	
-	caConc_[ index ].CaBasal_ = value;
+	caConc_[ index ].setCaBasal( CaBasal );
 }
 
-double HSolveActive::getCa( unsigned int index ) const
+void HSolve::setTauB( Id id, double tau, double B )
 {
-	assert( index < caConc_.size() );
-	return caConc_[ index ].ca_;
-}
-
-void HSolveActive::setCa( unsigned int index, double value )
-{
+	unsigned int index = localIndex( id );
 	assert( index < caConc_.size() );
 	
-	caConc_[ index ].ca_ = value;
-	caConc_[ index ].c_ = value - caConc_[ index ].CaBasal_;
+	caConc_[ index ].setTauB( tau, B, dt_ );
+}
+
+double HSolve::getCaCeiling( Id id ) const
+{
+	unsigned int index = localIndex( id );
+	assert( index < caConc_.size() );
+	return caConc_[ index ].ceiling_;
+}
+
+void HSolve::setCaCeiling( Id id, double ceiling )
+{
+	unsigned int index = localIndex( id );
+	assert( index < caConc_.size() );
+	
+	caConc_[ index ].ceiling_ = ceiling;
+}
+
+double HSolve::getCaFloor( Id id ) const
+{
+	unsigned int index = localIndex( id );
+	assert( index < caConc_.size() );
+	return caConc_[ index ].floor_;
+}
+
+void HSolve::setCaFloor( Id id, double floor )
+{
+	unsigned int index = localIndex( id );
+	assert( index < caConc_.size() );
+	
+	caConc_[ index ].floor_ = floor;
 }

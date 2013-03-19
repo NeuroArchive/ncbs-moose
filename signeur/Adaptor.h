@@ -18,32 +18,32 @@ class Adaptor
 		////////////////////////////////////////////////////////////
 		// Here are the interface functions for the MOOSE class
 		////////////////////////////////////////////////////////////
-		static void setInputOffset( const Conn* c, double value );
-		static double getInputOffset( Eref e );
-		static void setOutputOffset( const Conn* c, double value );
-		static double getOutputOffset( Eref e );
-		static void setScale( const Conn* c, double value );
-		static double getScale( Eref e );
-		static double getOutput( Eref e );
+		void setInputOffset( double offset );
+		double getInputOffset() const;
+		void setOutputOffset( double offset );
+		double getOutputOffset() const;
+		void setScale( double scale );
+		double getScale() const;
+		double getOutput() const;
 
 		////////////////////////////////////////////////////////////
-		// Here are the Adaptor Destination functions
+		// Here are the Destination functions
 		////////////////////////////////////////////////////////////
-		static void input( const Conn* c, double val );
-		static void process( const Conn* c, ProcInfo p );
-		static void reinit( const Conn* c, ProcInfo p );
-		static void setup( const Conn* c,
+		void input( double val );
+		void innerProcess();
+		void process( const Eref& e, ProcPtr p );
+		void reinit( const Eref& e, ProcPtr p );
+		/*
+		static void setup( const Eref& e, const Qinfo* q, 
 			string molName, double scale, 
 			double inputOffset, double outputOffset );
-		static void build( const Conn* c );
+		static void build( const Eref& e, const Qinfo* q);
+		*/
 
 		////////////////////////////////////////////////////////////
-		// Here are the internal functions
-		////////////////////////////////////////////////////////////
-		void innerProcess( Eref e, ProcInfo p );
-		void innerReinit( const Conn* c, ProcInfo p );
+		static const Cinfo* initCinfo();
 
-	protected:
+	private:
 		double output_;
 		double inputOffset_;
 		double outputOffset_;
@@ -52,7 +52,5 @@ class Adaptor
 		double sum_;
 		unsigned int counter_;
 };
-
-extern const Cinfo* initAdaptorCinfo();
 
 #endif // _Adaptor_h

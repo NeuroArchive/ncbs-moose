@@ -9,40 +9,77 @@
 ** GNU Lesser General Public License version 2.1
 ** See the file COPYING.LIB for the full notice.
 **********************************************************************/
-class HHGate2D: public HHGate
+class HHGate2D
 {
 	public:
-		HHGate2D()
-		{ ; }
+		HHGate2D();
+		HHGate2D( Id originalChanId, Id originalGateId );
 		
-		static double getAValue( Eref e, const vector< double >& v );
-		static double getBValue( Eref e, const vector< double >& v );
+		double lookupA( vector< double > v ) const;
+		double lookupB( vector< double > v ) const;
 		
-		static void gateFunc( const Conn* c, double v1, double v2 );
+		// void gateFunc( const Conn* c, double v1, double v2 );
 		
-		static void createInterpols( const Conn* c, IdGenerator idGen );
-		
-		static void setupAlpha( const Conn* c, vector< double > parms )
-		{ cerr << "Error: HHGate2D: setupAlpha not implemented.\n"; }
-		
-		static void setupTau( const Conn* c, vector< double > parms )
-		{ cerr << "Error: HHGate2D: setupTau not implemented.\n"; }
-		
-		static void tweakAlpha( const Conn* c )
-		{ cerr << "Error: HHGate2D: tweakAlpha not implemented.\n"; }
-		
-		static void tweakTau( const Conn* c )
-		{ cerr << "Error: HHGate2D: tweakTau not implemented.\n"; }
-		
-		static void setupGate( const Conn* c, vector< double > parms )
-		{ cerr << "Error: HHGate2D: setupGate not implemented.\n"; }
-		
+		/**
+		 * Single call to get both A and B values in a single
+		 * lookup
+		 */
+		void lookupBoth( double v, double c, double* A, double* B) const;
+
+		/**
+		 * Checks if the provided Id is the one that the HHGate was created
+		 * on. If true, fine, otherwise complains about trying to set the
+		 * field.
+		 */
+		bool checkOriginal( Id id, const string& field ) const;
+
+		/**
+		 * isOriginalChannel returns true if the provided Id is the Id of
+		 * the channel on which the HHGate was created.
+		 */
+		bool isOriginalChannel( Id id ) const;
+
+		/**
+		 * isOriginalChannel returns true if the provided Id is the Id of
+		 * the Gate created at the same time as the original channel.
+		 */
+		bool isOriginalGate( Id id ) const;
+
+		/**
+		 * Returns the Id of the original Channel.
+		 */
+		Id originalChannelId() const;
+
+		/**
+		 * Returns the A interpol
+		 */
+		Interpol2D* getTableA( unsigned int i );
+
+		/**
+		 * Dummy access func for Interpols. Always returns 1.
+		 */
+		unsigned int getNumTable() const;
+
+		/**
+		 * Dummy assignment function for the number of interpols:
+		 * We always have both interpols 
+		 */
+		void setNumTable( unsigned int num );
+
+		/**
+		 * Returns the B interpol
+		 */
+		Interpol2D* getTableB( unsigned int i );
+
+		static const Cinfo* initCinfo();
 	private:
 		Interpol2D A_;
 		Interpol2D B_;
+
+		Id originalChanId_;
+		Id originalGateId_;
 };
 
 // Used by solver, readcell, etc.
-extern const Cinfo* initHHGate2DCinfo();
 
 #endif // _HHGate2D_h
