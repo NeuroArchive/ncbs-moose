@@ -12,18 +12,15 @@
  * It uses GSL heavily, and isn't even compiled if the flag isn't set.
  * It finds the ss value closest to the initial conditions.
  *
- * If you want to find multiple stable states, use the MultiStable object,
- * which operates a SteadyState object to find multiple states.
- * If you want to carry out a dose-response calculation, use the 
- * DoseResponse object.
- * If you want to follow a stable state in phase space, use the closely
- * related StateTrajectory object.
+ * If you want to find multiple stable states, it is best to do this
+ * in Python as it gives a lot of flexibility in working out how to
+ * find steady states.
+ * Likewise, if you want to carry out a dose-response calculation.
  */
 
-#include "moose.h"
-#include "RateTerm.h"
+#include "header.h"
 #include "KinSparseMatrix.h"
-#include "InterSolverFlux.h"
+#include "RateTerm.h"
 #include "Stoich.h"
 
 #include <gsl/gsl_errno.h>
