@@ -13,8 +13,6 @@
 #include "FuncTerm.h"
 #include "SparseMatrix.h"
 #include "KinSparseMatrix.h"
-#include "VoxelPoolsBase.h"
-#include "../mesh/VoxelJunction.h"
 #include "ZombiePoolInterface.h"
 #include "Stoich.h"
 
@@ -205,8 +203,8 @@ void ZombieEnz::setSolver( Id stoich, Id enz )
 	assert( enzFinfo );
 	assert( cplxFinfo );
 	vector< Id > temp;
-	bool isOK = true;
 	unsigned int numReactants;
+	bool isOK = true;
 	numReactants = enz.element()->getNeighbors( temp, enzFinfo ); 
 	isOK &= ( numReactants == 1 );
 	Id enzMol = temp[0];

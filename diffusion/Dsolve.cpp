@@ -11,8 +11,6 @@
 #include "ElementValueFinfo.h"
 #include "SparseMatrix.h"
 #include "KinSparseMatrix.h"
-#include "VoxelPoolsBase.h"
-#include "../mesh/VoxelJunction.h"
 #include "ZombiePoolInterface.h"
 #include "DiffPoolVec.h"
 #include "FastMatrixElim.h"
@@ -331,6 +329,11 @@ void Dsolve::setCompartment( Id id )
 	}
 }
 
+Id Dsolve::getCompartment() const
+{
+	return compartment_;
+}
+
 void Dsolve::makePoolMapFromElist( const vector< ObjId >& elist, 
 				vector< Id >& temp )
 {
@@ -555,13 +558,6 @@ unsigned int Dsolve::getNumVoxels() const
 	return numVoxels_;
 }
 
-void Dsolve::setNumAllVoxels( unsigned int num ) 
-{
-	numVoxels_ = num;
-	for ( unsigned int i = 0 ; i < numLocalPools_; ++i )
-		pools_[i].setNumVoxels( numVoxels_ );
-}
-
 unsigned int Dsolve::convertIdToPoolIndex( const Eref& e ) const
 {
 	unsigned int i  = e.id().value() - poolMapStart_;
@@ -720,30 +716,25 @@ void Dsolve::setBlock( const vector< double >& values )
 	}
 }
 
-//////////////////////////////////////////////////////////////////////
-// Inherited virtual
-
-void Dsolve::updateRateTerms( unsigned int index )
+void Dsolve::setupCrossSolverReacs( const map< Id, 
+						vector< Id > >& xr, Id otherStoich )
 {
 	;
 }
 
-unsigned int Dsolve::getPoolIndex( const Eref& e ) const
+// Inherited virtual
+void Dsolve::filterCrossRateTerms( const vector< pair< Id, Id > >& xrt )
 {
-	return convertIdToPoolIndex( e );
 }
 
-unsigned int Dsolve::getNumLocalVoxels() const
+void Dsolve::setupCrossSolverReacVols( 
+			const vector< vector< Id > >& subCompts,
+			const vector< vector< Id > >& prdCompts )
 {
-	return numVoxels_;
+		;
 }
 
-VoxelPoolsBase* Dsolve::pools( unsigned int i )
+void Dsolve::updateRateTerms( unsigned int index )
 {
-	return 0;
-}
-
-double Dsolve::volume( unsigned int i ) const
-{
-	return 1.0;
+	;
 }

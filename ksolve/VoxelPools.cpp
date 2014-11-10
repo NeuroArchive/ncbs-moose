@@ -20,7 +20,6 @@
 #include "FuncTerm.h"
 #include "SparseMatrix.h"
 #include "KinSparseMatrix.h"
-#include "../mesh/VoxelJunction.h"
 #include "ZombiePoolInterface.h"
 #include "Stoich.h"
 
@@ -29,6 +28,7 @@
 //////////////////////////////////////////////////////////////
 
 VoxelPools::VoxelPools()
+	: stoichPtr_( 0 )
 {
 #ifdef USE_GSL
 		driver_ = 0;
@@ -178,8 +178,7 @@ void VoxelPools::updateRates( const double* s, double* yprime ) const
 			stoichPtr_->getNumProxyPools();
 	// totVar should include proxyPools if this voxel does not use them
 	unsigned int totInvar = stoichPtr_->getNumBufPools();
-	assert( N.nColumns() == 0 || 
-			N.nRows() == 
+	assert( N.nRows() == 
 			stoichPtr_->getNumAllPools() + stoichPtr_->getNumProxyPools() );
 	assert( N.nColumns() == rates_.size() );
 
@@ -238,7 +237,6 @@ void VoxelPools::setVolumeAndDependencies( double vol )
 }
 
 ////////////////////////////////////////////////////////////
-#if 0
 /**
  * Zeroes out rate terms that are involved in cross-reactions that 
  * are not present on current voxel.
@@ -287,4 +285,3 @@ comptIndex.
 		}
 	}
 }
-#endif

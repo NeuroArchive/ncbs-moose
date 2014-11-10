@@ -9,8 +9,6 @@
 
 #include "header.h"
 #include "PoolBase.h"
-#include "VoxelPoolsBase.h"
-#include "../mesh/VoxelJunction.h"
 #include "ZombiePoolInterface.h"
 #include "ZombiePool.h"
 #include "lookupVolumeFromMesh.h"

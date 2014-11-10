@@ -13,7 +13,6 @@ OBJ = \
 	SynHandlerBase.o	\
 	SimpleSynHandler.o	\
 	STDPSynHandler.o	\
-	GraupnerBrunel2012CaPlasticitySynHandler.o	\
 	Synapse.o	\
 	STDPSynapse.o	\
 	testSynapse.o	\
@@ -31,7 +30,6 @@ $(OBJ)	: $(HEADERS)
 SynHandlerBase.o:	SynHandlerBase.h Synapse.h 
 SimpleSynHandler.o:	SynHandlerBase.h Synapse.h SimpleSynHandler.h
 STDPSynHandler.o:	SynHandlerBase.h STDPSynapse.h STDPSynHandler.h
-GraupnerBrunel2012CaPlasticitySynHandler.o:	SynHandlerBase.h Synapse.h GraupnerBrunel2012CaPlasticitySynHandler.h
 Synapse.o:	Synapse.h SynHandlerBase.h
 STDPSynapse.o:	STDPSynapse.h SynHandlerBase.h
 testSynapse.o: SynHandlerBase.h Synapse.h SimpleSynHandler.h
