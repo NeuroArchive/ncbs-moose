@@ -13,40 +13,36 @@
 # along with MOOSE.  If not, see <http://www.gnu.org/licenses/>.
 
 
-"""setup.py: 
+"""setup.py:
 
     Script to install python targets.
 
 Last modified: Sat Jan 18, 2014  05:01PM
 
 """
-    
+
 __author__           = "Dilawar Singh"
-__copyright__        = "Copyright 2013, Dilawar Singh and NCBS Bangalore"
+__copyright__        = "Copyright 2013, Aviral Goel"
 __credits__          = ["NCBS Bangalore"]
 __license__          = "GNU GPL"
 __version__          = "1.0.0"
-__maintainer__       = "Dilawar Singh"
-__email__            = "dilawars@ncbs.res.in"
+__maintainer__       = "Aviral Geol, Dilawar Singh"
+__email__            = "aviralg@ncbs.res.in"
 __status__           = "Development"
 
 import os
 from setuptools import setup
 
 setup(
-        name='pymoose',
-        version='3.0',
-        description='PyMoose: Python scripting support in moose',
-        author='Dilwar Singh',
-        author_email='dilawars@ncns.res.in',
-        url='http://moose.ncbs.res.in',
+        name='moogli',
+        version='1.0',
+        description='Visualizer for nerual simulation',
+        author='Aviral Goel',
+        author_email='aviralg@ncbs.res.in',
+        url='http://moose.ncbs.res.in/moogli',
         options={'build' : {'build_base' : '/tmp' } },
-        packages=['libmumbl'
-            , 'moose', 'moose.neuroml', 'moose.backend'
-            ],
-        package_dir = { 'moose' : 'moose'
-            , 'libmumbl' : 'libmumbl'
-            },
-        package_data = { 'moose' : ['_moose.so'] },
-        #install_requires = [ 'matplotlib', 'numpy' ],
-    ) 
+        packages=[ 'moogli'] ,
+        package_dir = { 'moogli' : 'moogli' },
+        package_data = { 'moogli' : ['moogli.so'] },
+        #install_requires = [ 'sip' ],
+    )

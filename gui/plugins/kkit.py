@@ -639,12 +639,14 @@ class  KineticsWidget(EditorWidgetBase):
 
     def positionChange(self,mooseObject):
         #If the item position changes, the corresponding arrow's are calculated
+
         mobj = self.mooseId_GObj[element(mooseObject)]
         self.updateArrow(mobj)
         elePath = moose.element(mooseObject).path
         pos = elePath.find('/',1)
         l = elePath[0:pos]
         linfo = moose.Annotator(l+'/info')
+        
         for k, v in self.qGraCompt.items():
             rectcompt = v.childrenBoundingRect()
             if linfo.modeltype == "new_kkit":

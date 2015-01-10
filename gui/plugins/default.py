@@ -362,11 +362,12 @@ class RunView(RunBase):
         self.centralWidget.plotAllData()
 
     def getToolPanes(self):
-        return []
+        return[]
+        '''
         if not self._toolPanes:
             self._toolPanes = [self.getSchedulingDockWidget()]
         return self._toolPanes
-
+        '''
     def getSchedulingDockWidget(self):
         """Create and/or return a widget for schduling"""
         if hasattr(self, 'schedulingDockWidget')  and self.schedulingDockWidget is not None:
@@ -627,7 +628,6 @@ class SchedulingWidget(QtGui.QWidget):
                 solver = chemPref["simulation"]["solver"]
                 addSolver(self.modelRoot,solver)
             status = self.solverStatus()
-            #print "status ",status
                    # if status != 0 or status == -1:
             #     return
             if status == None or int(status) == -1 or int(status) == 0:
@@ -702,13 +702,15 @@ class SchedulingWidget(QtGui.QWidget):
         return True
 
     def solverStatus(self):
+        #print "solverStatus "
         compt = moose.wildcardFind(self.modelRoot+'/##[ISA=ChemCompt]')
+        #print "stoich exist ",moose.exists(compt[0].path+'/stoich')
         if not moose.exists(compt[0].path+'/stoich'):
             return None
         else:
             stoich = moose.Stoich(compt[0].path+'/stoich')
             status = int(stoich.status)
-            print("Status =>", status)
+            #print("Status =>", status)
             if status == -1:
                 QtGui.QMessageBox.warning(None,"Could not Run the model","Warning: Reaction path not yet assigned.\n ")
                 return -1
@@ -793,6 +795,7 @@ class SchedulingWidget(QtGui.QWidget):
         self.setModelType()
 
     def setModelType(self):
+        #print "modelType: self.modelroot ",self.modelRoot
         if moose.exists(self.modelRoot + "/model/cells"):
             self.modelType = ELECTRICAL_MODEL
         else:
